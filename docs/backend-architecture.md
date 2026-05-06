@@ -90,7 +90,7 @@ The backend is designed to be fully patchable:
                  ▼
 ┌──────────────────────────────────────────────┐
 │               Persistence Layer              │
-│  - Postgres (primary DB)                     │
+│  - MariaDB (primary DB)                      │
 │  - Redis (cache, queues, memory)             │
 │  - Optional vector DB                        │
 └──────────────────────────────────────────────┘
@@ -230,7 +230,7 @@ No data is shared across tenants.
 
 The backend runs as a Docker container and depends on:
 
-- Postgres
+- MariaDB
 - Redis
 - Optional vector DB
 - Nginx reverse proxy

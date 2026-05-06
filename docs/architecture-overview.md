@@ -6,7 +6,7 @@ PH Agent Hub is a modular, multi‑tenant AI platform designed to provide a stab
 - **User Chat UI**
 - **Admin Management UI**
 
-The platform is fully containerized using Docker and includes supporting services such as Postgres and Redis.
+The platform is fully containerized using Docker and includes supporting services such as MariaDB and Redis.
 
 ---
 
@@ -88,7 +88,7 @@ PH Agent Hub is deployed as a set of Docker services:
 - **backend** — Agent Framework server
 - **chat-ui** — user-facing chat interface
 - **admin-ui** — administrator interface
-- **postgres** — primary database
+- **mariadb** — primary relational database
 - **redis** — caching, queues, memory store
 - **optional vector DB** — for RAG
 - **nginx** — reverse proxy

@@ -12,7 +12,7 @@ PH Agent Hub is deployed as a **multi‑service Docker stack** consisting of:
 - **Backend** — Agent Framework server
 - **Chat UI** — user‑facing interface
 - **Admin UI** — administrator interface
-- **Postgres** — primary database
+- **MariaDB** — primary relational database
 - **Redis** — caching, queues, memory store
 - **Optional Vector DB** — for RAG (Qdrant, Milvus, Weaviate)
 - **Nginx** — reverse proxy for production
@@ -55,7 +55,7 @@ The deployment uses a multi‑container setup:
                                 ▼
 ┌──────────────────────────────────────────────┐
 │                Data Layer                    │
-│  Postgres     Redis     Vector DB (optional) │
+│  MariaDB     Redis     Vector DB (optional)  │
 └──────────────────────────────────────────────┘
 ```
 
@@ -73,7 +73,7 @@ services:
     build: ../backend
     env_file: ./env
     depends_on:
-      - postgres
+      - mariadb
       - redis
     ports:
       - "8000:8000"
@@ -94,14 +94,18 @@ services:
     ports:
       - "3001:3001"
 
-  postgres:
-    image: postgres:16
+  mariadb:
+    image: mariadb:11
     environment:
-      POSTGRES_USER: phhub
-      POSTGRES_PASSWORD: phhub
-      POSTGRES_DB: phhub
+      MARIADB_ROOT_PASSWORD: root-secret
+      MARIADB_DATABASE: phhub
+      MARIADB_USER: phhub
+      MARIADB_PASSWORD: phhub
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mariadb_data:/var/lib/mysql
 
   redis:
     image: redis:7
@@ -127,7 +131,7 @@ services:
       - admin-ui
 
 volumes:
-  postgres_data:
+  mariadb_data:
   redis_data:
 ```
 
@@ -138,7 +142,7 @@ volumes:
 All services share a common `.env` file:
 
 ```
-DATABASE_URL=postgresql://phhub:phhub@postgres:5432/phhub
+DATABASE_URL=mysql://phhub:phhub@mariadb:3306/phhub
 REDIS_URL=redis://redis:6379/0
 
 JWT_SECRET=your-secret-key
@@ -215,7 +219,7 @@ Recommended options:
 - Pure static frontends
 - Easily replicated
 
-### **Postgres**
+### **MariaDB**
 - Use managed DB or replication for production
 
 ### **Redis**
@@ -228,9 +232,9 @@ Recommended options:
 
 # 9. Backup Strategy
 
-### **Postgres**
+### **MariaDB**
 - Nightly dumps
-- WAL archiving (optional)
+- Binary log backup (optional)
 
 ### **Redis**
 - Snapshotting (RDB)

@@ -1,7 +1,9 @@
 # Data Model — PH Agent Hub
 
 This document defines the database schema for PH Agent Hub.  
-The platform uses Postgres as the primary database and Redis for caching, queues, and ephemeral memory.
+The platform uses MariaDB as the primary relational database and Redis for caching, queues, and ephemeral memory.
+
+Because MariaDB is the primary store, relationships that require joins or referential integrity are normalized into dedicated tables. JSON columns are reserved for flexible payloads that are typically stored and retrieved as complete documents.
 
 The data model supports:
 - multi‑tenant architecture
@@ -80,7 +82,7 @@ Tools represent external integrations (ERPNext, Membrane, custom tools).
 - tenant_id (UUID, FK → tenants.id)
 - name (string)
 - type (enum: erpnext, membrane, custom)
-- config (JSONB)
+- config (JSON)
 - enabled (boolean)
 - created_at (timestamp)
 - updated_at (timestamp)
@@ -119,9 +121,15 @@ Templates can be:
 - description (string)
 - system_prompt (text)
 - default_model_id (UUID, FK → models.id, nullable)
-- allowed_tools (JSONB array of tool IDs)
 - created_at (timestamp)
 - updated_at (timestamp)
+
+Allowed tools are normalized through a join table rather than stored as a JSON array.
+
+**Table: template_allowed_tools**
+- template_id (UUID, FK → templates.id)
+- tool_id (UUID, FK → tools.id)
+- created_at (timestamp)
 
 ---
 
@@ -151,7 +159,7 @@ Messages belong to a session.
 - sender (enum: user, assistant, system)
 - content (text)
 - model_id (UUID, FK → models.id, nullable)
-- tool_calls (JSONB)
+- tool_calls (JSON)
 - created_at (timestamp)
 
 ---
@@ -181,7 +189,7 @@ Optional vector DB integration (Qdrant, Milvus, etc.).
 - tenant_id (UUID, FK → tenants.id)
 - title (string)
 - content (text)
-- metadata (JSONB)
+- metadata (JSON)
 - vector_id (string) — reference to vector DB
 - created_at (timestamp)
 
@@ -213,6 +221,7 @@ Tenant
  ├── Tools
  │     └── ERPNext Instances
  ├── Templates
+ │     └── Template Allowed Tools
  ├── Sessions
  │     └── Messages
  ├── Memory
