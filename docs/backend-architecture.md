@@ -225,11 +225,14 @@ PUT    /admin/skills/:id
 DELETE /admin/skills/:id
 ```
 
-### **3.13 Analytics**
+### **3.13 Analytics and Audit**
 ```
 GET /admin/usage
 GET /admin/logs
+GET /admin/audit
 ```
+
+> `GET /admin/audit` is admin-only. Managers can access `/admin/usage` and `/admin/logs` scoped to their own tenant. Audit log entries are read-only — no delete endpoint is exposed.
 
 ---
 
@@ -282,7 +285,8 @@ GET /admin/logs
         memory.py
         file_uploads.py
         rag.py
-        logs.py
+        usage_logs.py
+        audit_logs.py
       /migrations          — Alembic migration scripts
         env.py
         versions/

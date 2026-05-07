@@ -328,6 +328,50 @@ Tracks model usage for analytics and quotas.
 
 ---
 
+## 6.2 Audit Logs
+
+Tracks administrative and sensitive actions across the platform. Written on every mutating admin operation. Never updated or deleted — append-only.
+
+**Table: audit_logs**
+- id (UUID, PK)
+- tenant_id (UUID, FK → tenants.id, nullable) — null for platform-level actions (e.g. tenant creation)
+- actor_id (UUID, FK → users.id) — the user who performed the action
+- actor_role (enum: admin, manager, user) — role at time of action; denormalised so log is self-contained if user is later deleted
+- action (string) — machine-readable action key, e.g. `user.created`, `model.deleted`, `tenant.updated`, `tool.enabled`
+- target_type (string, nullable) — the entity type acted upon, e.g. `user`, `model`, `tool`, `template`
+- target_id (UUID, nullable) — the ID of the entity acted upon
+- payload (JSON, nullable) — relevant changed fields (new values only; secrets and encrypted fields are never included)
+- ip_address (string, nullable) — request IP for forensic purposes
+- created_at (timestamp)
+
+**Action keys (examples):**
+
+| Action | Description |
+|---|---|
+| `user.created` | A user was created |
+| `user.deleted` | A user was deleted |
+| `user.role_changed` | A user's role was changed |
+| `user.deactivated` | A user was deactivated |
+| `tenant.created` | A tenant was created |
+| `tenant.deleted` | A tenant was deleted |
+| `model.created` | A model was configured |
+| `model.deleted` | A model was removed |
+| `model.api_key_updated` | A model API key was rotated (payload omits the key itself) |
+| `tool.created` | A tool was created |
+| `tool.deleted` | A tool was deleted |
+| `tool.enabled` / `tool.disabled` | A tool was enabled or disabled |
+| `template.created` | A template was created |
+| `template.deleted` | A template was deleted |
+| `skill.created` | A skill was created |
+| `skill.deleted` | A skill was deleted |
+| `erpnext.created` | An ERPNext instance was configured |
+| `erpnext.deleted` | An ERPNext instance was removed |
+| `system.encryption_key_rotated` | The encryption key was rotated |
+
+> The audit log is append-only. Rows are never updated or deleted, even by admins. Retention policy is configurable but deletion is via a scheduled purge job, not via API.
+
+---
+
 # 7. Relationships Summary
 
 ```
@@ -347,14 +391,16 @@ Tenant
  │     ├── Session Active Tools
  │     └── File Uploads
  ├── Memory (per user, optionally per session)
- └── RAG Documents
+ ├── RAG Documents
+ ├── Usage Logs
+ └── Audit Logs
 ```
 
 ---
 
 ---
 
-# 9. Encryption of Sensitive Fields
+# 8. Encryption of Sensitive Fields
 
 Fields marked as encrypted in this schema use **application-level Fernet symmetric encryption** (AES-128-CBC with HMAC-SHA256) provided by the Python [`cryptography`](https://cryptography.io) library.
 
@@ -372,7 +418,7 @@ Fields marked as encrypted in this schema use **application-level Fernet symmetr
 
 ---
 
-# 8. Goals of the Data Model
+# 9. Goals of the Data Model
 
 - Support multi‑tenant isolation
 - Support three-tier role model (admin, manager, user)
