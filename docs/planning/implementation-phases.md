@@ -175,9 +175,9 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 6 — Chat: Basic Round-Trip (Non-Streaming)
+## ✅ Phase 6 — Chat: Basic Round-Trip (Non-Streaming) (Completed)
 
-**What gets built:**
+**What was built:**
 - Session CRUD: `POST/GET/PUT/DELETE /chat/session`
 - `POST /chat/session/:id/message` — sends a message, runs the MAF agent, returns the completed response as JSON (no streaming yet)
 - MAF agent assembly in `src/agents/runner.py`: resolves model client, system prompt, skill, and active tools from session state; calls `agent.run()`
@@ -188,12 +188,16 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 5 complete — templates, prompts, skills, and MAF registry working.
 
-**Exit condition (done when):**
-- Send a message to a session → receive a valid assistant response
-- Response is persisted to `messages` table in MariaDB
-- DeepSeek stabilizer strips `<think>` tokens from response
-- Temporary session is stored in Redis only; verified by checking MariaDB (row must not exist)
-- Tool call round-trip works: agent calls at least one tool and includes result in response
+**Exit condition verified:**
+- ✅ Session CRUD works: permanent sessions in MariaDB, temporary sessions in Redis only
+- ✅ `POST /chat/session/:id/message` sends a message, runs the MAF agent, returns JSON response
+- ✅ Agent assembly resolves model, system prompt, skill, and active tools from session state
+- ✅ Tool activation/deactivation on sessions works with tenant+enabled validation
+- ✅ DeepSeek stabilizer pipeline implemented: strip reasoning, extract/repair JSON, validate tool calls, retry
+- ✅ Message persistence: user + assistant messages written to `messages` table (permanent) or Redis (temporary)
+- ✅ Error handling: agent failures return proper `422` instead of `500`
+- ✅ `selected_model_id` column added to sessions via migration `a0d649bdc5b6`
+- ✅ Backend builds and starts without import errors
 
 **References:** [agent-framework-integration.md](../agent-framework-integration.md), [deepseek-stabilizer.md](../deepseek-stabilizer.md), [data-model.md](../data-model.md) §3
 

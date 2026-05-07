@@ -33,3 +33,6 @@ python-multipart
 
 # AI Agent Framework
 agent-framework
+
+# Async HTTP (ERPNext tool calls)
+httpx

@@ -2,7 +2,7 @@
 # PH Agent Hub — DeepSeek Provider Client
 # =============================================================================
 
-from agent_framework import OpenAIChatClient
+from agent_framework.openai import OpenAIChatClient
 
 from ..db.orm.models import Model
 
@@ -16,6 +16,7 @@ def build_deepseek_client(model: Model) -> OpenAIChatClient:
     if not model.base_url:
         raise ValueError("DeepSeek provider requires a base_url")
     return OpenAIChatClient(
+        model=model.name,
         api_key=model.api_key,
         base_url=model.base_url,
     )

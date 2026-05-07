@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     # --- Encryption ---
     ENCRYPTION_KEY: str
 
+    # --- DeepSeek Stabilizer ---
+    DEEPSEEK_MAX_RETRIES: int = 3
+    DEEPSEEK_STRIP_REASONING: bool = True
+    DEEPSEEK_VALIDATE_TOOL_CALLS: bool = True
+    DEEPSEEK_MAX_AGENT_STEPS: int = 8
+    DEEPSEEK_JSON_REPAIR: bool = True
+    DEEPSEEK_STREAM_FILTER: bool = True
+
+    # --- Session ---
+    TEMPORARY_SESSION_TTL_SECONDS: int = 86400  # 24 hours
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     def __init__(self, **kwargs):
