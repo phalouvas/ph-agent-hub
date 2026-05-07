@@ -33,12 +33,24 @@ from src.db.orm.users import User
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@phagent.local")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
 DEFAULT_TENANT_NAME = os.getenv("DEFAULT_TENANT_NAME", "Default")
+SEED_ALLOW_WEAK_PASSWORD = os.getenv("SEED_ALLOW_WEAK_PASSWORD", "false").lower() in ("true", "1", "yes")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 async def main() -> None:
+    # Safety check: refuse weak passwords unless explicitly allowed
+    if ADMIN_PASSWORD == "admin" and not SEED_ALLOW_WEAK_PASSWORD:
+        print(
+            "[seed] ERROR: ADMIN_PASSWORD is set to the default 'admin' and "
+            "SEED_ALLOW_WEAK_PASSWORD is not enabled.\n"
+            "       Set SEED_ALLOW_WEAK_PASSWORD=true to override (dev only), "
+            "or set a strong ADMIN_PASSWORD.",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
     async with AsyncSessionLocal() as db:
         # 1. Ensure default tenant exists
         result = await db.execute(

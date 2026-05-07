@@ -7,9 +7,12 @@
 
 import asyncio
 import json
+import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from pydantic import BaseModel
@@ -233,8 +236,8 @@ async def create_session(
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
             "active_tool_ids": body.active_tool_ids or [],
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         await store_temp_session(session_id, data)
 
@@ -250,8 +253,8 @@ async def create_session(
             "selected_prompt_id": body.selected_prompt_id,
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
     else:
         # Create in MariaDB
@@ -327,7 +330,7 @@ async def update_session(
         # Update Redis blob
         update_fields = body.model_dump(exclude_unset=True)
         data.update(update_fields)
-        data["updated_at"] = datetime.utcnow().isoformat()
+        data["updated_at"] = datetime.now(timezone.utc).isoformat()
         await store_temp_session(session_id, data)
 
         return {
@@ -342,7 +345,7 @@ async def update_session(
             "selected_skill_id": data.get("selected_skill_id"),
             "selected_model_id": data.get("selected_model_id"),
             "created_at": _parse_datetime(data.get("created_at")),
-            "updated_at": datetime.utcnow(),
+            "updated_at": datetime.now(timezone.utc),
         }
     else:
         session = await session_service.update_session(
@@ -843,8 +846,6 @@ async def search_sessions(
     )
 
     # Search sessions via message content (LIKE on JSON column)
-    from sqlalchemy import func as sa_func, type_coerce, String as SAString
-
     msg_stmt = (
         select(Session)
         .join(Message, Message.session_id == Session.id)
@@ -1105,11 +1106,13 @@ async def remove_session_tool(
 def _parse_datetime(val: Any) -> datetime:
     """Parse a datetime value that may be a string or datetime object."""
     if val is None:
-        return datetime.utcnow()
+        logger.warning("_parse_datetime received None, using current time")
+        return datetime.now(timezone.utc)
     if isinstance(val, datetime):
         return val
     try:
         return datetime.fromisoformat(str(val))
     except (ValueError, TypeError):
-        return datetime.utcnow()
+        logger.warning("_parse_datetime failed to parse '%s', using current time", val)
+        return datetime.now(timezone.utc)
 

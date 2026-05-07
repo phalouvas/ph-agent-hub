@@ -8,6 +8,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api.admin import router as admin_router
 from .api.auth import router as auth_router
@@ -17,7 +18,9 @@ from .api.models import router as models_router
 from .api.prompts import router as prompts_router
 from .api.skills import router as skills_router
 from .api.templates import router as templates_router
+from .core.config import settings
 from .core.exceptions import AppException, app_exception_handler
+from .core.limiter import limiter, RateLimitExceeded
 
 
 # ---------------------------------------------------------------------------
@@ -40,9 +43,29 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="PH Agent Hub", version="0.1.0", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
+# Middleware
+# ---------------------------------------------------------------------------
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS.split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ---------------------------------------------------------------------------
+# Rate limiter
+# ---------------------------------------------------------------------------
+app.state.limiter = limiter
+
+# ---------------------------------------------------------------------------
 # Exception handlers
 # ---------------------------------------------------------------------------
 app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(RateLimitExceeded, lambda req, exc: __import__("starlette.responses", fromlist=[""]).JSONResponse(
+    status_code=429,
+    content={"detail": "Too many requests. Please try again later."},
+))
 
 # ---------------------------------------------------------------------------
 # API Routers

@@ -16,6 +16,7 @@ from ..core.config import settings
 from ..core.dependencies import get_current_user, get_db
 from ..core.exceptions import UnauthorizedError
 from ..core.jwt import create_access_token, create_refresh_token, decode_token
+from ..core.limiter import limiter
 from ..core.redis import add_to_denylist, is_denylisted
 from ..core.security import verify_password
 from ..db.orm.users import User
@@ -51,7 +52,9 @@ class UserProfile(BaseModel):
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit(settings.LOGIN_RATE_LIMIT)
 async def login(
+    request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
@@ -78,7 +81,7 @@ async def login(
         httponly=True,
         samesite="lax",
         path="/api/auth",
-        secure=False,
+        secure=settings.COOKIE_SECURE,
         max_age=settings.JWT_REFRESH_EXPIRES_IN,
     )
 
