@@ -42,6 +42,9 @@ class Session(Base):
     selected_skill_id: Mapped[str | None] = mapped_column(
         CHAR(36), ForeignKey("skills.id"), nullable=True
     )
+    selected_model_id: Mapped[str | None] = mapped_column(
+        CHAR(36), ForeignKey("models.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

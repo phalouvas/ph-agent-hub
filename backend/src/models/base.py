@@ -5,7 +5,7 @@
 # Dispatches on model.provider to the appropriate builder.
 # =============================================================================
 
-from agent_framework import ChatClient
+from agent_framework import BaseChatClient
 
 from ..db.orm.models import Model
 from .anthropic import build_anthropic_client
@@ -13,7 +13,7 @@ from .deepseek import build_deepseek_client
 from .openai import build_openai_client
 
 
-def get_chat_client(model: Model) -> ChatClient:
+def get_chat_client(model: Model) -> BaseChatClient:
     """Return the appropriate MAF ChatClient for the given Model.
 
     Dispatches on model.provider:
