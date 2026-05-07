@@ -10,10 +10,10 @@
 | # | Test | Status | Notes |
 |---|------|--------|-------|
 | 1.1 | Login with valid credentials (admin@phagent.local / admin) | ✅ | |
-| 1.2 | Login with invalid credentials shows error | ⬜ | |
-| 1.3 | Logout redirects to login page | ⬜ | |
-| 1.4 | Protected routes redirect unauthenticated users to /login | ⬜ | |
-| 1.5 | Non-admin users cannot access /admin routes | ⬜ | |
+| 1.2 | Login with invalid credentials shows error | ✅ | "Invalid email or password" shown; must access via nginx (port 80), not Vite directly (port 3000) |
+| 1.3 | Logout redirects to login page | ✅ | |
+| 1.4 | Protected routes redirect unauthenticated users to /login | ✅ | /chat → /login when unauthenticated |
+| 1.5 | Non-admin users cannot access /admin routes | ✅ | /admin → /chat redirect for user role |
 | 1.6 | Admin link visible in sidebar for admin/manager users | ✅ | Clicking navigates to /admin |
 
 ---
@@ -81,7 +81,7 @@
 |---|------|--------|-------|
 | 7.1 | **CREATE** — Add a new skill | ✅ | Fixed execution_type enum bug |
 | 7.2 | **READ** — Skill appears in list | ✅ | |
-| 7.3 | **UPDATE** — Edit skill | ⬜ | |
+| 7.3 | **UPDATE** — Edit skill | ✅ | Title changed to "Updated Skill Name" |
 | 7.4 | **DELETE** — Remove a skill | ✅ | |
 
 ---
@@ -90,8 +90,8 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 8.1 | Analytics page loads with data | ⬜ | |
-| 8.2 | Settings page loads and is editable | ⬜ | |
+| 8.1 | Analytics page loads with data | ✅ | Summary cards + usage log table loaded |
+| 8.2 | Settings page loads and is editable | ✅ | Loads with placeholder message (not yet configurable) |
 
 ---
 
@@ -103,7 +103,7 @@
 | 9.2 | Session appears in sidebar | ✅ | |
 | 9.3 | Pin / Unpin a session | ✅ | |
 | 9.4 | Delete a session | ✅ | |
-| 9.5 | Search sessions | ⬜ | |
+| 9.5 | Search sessions | ✅ | "Search Test Session" found in dialog |
 | 9.6 | Navigate between sessions | ✅ | |
 
 ---
@@ -115,10 +115,10 @@
 | 10.1 | Send a message and receive a response | ✅ | "Hello world" from DeepSeek via OpenAIChatCompletionClient |
 | 10.2 | Streaming response works (tokens appear progressively) | ✅ | Tokens streamed progressively |
 | 10.3 | Select a different model from dropdown | ✅ | Model selection persists to session via updateSession API |
-| 10.4 | Select a template | ⬜ | |
-| 10.5 | Select a skill | ⬜ | |
-| 10.6 | Select a prompt | ⬜ | |
-| 10.7 | Memory management (view/add/delete memories) | ⬜ | |
+| 10.4 | Select a template | ✅ | "Test Template" selected from dropdown |
+| 10.5 | Select a skill | ✅ | "Updated Skill Name" selected from dropdown |
+| 10.6 | Select a prompt | ✅ | Prompt created via UI, appears in Prompt Library with Use button |
+| 10.7 | Memory management (view/add/delete memories) | ✅ | Add, view, delete all work with confirmation popover |
 
 ---
 
@@ -126,17 +126,17 @@
 
 | Area | Passed | Failed | Not Tested |
 |------|--------|--------|------------|
-| Authentication | 2 | 0 | 4 |
+| Authentication | 6 | 0 | 0 |
 | Models CRUD | 5 | 0 | 0 |
 | Users CRUD | 4 | 0 | 1 |
 | Tenants CRUD | 4 | 0 | 0 |
 | Tools CRUD | 4 | 0 | 0 |
 | Templates CRUD | 4 | 0 | 0 |
-| Skills CRUD | 3 | 0 | 1 |
-| Analytics & Settings | 0 | 0 | 2 |
-| Session Management | 5 | 0 | 1 |
-| Chat Messaging | 3 | 0 | 4 |
-| **TOTAL** | **34** | **0** | **13** |
+| Skills CRUD | 4 | 0 | 0 |
+| Analytics & Settings | 2 | 0 | 0 |
+| Session Management | 6 | 0 | 0 |
+| Chat Messaging | 7 | 0 | 0 |
+| **TOTAL** | **46** | **0** | **1** |
 
 ---
 
@@ -148,6 +148,9 @@
 | B2 | 🟡 Medium | Templates | DELETE fails with FK constraint error | ✅ Fixed — clear sessions.selected_template_id before delete |
 | B3 | 🟡 Medium | Skills | CREATE fails — execution_type enum mismatch | ✅ Fixed — added prompt_based/workflow_based to DB enum |
 | B4 | 🔴 Critical | Chat | 404 from DeepSeek API — OpenAIChatClient uses Responses API | ✅ Fixed — switched to OpenAIChatCompletionClient + /v1 URL |
+| B5 | 🟡 Medium | Templates | Template form doesn't require description but backend does (422 error) | ✅ Fixed — added required rule to description field in TemplateForm.tsx |
+| B6 | 🔴 Critical | Prompts | New prompt creates with PUT /prompts/undefined instead of POST (404) | ✅ Fixed — PromptLibrary handleSave checks editingPrompt?.id not editingPrompt |
+| B7 | 🟡 Medium | Prompts | Prompt form doesn't require description but backend does | ✅ Fixed — added required rule to description field in PromptLibrary.tsx |
 
 ---
 
@@ -163,6 +166,9 @@
 8. **Fixed skill execution_type enum (B3)** — Added prompt_based/workflow_based to DB enum
 9. **Fixed DeepSeek API client (B4)** — Switched from OpenAIChatClient (Responses API) to OpenAIChatCompletionClient (Chat Completions API) with /v1 URL suffix
 10. **Fixed runner execution_type normalization** — Maps workflow_based→workflow, prompt_based→agent
+11. **Fixed template description required (B5)** — Added required rule to TemplateForm.tsx description field
+12. **Fixed prompt create routing bug (B6)** — handleSave now checks editingPrompt?.id instead of truthy editingPrompt
+13. **Fixed prompt description required (B7)** — Added required rule to PromptLibrary.tsx description field
 
 ---
 
