@@ -21,25 +21,26 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 0 — Monorepo Scaffold
+## ✅ Phase 0 — Monorepo Scaffold (Completed)
 
-**What gets built:**
+**What was built:**
 - Repository directory structure: `/backend`, `/frontend`, `/infrastructure`, `/docs`
 - `Dockerfile` for backend (Python/FastAPI)
 - `Dockerfile` for frontend (Node/React)
-- `docker-compose.yml` with all services: backend, frontend, mariadb, redis, minio, nginx
+- `docker-compose.yml` (dev) and `docker-compose.prod.yml` (production) with all services: backend, frontend, mariadb, redis, minio, nginx, phpMyAdmin
 - `infrastructure/env.example` with all required env vars
-- `infrastructure/nginx.conf` (basic reverse proxy, SSE-ready)
+- `infrastructure/nginx.conf` (basic reverse proxy, SSE-ready, phpMyAdmin route)
+- `.gitignore`
 - MariaDB, Redis, and MinIO health checks passing
-- Backend container starts, reaches the `alembic upgrade head` step (no migrations yet — just no crash)
+- Backend container starts, reaches the `alembic upgrade head` step (no migrations yet — no crash)
 
-**Entry condition:** Repository created.
-
-**Exit condition (done when):**
-- `docker compose up --build` starts all containers without errors
-- `docker compose ps` shows all services healthy
-- nginx routes `/api/` to backend and `/` to frontend
-- MinIO console reachable at `:9001` in development
+**Exit condition verified:**
+- ✅ `docker compose up --build` starts all containers without errors
+- ✅ `docker compose ps` shows all 7 services healthy
+- ✅ nginx routes `/` to frontend (200), `/api/` to backend (backend responds), `/pma/` to phpMyAdmin
+- ✅ MinIO console reachable at `:9001` (200)
+- ✅ Alembic runs cleanly: "Context impl MySQLImpl"
+- ✅ phpMyAdmin reachable at `:8080`
 
 **References:** [deployment.md](../deployment.md), [architecture-overview.md](../architecture-overview.md)
 
