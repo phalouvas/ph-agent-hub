@@ -289,9 +289,31 @@ Optional vector DB integration (Qdrant, Milvus, etc.).
 
 ---
 
-# 5. Audit & Logging
+# 5. File Uploads
 
-## 5.1 Usage Logs
+Files are stored in MinIO (S3-compatible object storage). The `file_uploads` table tracks metadata; the actual objects live in MinIO.
+
+**Table: file_uploads**
+- id (UUID, PK)
+- tenant_id (UUID, FK → tenants.id)
+- user_id (UUID, FK → users.id)
+- session_id (UUID, FK → sessions.id, nullable)
+- message_id (UUID, FK → messages.id, nullable) — linked after the message is persisted
+- original_filename (string)
+- content_type (string) — MIME type
+- size_bytes (int)
+- storage_key (string) — full object key within the tenant bucket
+- bucket (string) — MinIO bucket name
+- is_temporary (boolean, default false) — mirrors the parent session's temporary flag
+- created_at (timestamp)
+
+> Uploads are blocked for temporary sessions at the API level. The `is_temporary` flag is stored for auditing purposes only.
+
+---
+
+# 6. Audit & Logging
+
+## 6.1 Usage Logs
 
 Tracks model usage for analytics and quotas.
 
@@ -306,7 +328,7 @@ Tracks model usage for analytics and quotas.
 
 ---
 
-# 6. Relationships Summary
+# 7. Relationships Summary
 
 ```
 Tenant
@@ -322,14 +344,15 @@ Tenant
  ├── Sessions (permanent or temporary)
  │     ├── Messages (branching tree)
  │     │     └── Message Feedback
- │     └── Session Active Tools
+ │     ├── Session Active Tools
+ │     └── File Uploads
  ├── Memory (per user, optionally per session)
  └── RAG Documents
 ```
 
 ---
 
-# 7. Goals of the Data Model
+# 8. Goals of the Data Model
 
 - Support multi‑tenant isolation
 - Support three-tier role model (admin, manager, user)

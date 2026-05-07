@@ -10,7 +10,7 @@ The frontend is a single React application with two protected product areas:
 - **Chat Area** for end users
 - **Admin Area** for administrators
 
-The platform is fully containerized using Docker and includes supporting services such as MariaDB and Redis.
+The platform is fully containerized using Docker and includes supporting services such as MariaDB, Redis, and MinIO.
 
 ---
 
@@ -115,6 +115,7 @@ PH Agent Hub is deployed as a set of Docker services:
 - **frontend** — single React web app containing chat and admin areas
 - **mariadb** — primary relational database
 - **redis** — caching, queues, memory store
+- **minio** — object storage for file uploads (S3-compatible)
 - **optional vector DB** — for RAG
 - **nginx** — reverse proxy
 
@@ -176,5 +177,6 @@ Additional documentation is provided in:
 - [deepseek-stabilizer.md](deepseek-stabilizer.md)
 - [agent-framework-integration.md](agent-framework-integration.md)
 - [streaming-protocol.md](streaming-protocol.md)
+- [file-upload-architecture.md](file-upload-architecture.md)
 
 These documents define the detailed implementation plan for PH Agent Hub.

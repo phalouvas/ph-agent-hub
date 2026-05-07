@@ -107,6 +107,7 @@ The backend is designed to be fully patchable:
 │               Persistence Layer              │
 │  - MariaDB (primary DB)                      │
 │  - Redis (cache, queues, memory)             │
+│  - MinIO (object storage for file uploads)   │
 │  - Optional vector DB                        │
 └──────────────────────────────────────────────┘
 ```
@@ -138,7 +139,15 @@ DELETE /chat/session/:id
 GET    /chat/sessions/search
 ```
 
-### **3.3 User-Facing Configuration**
+### **3.3 File Uploads**
+```
+POST   /chat/session/:id/upload
+GET    /chat/session/:id/uploads
+GET    /chat/session/:id/upload/:fileId/url
+DELETE /chat/session/:id/upload/:fileId
+```
+
+### **3.4 User-Facing Configuration**
 ```
 GET  /models
 GET  /templates
@@ -152,14 +161,14 @@ PUT  /skills/:id
 DELETE /skills/:id
 ```
 
-### **3.4 Memory**
+### **3.5 Memory**
 ```
 GET    /memory
 POST   /memory
 DELETE /memory/:id
 ```
 
-### **3.5 Session Tools**
+### **3.6 Session Tools**
 ```
 GET    /chat/session/:id/tools
 POST   /chat/session/:id/tools/:toolId
@@ -248,6 +257,8 @@ GET /admin/logs
       erpnext.py
       membrane.py
       custom/
+    /storage
+      s3.py              — all MinIO/boto3 interactions; single module rule
     /services
       user_service.py
       tenant_service.py
@@ -269,6 +280,7 @@ GET /admin/logs
         sessions.py
         messages.py
         memory.py
+        file_uploads.py
         rag.py
         logs.py
       /migrations          — Alembic migration scripts

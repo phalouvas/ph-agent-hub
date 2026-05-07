@@ -53,7 +53,7 @@ The deployment uses a multi-container setup:
                                 ▼
 ┌──────────────────────────────────────────────┐
 │                Data Layer                    │
-│  MariaDB     Redis     Vector DB (optional)  │
+│  MariaDB  Redis  MinIO  Vector DB (optional)  │
 └──────────────────────────────────────────────┘
 ```
 
@@ -110,6 +110,23 @@ services:
     volumes:
       - redis_data:/data
 
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"  # MinIO web console (dev only; remove in production)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Optional vector DB
   # qdrant:
   #   image: qdrant/qdrant
@@ -130,6 +147,7 @@ services:
 volumes:
   mariadb_data:
   redis_data:
+  minio_data:
 ```
 
 ---
@@ -141,6 +159,14 @@ All services share a common `.env` file:
 ```
 DATABASE_URL=mysql://phhub:phhub@mariadb:3306/phhub
 REDIS_URL=redis://redis:6379/0
+
+MINIO_ENDPOINT=http://minio:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET_PREFIX=phhub-tenant
+
+UPLOAD_MAX_SIZE_BYTES=20971520
+UPLOAD_ALLOWED_TYPES=text/plain,text/csv,text/markdown,application/pdf,application/json,image/png,image/jpeg,image/gif,image/webp
 
 JWT_SECRET=your-secret-key
 JWT_EXPIRES_IN=3600
