@@ -1,3 +1,18 @@
+# Prompt
+You are implementing PH Agent Hub, a multi-tenant AI agent platform. Read all the documentation carefully before producing anything.
+
+Task: Produce a detailed implementation plan for Phase X — BLA BLA BLA
+
+The plan must:
+
+List every file to create, in the order it should be created
+For each file: the exact path, its purpose, what it must contain, and any constraints from the architecture docs (e.g. single-module rules)
+Note dependencies between files (e.g. "encryption.py must exist before running the first migration")
+List any third-party packages required with exact names
+End with the exact steps to verify the exit condition is met
+Do not write code yet. Do not make decisions that are already made in the docs — follow the docs exactly. If you find a conflict or ambiguity in the docs, flag it instead of resolving it silently.
+
+
 # Implementation Phases — PH Agent Hub
 
 This document defines the implementation order for PH Agent Hub. Each phase has a clear entry condition, a definition of done, and references to the architecture docs it implements.
