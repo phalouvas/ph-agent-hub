@@ -197,10 +197,48 @@ Refine should not define the architecture of the chat area.
 
 ---
 
-## 10. Goals of the Frontend Architecture
+## 10. Mobile Support and Progressive Web App (PWA)
+
+The frontend is designed to be mobile-friendly and installable as a PWA on Android and iOS devices.
+
+### **10.1 Responsive Design**
+- All chat area layouts must be responsive and usable on small screens
+- TailwindCSS responsive prefixes (`sm:`, `md:`, `lg:`) are the primary tool for adaptive layouts
+- The admin area should be functional on tablet and above; full mobile optimization is secondary for admin screens
+
+### **10.2 PWA Requirements**
+The frontend must ship as a valid PWA. The required artifacts are:
+
+- **`manifest.json`** — declares app name, short name, icons (192×192 and 512×512 PNG), theme color, background color, and `display: "standalone"`
+- **Service Worker** — handles asset caching and enables offline shell loading; use `vite-plugin-pwa` (Workbox-based) to generate this automatically
+- **HTTPS** — required for PWA installation and already mandatory for JWT authentication
+
+### **10.3 Installation Behavior**
+
+| Platform | Browser | Install mechanism |
+|---|---|---|
+| Android | Chrome | Automatic install prompt when manifest + service worker are detected |
+| iOS | Safari | Manual: user taps Share → "Add to Home Screen" |
+| Desktop | Chrome / Edge | Install button appears in the address bar |
+
+On Android, Chrome automatically shows an install prompt. On iOS, installation is manual through Safari's Share menu — this is an OS-level constraint and cannot be changed.
+
+### **10.4 PWA Scope**
+The PWA install targets the **Chat Area** as the primary experience. The admin area is accessible once installed but is not the primary mobile use case.
+
+### **10.5 Implementation Notes**
+- Use `vite-plugin-pwa` to generate the service worker and manifest during the build
+- Cache the app shell (HTML, JS, CSS) for fast load on repeat visits
+- Do not cache backend API responses in the service worker; data freshness is handled by TanStack Query
+- Push notifications (for agent completion events) are supported on Android and on iOS 16.4+
+
+---
+
+## 11. Goals of the Frontend Architecture
 
 - keep the frontend thin and backend-driven
 - avoid maintaining two separate frontend applications
 - share authentication, routing, and UI foundations
 - preserve strong separation between chat and admin experiences
 - support future prompt, skill, and agent UX without re-architecting the app
+- deliver a mobile-friendly, installable experience through PWA support
