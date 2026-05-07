@@ -40,11 +40,13 @@ async def create_model(
     max_tokens: int = 4096,
     temperature: float = 0.7,
     routing_priority: int = 0,
+    model_id: str | None = None,
 ) -> Model:
     """Create a new model. api_key is transparently encrypted by the ORM."""
     model = Model(
         tenant_id=tenant_id,
         name=name,
+        model_id=model_id,
         provider=provider,
         api_key=api_key,
         base_url=base_url,

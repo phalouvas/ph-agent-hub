@@ -166,6 +166,7 @@ class UserResponse(BaseModel):
 
 class ModelCreate(BaseModel):
     name: str
+    model_id: str | None = None
     provider: str
     api_key: str
     base_url: str | None = None
@@ -177,6 +178,7 @@ class ModelCreate(BaseModel):
 
 class ModelUpdate(BaseModel):
     name: str | None = None
+    model_id: str | None = None
     provider: str | None = None
     api_key: str | None = None
     base_url: str | None = None
@@ -190,6 +192,7 @@ class ModelResponse(BaseModel):
     id: str
     tenant_id: str
     name: str
+    model_id: str | None
     provider: str
     base_url: str | None
     enabled: bool
@@ -506,6 +509,7 @@ async def create_model(
         db,
         tenant_id=current_user.tenant_id,
         name=body.name,
+        model_id=body.model_id,
         provider=body.provider,
         api_key=body.api_key,
         base_url=body.base_url,

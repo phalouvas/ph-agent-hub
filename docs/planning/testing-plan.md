@@ -22,11 +22,11 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 2.1 | **CREATE** — Add a new model (deepseek-v4-flash) via form | ⬜ | |
-| 2.2 | **READ** — Model appears in the list after creation | ⬜ | |
-| 2.3 | **UPDATE** — Edit model fields (name, URL, API key) | ⬜ | |
-| 2.4 | **DELETE** — Remove a model | ⬜ | |
-| 2.5 | Model form validation (required fields) | ⬜ | |
+| 2.1 | **CREATE** — Add a new model (deepseek-v4-flash) via form | ✅ | |
+| 2.2 | **READ** — Model appears in the list after creation | ✅ | |
+| 2.3 | **UPDATE** — Edit model fields (name, URL, API key) | ✅ | Max Tokens 4096→8192 |
+| 2.4 | **DELETE** — Remove a model | ✅ | Confirmation popover works |
+| 2.5 | Model form validation (required fields) | ⚠️ | No client-side error shown, but empty submit was rejected |
 
 ---
 
@@ -127,7 +127,7 @@
 | Area | Passed | Failed | Not Tested |
 |------|--------|--------|------------|
 | Authentication | 0 | 0 | 6 |
-| Models CRUD | 0 | 0 | 5 |
+| Models CRUD | 4 | 0 | 1 |
 | Users CRUD | 0 | 0 | 5 |
 | Tenants CRUD | 0 | 0 | 4 |
 | Tools CRUD | 0 | 0 | 4 |
@@ -136,7 +136,7 @@
 | Analytics & Settings | 0 | 0 | 2 |
 | Session Management | 0 | 0 | 6 |
 | Chat Messaging | 0 | 0 | 7 |
-| **TOTAL** | **0** | **0** | **47** |
+| **TOTAL** | **4** | **0** | **43** |
 
 ---
 
