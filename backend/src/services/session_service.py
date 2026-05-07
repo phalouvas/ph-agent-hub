@@ -93,13 +93,40 @@ async def update_session(
 
 
 async def delete_session(db: AsyncSession, session_id: str) -> None:
-    """Delete a session by ID (cascades to messages via FK).
+    """Delete a session by ID.
 
-    Raises NotFoundError if missing.
+    Clears FK references from messages and session_active_tools,
+    then deletes the session. Raises NotFoundError if missing.
     """
+    from sqlalchemy import delete as sa_delete
+    from ..db.orm.messages import Message
+    from ..db.orm.sessions import SessionActiveTool
+
     session = await get_session_by_id(db, session_id)
     if session is None:
         raise NotFoundError("Session not found")
+
+    # Clear FK references before deleting the session.
+    # 1. Null out parent_message_id self-references within this session
+    from sqlalchemy import update as sa_update
+    await db.execute(
+        sa_update(Message)
+        .where(Message.session_id == session_id)
+        .values(parent_message_id=None)
+    )
+    await db.flush()
+
+    # 2. Delete all messages in this session
+    await db.execute(
+        sa_delete(Message).where(Message.session_id == session_id)
+    )
+    # 3. Delete active tool associations
+    await db.execute(
+        sa_delete(SessionActiveTool).where(
+            SessionActiveTool.session_id == session_id
+        )
+    )
+    await db.flush()
 
     await db.delete(session)
     await db.commit()
