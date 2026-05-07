@@ -101,7 +101,7 @@ export function PromptLibrary({
 
   const handleSave = async () => {
     const values = await form.validateFields();
-    if (editingPrompt) {
+    if (editingPrompt?.id) {
       await updateMutation.mutateAsync({ id: editingPrompt.id, data: values });
     } else {
       await createMutation.mutateAsync(values);
@@ -221,7 +221,11 @@ export function PromptLibrary({
             >
               <Input />
             </Form.Item>
-            <Form.Item name="description" label="Description">
+            <Form.Item
+              name="description"
+              label="Description"
+              rules={[{ required: true }]}
+            >
               <TextArea rows={2} />
             </Form.Item>
             <Form.Item
