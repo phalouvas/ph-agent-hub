@@ -52,7 +52,7 @@ Those responsibilities remain in the backend.
 
 ### **2.4 Controlled Specialization**
 - Chat area uses fully custom React components
-- Admin area may use Refine Core where it accelerates CRUD-heavy screens
+- Admin area uses Ant Design 5 components with responsive Table/Card layouts
 - Analytics, logs, and agent-specific operational views remain custom when needed
 
 ---
@@ -67,7 +67,6 @@ Recommended stack:
 - **TanStack Query** for data fetching and mutations
 - **SSE** ([`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source)) for streaming responses and agent events — see [streaming-protocol.md](streaming-protocol.md)
 - **Ant Design 5** — the design system for both chat and admin areas
-- **Refine Core** for the admin area only
 
 The frontend should remain framework-light and avoid duplicating backend behavior.
 
