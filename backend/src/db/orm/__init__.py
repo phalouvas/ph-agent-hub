@@ -1,0 +1,46 @@
+# =============================================================================
+# PH Agent Hub — ORM Package
+# =============================================================================
+# Import all model modules so Alembic's env.py can discover table metadata
+# with a single `from db.orm import *`.
+#
+# Import order follows FK dependency order to avoid circular import issues.
+# =============================================================================
+
+from .tenants import Tenant
+from .users import User
+from .models import Model
+from .tools import Tool
+from .erpnext_instances import ERPNextInstance
+from .templates import Template, TemplateAllowedTool
+from .prompts import Prompt
+from .skills import Skill, SkillAllowedTool
+from .sessions import Session, SessionActiveTool
+from .messages import Message, MessageFeedback
+from .memory import Memory
+from .file_uploads import FileUpload
+from .rag import RAGDocument
+from .usage_logs import UsageLog
+from .audit_logs import AuditLog
+
+__all__ = [
+    "Tenant",
+    "User",
+    "Model",
+    "Tool",
+    "ERPNextInstance",
+    "Template",
+    "TemplateAllowedTool",
+    "Prompt",
+    "Skill",
+    "SkillAllowedTool",
+    "Session",
+    "SessionActiveTool",
+    "Message",
+    "MessageFeedback",
+    "Memory",
+    "FileUpload",
+    "RAGDocument",
+    "UsageLog",
+    "AuditLog",
+]
