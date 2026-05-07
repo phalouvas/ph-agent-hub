@@ -1,67 +1,81 @@
 # PH Agent Hub — Architecture Overview
 
-PH Agent Hub is a modular, multi‑tenant AI platform designed to provide a stable, extensible environment for agent‑driven applications. The system is structured as a monorepo containing three core applications:
+PH Agent Hub is a modular, multi-tenant AI platform designed to provide a stable, extensible environment for agent-driven applications. The system is structured as a monorepo containing two core applications:
 
 - **Backend (Agent Framework Server)**
-- **User Chat UI**
-- **Admin Management UI**
+- **Frontend (React Web App)**
+
+The frontend is a single React application with two protected product areas:
+
+- **Chat Area** for end users
+- **Admin Area** for administrators
 
 The platform is fully containerized using Docker and includes supporting services such as MariaDB and Redis.
 
 ---
 
-## 1. High‑Level Architecture
+## 1. High-Level Architecture
 
 PH Agent Hub is built around a clean separation of responsibilities:
 
-### **1. Backend (Agent Framework Server)**
+### **1.1 Backend (Agent Framework Server)**
 The backend is the core of the platform. It provides:
 
-- Multi‑model orchestration (DeepSeek, OpenAI, Anthropic, etc.)
-- Agent loop execution and tool calling
-- DeepSeek‑compatible stabilization layer (JSON repair, retry logic, output filtering)
-- Multi‑tenant routing
-- User authentication (JWT)
-- Session + message storage
-- Memory + RAG
+- Agent execution using the Microsoft Agent Framework
+- Multi-model orchestration (DeepSeek, OpenAI, Anthropic, etc.)
+- Tool calling and workflow coordination
+- DeepSeek-compatible stabilization layer (JSON repair, retry logic, output filtering)
+- Multi-tenant routing
+- User authentication and authorization (JWT)
+- Session and message storage
+- Memory and RAG
 - ERPNext and external system integrations (via tools)
-- REST API for both UIs
+- REST and streaming APIs consumed by the frontend
 
 The backend is fully patchable and extensible, allowing custom model adapters, tool runners, and agent behaviors.
 
----
+### **1.2 Frontend (React Web App)**
+The frontend is a single deployable React application that shares:
 
-## 2. User Chat UI
+- authentication and token refresh logic
+- API client and request handling
+- tenant context and capability loading
+- design system and shared components
+- route guards and role-based navigation
 
-A lightweight, modern chat interface used by end‑users.  
-It provides:
-
-- Chat sessions
-- Model selection
-- Template prompt selection
-- File uploads
-- Memory display
-- Authentication via backend‑issued JWT
-- Real‑time streaming responses
-
-The Chat UI contains **no admin logic** and does not store any data locally.
+The frontend does **not** run agents directly. It acts as a thin client over the backend and the Microsoft Agent Framework runtime.
 
 ---
 
-## 3. Admin Management UI
+## 2. Chat Area
 
-A dedicated control panel for platform administrators.  
-It provides:
+The chat area is the end-user experience inside the frontend web app. It provides:
 
-- User management (create, delete, roles)
-- Tenant management
-- Model configuration (API keys, routing rules, enable/disable)
-- Tool configuration (ERPNext instances, Membrane, custom tools)
-- Template prompt management
-- Usage analytics and logs
-- System configuration
+- chat sessions and history
+- model selection
+- template, prompt, and skill selection
+- file uploads
+- memory display
+- authentication via backend-issued JWT
+- real-time streaming responses and agent events
 
-This UI communicates exclusively with the backend API.
+The chat area contains no administrative logic.
+
+---
+
+## 3. Admin Area
+
+The admin area is the operational control surface inside the same frontend web app. It provides:
+
+- user management
+- tenant management
+- model configuration
+- tool configuration
+- template and skill management
+- usage analytics and logs
+- system configuration
+
+This area is role-protected and communicates exclusively with the backend API.
 
 ---
 
@@ -71,13 +85,12 @@ The repository is organized as:
 
 ```
 /backend
-/chat-ui
-/admin-ui
+/frontend
 /infrastructure
 /docs
 ```
 
-Each component has its own Dockerfile and is orchestrated via `docker-compose`.
+Each application has its own Dockerfile and is orchestrated via `docker compose`.
 
 ---
 
@@ -86,18 +99,17 @@ Each component has its own Dockerfile and is orchestrated via `docker-compose`.
 PH Agent Hub is deployed as a set of Docker services:
 
 - **backend** — Agent Framework server
-- **chat-ui** — user-facing chat interface
-- **admin-ui** — administrator interface
+- **frontend** — single React web app containing chat and admin areas
 - **mariadb** — primary relational database
 - **redis** — caching, queues, memory store
 - **optional vector DB** — for RAG
 - **nginx** — reverse proxy
 
-This structure supports both single‑server and multi‑server deployments.
+This structure supports both single-server and multi-server deployments.
 
 ---
 
-## 6. Multi‑Tenant Design
+## 6. Multi-Tenant Design
 
 The backend supports multiple tenants, each with:
 
@@ -105,13 +117,14 @@ The backend supports multiple tenants, each with:
 - isolated models
 - isolated tools
 - isolated ERPNext instances (optional)
-- isolated template prompts
+- isolated templates, prompts, and skills
+- isolated sessions and memory
 
-Tenants are enforced at the backend level using JWT claims.
+Tenants are enforced at the backend level using JWT claims and backend authorization rules.
 
 ---
 
-## 7. Extensibility and Monkey‑Patching
+## 7. Extensibility and Monkey-Patching
 
 PH Agent Hub is designed to allow:
 
@@ -129,11 +142,11 @@ This ensures compatibility with evolving LLM behaviors and enterprise integratio
 
 PH Agent Hub aims to provide:
 
-- A stable alternative to monolithic chat systems
-- A clean architecture for agent‑driven workflows
-- A flexible backend for multi‑model orchestration
-- A scalable foundation for enterprise AI applications
-- A modular system that can be extended without breaking core functionality
+- a stable alternative to monolithic chat systems
+- a clean architecture for agent-driven workflows
+- a flexible backend for multi-model orchestration
+- a scalable foundation for enterprise AI applications
+- a modular system that can be extended without breaking core functionality
 
 ---
 
@@ -142,9 +155,10 @@ PH Agent Hub aims to provide:
 Additional documentation is provided in:
 
 - `backend-architecture.md`
+- `frontend-architecture.md`
+- `chat-area-architecture.md`
+- `admin-area-architecture.md`
 - `data-model.md`
-- `admin-ui-architecture.md`
-- `chat-ui-architecture.md`
 - `deployment.md`
 - `deepseek-stabilizer.md`
 

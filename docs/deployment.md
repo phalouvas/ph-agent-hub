@@ -1,17 +1,15 @@
 # Deployment Guide — PH Agent Hub
 
-This document describes how PH Agent Hub is deployed using Docker, Docker Compose, and optional reverse‑proxy components.  
-The platform is designed for simple local development as well as scalable production deployment.
+This document describes how PH Agent Hub is deployed using Docker, Docker Compose, and optional reverse-proxy components. The platform is designed for simple local development as well as scalable production deployment.
 
 ---
 
 # 1. Deployment Overview
 
-PH Agent Hub is deployed as a **multi‑service Docker stack** consisting of:
+PH Agent Hub is deployed as a multi-service Docker stack consisting of:
 
 - **Backend** — Agent Framework server
-- **Chat UI** — user‑facing interface
-- **Admin UI** — administrator interface
+- **Frontend** — single React web app containing chat and admin areas
 - **MariaDB** — primary relational database
 - **Redis** — caching, queues, memory store
 - **Optional Vector DB** — for RAG (Qdrant, Milvus, Weaviate)
@@ -31,25 +29,25 @@ All services run inside a single Docker Compose environment.
   scripts/
 ```
 
-Each application (backend, chat-ui, admin-ui) contains its own Dockerfile.
+Each application (`backend`, `frontend`) contains its own Dockerfile.
 
 ---
 
 # 3. Docker Compose Architecture
 
-The deployment uses a multi‑container setup:
+The deployment uses a multi-container setup:
 
 ```
 ┌──────────────────────────────────────────────┐
 │                  Nginx Proxy                 │
-│  - SSL termination                            │
-│  - Routing to backend, chat-ui, admin-ui     │
+│  - SSL termination                           │
+│  - Routing to backend and frontend           │
 └───────────────────────────────┬──────────────┘
                                 │
                                 ▼
 ┌──────────────────────────────────────────────┐
 │                Application Layer             │
-│  backend     chat-ui     admin-ui            │
+│               backend     frontend           │
 └───────────────────────────────┬──────────────┘
                                 │
                                 ▼
@@ -78,21 +76,13 @@ services:
     ports:
       - "8000:8000"
 
-  chat-ui:
-    build: ../chat-ui
+  frontend:
+    build: ../frontend
     env_file: ./env
     depends_on:
       - backend
     ports:
       - "3000:3000"
-
-  admin-ui:
-    build: ../admin-ui
-    env_file: ./env
-    depends_on:
-      - backend
-    ports:
-      - "3001:3001"
 
   mariadb:
     image: mariadb:11
@@ -127,8 +117,7 @@ services:
       - "443:443"
     depends_on:
       - backend
-      - chat-ui
-      - admin-ui
+      - frontend
 
 volumes:
   mariadb_data:
@@ -154,11 +143,13 @@ OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 ```
 
-Each UI may also include:
+The frontend may also include:
 
 ```
-VITE_API_URL=http://backend:8000
+VITE_API_URL=/api
 ```
+
+Using a relative API base keeps the frontend deployment simple behind a reverse proxy.
 
 ---
 
@@ -177,18 +168,16 @@ http {
       proxy_pass http://backend:8000/;
     }
 
-    location /chat/ {
-      proxy_pass http://chat-ui:3000/;
-    }
-
-    location /admin/ {
-      proxy_pass http://admin-ui:3001/;
+    location / {
+      proxy_pass http://frontend:3000/;
     }
   }
 }
 ```
 
-In production, SSL termination should be added (Let’s Encrypt or custom certificates).
+The frontend router handles `/chat/*` and `/admin/*` inside the same web app.
+
+In production, SSL termination should be added.
 
 ---
 
@@ -215,8 +204,8 @@ Recommended options:
 - Can be horizontally scaled
 - Stateless except for DB + Redis
 
-### **Chat UI / Admin UI**
-- Pure static frontends
+### **Frontend**
+- Static or SPA-style web frontend
 - Easily replicated
 
 ### **MariaDB**
@@ -226,7 +215,7 @@ Recommended options:
 - Use persistent storage or managed Redis
 
 ### **Vector DB**
-- Optional but recommended for RAG
+- Optional but recommended for RAG-heavy deployments
 
 ---
 
@@ -248,10 +237,10 @@ Recommended options:
 
 # 10. Goals of the Deployment Architecture
 
-- Simple local development
-- Clean production deployment
-- Full isolation between services
-- Easy scaling
-- Secure API routing
-- Support for multi‑tenant workloads
-- Support for DeepSeek‑compatible agent workflows
+- simple local development
+- clean production deployment
+- one backend and one frontend deployable
+- easy scaling
+- secure API routing
+- support for multi-tenant workloads
+- support for Microsoft Agent Framework-based workflows

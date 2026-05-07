@@ -10,7 +10,7 @@ The data model supports:
 - user/role management
 - model and tool configuration
 - ERPNext instance routing
-- template prompts
+- curated templates, user prompts, and reusable skills
 - chat sessions and messages
 - memory and RAG documents
 
@@ -43,6 +43,8 @@ Tenants isolate:
 - tools
 - ERPNext instances
 - templates
+- prompts
+- skills
 - sessions
 
 **Table: tenants**
@@ -105,22 +107,26 @@ Stored as a tool config, but also available as a dedicated table for convenience
 
 ---
 
-# 2. Templates & Prompts
+# 2. Templates, Prompts & Skills
 
-## 2.1 Template Prompts
+## 2.1 Templates
+
+Templates are curated prompt assets managed by administrators. They provide approved starting configurations for end users and skills.
 
 Templates can be:
-- global to tenant
-- user‑specific
+- tenant‑wide
+- role‑restricted
+- explicitly assigned to a specific user
 
 **Table: templates**
 - id (UUID, PK)
 - tenant_id (UUID, FK → tenants.id)
-- user_id (UUID, FK → users.id, nullable)
 - title (string)
 - description (string)
 - system_prompt (text)
 - default_model_id (UUID, FK → models.id, nullable)
+- scope (enum: tenant, role, user)
+- assigned_user_id (UUID, FK → users.id, nullable)
 - created_at (timestamp)
 - updated_at (timestamp)
 
@@ -128,6 +134,51 @@ Allowed tools are normalized through a join table rather than stored as a JSON a
 
 **Table: template_allowed_tools**
 - template_id (UUID, FK → templates.id)
+- tool_id (UUID, FK → tools.id)
+- created_at (timestamp)
+
+## 2.2 Prompts
+
+Prompts are reusable user-authored instruction assets. They are personal by default, but the model allows future tenant sharing.
+
+**Table: prompts**
+- id (UUID, PK)
+- tenant_id (UUID, FK → tenants.id)
+- user_id (UUID, FK → users.id)
+- template_id (UUID, FK → templates.id, nullable)
+- title (string)
+- description (string)
+- content (text)
+- visibility (enum: private, tenant)
+- created_at (timestamp)
+- updated_at (timestamp)
+
+## 2.3 Skills
+
+Skills are reusable execution profiles for the Microsoft Agent Framework. A skill can point to a registered agent or workflow and bundle together defaults such as model, prompt, template, and allowed tools.
+
+Skills can be:
+- tenant‑shared and administrator managed
+- user‑specific and privately owned
+
+**Table: skills**
+- id (UUID, PK)
+- tenant_id (UUID, FK → tenants.id)
+- user_id (UUID, FK → users.id, nullable)
+- title (string)
+- description (string)
+- execution_type (enum: agent, workflow)
+- maf_target_key (string) — registered Microsoft Agent Framework agent or workflow identifier
+- template_id (UUID, FK → templates.id, nullable)
+- default_prompt_id (UUID, FK → prompts.id, nullable)
+- default_model_id (UUID, FK → models.id, nullable)
+- visibility (enum: tenant, user)
+- enabled (boolean)
+- created_at (timestamp)
+- updated_at (timestamp)
+
+**Table: skill_allowed_tools**
+- skill_id (UUID, FK → skills.id)
 - tool_id (UUID, FK → tools.id)
 - created_at (timestamp)
 
@@ -144,6 +195,9 @@ A session belongs to a user and a tenant.
 - tenant_id (UUID, FK → tenants.id)
 - user_id (UUID, FK → users.id)
 - title (string)
+- selected_template_id (UUID, FK → templates.id, nullable)
+- selected_prompt_id (UUID, FK → prompts.id, nullable)
+- selected_skill_id (UUID, FK → skills.id, nullable)
 - created_at (timestamp)
 - updated_at (timestamp)
 
@@ -222,6 +276,9 @@ Tenant
  │     └── ERPNext Instances
  ├── Templates
  │     └── Template Allowed Tools
+ ├── Prompts
+ ├── Skills
+ │     └── Skill Allowed Tools
  ├── Sessions
  │     └── Messages
  ├── Memory
@@ -234,6 +291,7 @@ Tenant
 
 - Support multi‑tenant isolation
 - Support flexible model and tool configuration
+- Support curated templates, personal prompts, and reusable skills
 - Enable DeepSeek‑compatible agent workflows
 - Provide clean storage for sessions, messages, and memory
 - Allow future expansion (billing, quotas, analytics)

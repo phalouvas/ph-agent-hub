@@ -1,2 +1,2 @@
 # ph-agent-hub
-PH Agent Hub is a modular AI platform with a Chat UI for users and an Admin UI for managing models, tools, tenants, and users. Powered by a flexible agent backend, it supports multi‑tenant setups, DeepSeek‑compatible workflows, and Docker‑based deployment.
+PH Agent Hub is a modular AI platform with a single React web app that contains a chat area for users and an admin area for managing models, tools, tenants, and users. Powered by a Microsoft Agent Framework-based backend, it supports multi-tenant setups, DeepSeek-compatible workflows, and Docker-based deployment.

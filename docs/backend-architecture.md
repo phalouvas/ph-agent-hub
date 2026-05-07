@@ -1,8 +1,8 @@
 # Backend Architecture — PH Agent Hub
 
-The backend of PH Agent Hub is the core service responsible for agent execution, model orchestration, tool integration, authentication, multi‑tenant routing, and all persistent data operations. It exposes a clean REST API consumed by both the Chat UI and the Admin UI.
+The backend of PH Agent Hub is the core service responsible for agent execution, model orchestration, tool integration, authentication, multi-tenant routing, and all persistent data operations. It exposes the APIs and streaming interfaces consumed by the single React frontend, which contains separate chat and admin areas.
 
-This document defines the backend’s responsibilities, internal structure, and integration points.
+This document defines the backend's responsibilities, internal structure, and integration points.
 
 ---
 
@@ -14,7 +14,7 @@ The backend provides the following core capabilities:
 - Runs agent loops using the Microsoft Agent Framework
 - Supports multi‑step reasoning and tool calling
 - Provides a DeepSeek‑compatible stabilization layer (JSON repair, retries, output filtering)
-- Supports streaming responses to the Chat UI
+- Supports streaming responses and agent events to the chat area
 
 ### **1.2 Model Orchestration**
 - Supports multiple model providers (DeepSeek, OpenAI, Anthropic, local models, etc.)
@@ -37,7 +37,7 @@ The backend provides the following core capabilities:
 ### **1.5 Data Storage**
 - Users, roles, tenants
 - Models and tool configurations
-- Template prompts
+- Templates, user prompts, and skills
 - Chat sessions and messages
 - Memory and RAG documents
 - ERPNext instance configurations
@@ -48,6 +48,8 @@ Each request is routed based on:
 - Tenant‑specific model list
 - Tenant‑specific tool list
 - Tenant‑specific ERPNext instance (optional)
+- Tenant‑specific templates and shared skills
+- User‑owned prompts and personal skills within the tenant boundary
 
 ### **1.7 Extensibility**
 The backend is designed to be fully patchable:
@@ -55,6 +57,7 @@ The backend is designed to be fully patchable:
 - DeepSeek monkey‑patching
 - Custom tool runners
 - Custom agent behaviors
+- Skill definitions mapped to Microsoft Agent Framework agents and workflows
 - Middleware for request/response processing
 
 ---
@@ -113,38 +116,76 @@ POST /chat/session
 GET  /chat/session/:id
 POST /chat/session/:id/message
 GET  /chat/session/:id/messages
+GET  /chat/session/:id/stream
+DELETE /chat/session/:id
 ```
 
-### **3.3 Models**
+### **3.3 User-Facing Configuration**
 ```
 GET  /models
-POST /models
-PUT  /models/:id
-DELETE /models/:id
-```
-
-### **3.4 Tools**
-```
-GET  /tools
-POST /tools
-PUT  /tools/:id
-DELETE /tools/:id
-```
-
-### **3.5 Tenants**
-```
-GET  /tenants
-POST /tenants
-PUT  /tenants/:id
-DELETE /tenants/:id
-```
-
-### **3.6 Template Prompts**
-```
 GET  /templates
-POST /templates
-PUT  /templates/:id
-DELETE /templates/:id
+GET  /prompts
+POST /prompts
+PUT  /prompts/:id
+DELETE /prompts/:id
+GET  /skills
+POST /skills
+PUT  /skills/:id
+DELETE /skills/:id
+```
+
+### **3.4 Admin Users**
+```
+GET    /admin/users
+POST   /admin/users
+PUT    /admin/users/:id
+DELETE /admin/users/:id
+```
+
+### **3.5 Admin Tenants**
+```
+GET    /admin/tenants
+POST   /admin/tenants
+PUT    /admin/tenants/:id
+DELETE /admin/tenants/:id
+```
+
+### **3.6 Admin Models**
+```
+GET    /admin/models
+POST   /admin/models
+PUT    /admin/models/:id
+DELETE /admin/models/:id
+```
+
+### **3.7 Admin Tools**
+```
+GET    /admin/tools
+POST   /admin/tools
+PUT    /admin/tools/:id
+DELETE /admin/tools/:id
+```
+
+### **3.8 Admin Templates**
+```
+GET    /admin/templates
+POST   /admin/templates
+PUT    /admin/templates/:id
+DELETE /admin/templates/:id
+```
+
+### **3.9 Admin Skills**
+```
+GET    /admin/skills
+POST   /admin/skills
+PUT    /admin/skills/:id
+DELETE /admin/skills/:id
+```
+
+### **3.10 Admin Analytics**
+```
+GET /admin/usage
+GET /admin/logs
 ```
 
 ---
@@ -157,6 +198,8 @@ DELETE /templates/:id
     /api
       auth.py
       chat.py
+      prompts.py
+      skills.py
       admin.py
     /agents
       runner.py
@@ -177,6 +220,8 @@ DELETE /templates/:id
       model_service.py
       tool_service.py
       template_service.py
+      prompt_service.py
+      skill_service.py
     /db
       schema.sql
       migrations/
@@ -220,7 +265,8 @@ The backend enforces:
 - tenant‑specific model lists
 - tenant‑specific tool lists
 - tenant‑specific ERPNext instance
-- tenant‑specific template prompts
+- tenant‑specific templates and shared skills
+- user‑scoped prompts and personal skills
 
 No data is shared across tenants.
 
@@ -244,6 +290,6 @@ It is designed for both single‑server and multi‑server deployments.
 - Provide a stable, extensible agent runtime
 - Support DeepSeek and other advanced models
 - Enable multi‑tenant AI applications
-- Provide clean APIs for both UIs
+- Provide clean APIs for both frontend areas
 - Allow safe monkey‑patching and customization
 - Maintain strict separation of concerns
