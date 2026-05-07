@@ -46,9 +46,9 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 1 — Backend Foundation
+## ✅ Phase 1 — Backend Foundation (Completed)
 
-**What gets built:**
+**What was built:**
 - FastAPI application skeleton (`src/main.py`, routers registered but empty)
 - `src/core/config.py` — loads and validates all env vars via Pydantic Settings
 - `src/core/encryption.py` — Fernet encrypt/decrypt; single module rule
@@ -57,18 +57,18 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 - `src/core/security.py` — password hashing
 - `src/db/base.py` — SQLAlchemy 2.0 async session factory (`aiomysql`)
 - All SQLAlchemy ORM models under `src/db/orm/` (one file per entity group)
-- First Alembic migration: all tables created
+- First Alembic migration: all 19 tables created
 - `alembic upgrade head` runs cleanly on container startup
 - `src/storage/s3.py` — MinIO client singleton; `upload_object`, `delete_object`, `generate_presigned_url`, `ensure_bucket_exists`
 
 **Entry condition:** Phase 0 complete — all containers healthy.
 
-**Exit condition (done when):**
-- `alembic upgrade head` runs to completion with no errors
-- All tables exist in MariaDB (verified via `SHOW TABLES`)
-- `GET /health` returns `200 OK`
-- Encryption round-trip test passes: encrypt a string, decrypt it, get the original back
-- MinIO bucket creation succeeds from `s3.py`
+**Exit condition verified:**
+- ✅ `alembic upgrade head` runs to completion with no errors
+- ✅ All 19 tables exist in MariaDB (verified via `SHOW TABLES`)
+- ✅ `GET /health` returns `200 OK`
+- ✅ Encryption round-trip test passes: encrypt a string, decrypt it, get the original back
+- ✅ MinIO bucket creation succeeds from `s3.py`
 
 **References:** [backend-architecture.md](../backend-architecture.md), [data-model.md](../data-model.md), [file-upload-architecture.md](../file-upload-architecture.md)
 
