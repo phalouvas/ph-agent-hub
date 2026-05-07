@@ -1,13 +1,14 @@
 # =============================================================================
 # PH Agent Hub — Alembic Environment Configuration
 # =============================================================================
-# Phase 0: No ORM models exist yet. This file reads DATABASE_URL from the
-# environment and configures Alembic. With no migration files in versions/,
-# `alembic upgrade head` simply reports "nothing to do" and exits 0.
-# =============================================================================
 
 import os
+import sys
 from logging.config import fileConfig
+
+# Ensure /app is on sys.path so `src.*` imports resolve inside the container
+# env.py is at /app/src/db/migrations/env.py, so 4x dirname = /app
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
 from alembic import context
 from sqlalchemy import create_engine
@@ -19,10 +20,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Phase 0: No declarative Base or metadata yet.
-# When models are added, import Base and set:
-#   target_metadata = Base.metadata
-target_metadata = None
+# Import all ORM models so Alembic can autogenerate migrations
+from src.db.base import Base
+from src.db.orm import *  # noqa: F401, F403 — ensure all table metadata is loaded
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
