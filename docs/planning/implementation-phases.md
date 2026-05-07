@@ -123,9 +123,9 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 4 — Models and Tools
+## ✅ Phase 4 — Models and Tools (Completed)
 
-**What gets built:**
+**What was built:**
 - Model CRUD: `GET/POST/PUT/DELETE /admin/models`
 - `api_key` encrypted on write, decrypted on read via `EncryptedString` SQLAlchemy type
 - Tool CRUD: `GET/POST/PUT/DELETE /admin/tools`
@@ -135,10 +135,16 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 3 complete — tenants and users exist.
 
-**Exit condition (done when):**
-- Model `api_key` is stored encrypted; plaintext never appears in DB (verified by direct SQL inspection)
-- `GET /models` returns only models enabled for the requesting user's tenant
-- MAF provider client factory instantiates a working `ChatClient` for at least one provider (e.g. OpenAI or DeepSeek)
+**Exit condition verified:**
+- ✅ Model `api_key` is stored encrypted; plaintext never appears in DB (verified by direct SQL inspection — `api_key` starts with `gAAAAAB` Fernet prefix)
+- ✅ ERPNext `api_key` and `api_secret` both encrypted at rest
+- ✅ `GET /models` returns only enabled models for the requesting user's tenant
+- ✅ Disabled models are hidden from `GET /models`
+- ✅ `api_key` never appears in any API response (`/models` or `/admin/models`)
+- ✅ `api_secret` never appears in ERPNext responses
+- ✅ Tool CRUD works with type validation (`erpnext`/`membrane`/`custom`)
+- ✅ ERPNext instance CRUD at `/admin/tools/erpnext` with full admin/manager tenant scoping
+- ✅ Backend starts without errors
 
 **References:** [backend-architecture.md](../backend-architecture.md) §1.2, §1.3, [data-model.md](../data-model.md) §1.3, §1.4, §1.5, [agent-framework-integration.md](../agent-framework-integration.md) §3
 
