@@ -37,6 +37,7 @@ Recommended stack:
 
 - **React**
 - **TypeScript**
+- **Ant Design 5** — the design system shared with the admin area
 - **TanStack Query**
 - **SSE** ([`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source)) for streaming — see [streaming-protocol.md](streaming-protocol.md)
 - **REST API client** for backend communication
@@ -250,7 +251,8 @@ POST   /chat/session/:id/message/:msgId/feedback
 
 ### **Streaming**
 ```
-GET /chat/session/:id/stream
+POST /chat/session/:id/message (Accept: text/event-stream)
+DELETE /chat/session/:id/stream
 ```
 
 ### **User Configuration**
@@ -291,7 +293,10 @@ DELETE /memory/:id
 
 ### **Files**
 ```
-POST /files/upload
+POST   /chat/session/:id/upload
+GET    /chat/session/:id/uploads
+GET    /chat/session/:id/upload/:fileId/url
+DELETE /chat/session/:id/upload/:fileId
 ```
 
 ---
