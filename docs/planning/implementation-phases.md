@@ -46,9 +46,9 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 1 — Backend Foundation
+## ✅ Phase 1 — Backend Foundation (Completed)
 
-**What gets built:**
+**What was built:**
 - FastAPI application skeleton (`src/main.py`, routers registered but empty)
 - `src/core/config.py` — loads and validates all env vars via Pydantic Settings
 - `src/core/encryption.py` — Fernet encrypt/decrypt; single module rule
@@ -57,26 +57,26 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 - `src/core/security.py` — password hashing
 - `src/db/base.py` — SQLAlchemy 2.0 async session factory (`aiomysql`)
 - All SQLAlchemy ORM models under `src/db/orm/` (one file per entity group)
-- First Alembic migration: all tables created
+- First Alembic migration: all 19 tables created
 - `alembic upgrade head` runs cleanly on container startup
 - `src/storage/s3.py` — MinIO client singleton; `upload_object`, `delete_object`, `generate_presigned_url`, `ensure_bucket_exists`
 
 **Entry condition:** Phase 0 complete — all containers healthy.
 
-**Exit condition (done when):**
-- `alembic upgrade head` runs to completion with no errors
-- All tables exist in MariaDB (verified via `SHOW TABLES`)
-- `GET /health` returns `200 OK`
-- Encryption round-trip test passes: encrypt a string, decrypt it, get the original back
-- MinIO bucket creation succeeds from `s3.py`
+**Exit condition verified:**
+- ✅ `alembic upgrade head` runs to completion with no errors
+- ✅ All 19 tables exist in MariaDB (verified via `SHOW TABLES`)
+- ✅ `GET /health` returns `200 OK`
+- ✅ Encryption round-trip test passes: encrypt a string, decrypt it, get the original back
+- ✅ MinIO bucket creation succeeds from `s3.py`
 
 **References:** [backend-architecture.md](../backend-architecture.md), [data-model.md](../data-model.md), [file-upload-architecture.md](../file-upload-architecture.md)
 
 ---
 
-## Phase 2 — Authentication
+## ✅ Phase 2 — Authentication (Completed)
 
-**What gets built:**
+**What was built:**
 - `POST /auth/login` — validate credentials, issue access token + refresh token (`httpOnly` cookie)
 - `POST /auth/refresh` — validate refresh token cookie, issue new access token
 - `GET /auth/me` — return authenticated user's profile
@@ -88,18 +88,18 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 1 complete — all tables exist, encryption and JWT modules working.
 
-**Exit condition (done when):**
-- Login returns a valid JWT and sets `httpOnly` refresh cookie
-- Expired or tampered JWT is rejected with `401`
-- `/auth/refresh` issues a new access token without re-entering credentials
-- Logout invalidates the refresh token; subsequent refresh attempts return `401`
-- Seed script creates `admin` user and default tenant; subsequent runs are idempotent
+**Exit condition verified:**
+- ✅ Login returns a valid JWT and sets `httpOnly` refresh cookie
+- ✅ Expired or tampered JWT is rejected with `401`
+- ✅ `/auth/refresh` issues a new access token without re-entering credentials
+- ✅ Logout invalidates the refresh token; subsequent refresh attempts return `401`
+- ✅ Seed script creates `admin` user and default tenant; subsequent runs are idempotent
 
 **References:** [backend-architecture.md](../backend-architecture.md) §1.4, §7, [data-model.md](../data-model.md) §1.1
 
 ---
 
-## Phase 3 — Admin: Tenants and Users
+## ✅ Phase 3 — Admin: Tenants and Users (Completed)
 
 **What gets built:**
 - Tenant CRUD: `GET/POST/PUT/DELETE /admin/tenants` (admin only)
@@ -111,11 +111,13 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 2 complete — authentication working, JWT middleware injected.
 
-**Exit condition (done when):**
-- Admin can create a tenant and a user in that tenant via API
-- Manager can list and edit users within their own tenant only; cross-tenant requests return `403`
-- Admin-only endpoints return `403` for manager and user roles
-- Deactivated users cannot log in
+**Exit condition verified:**
+- ✅ Admin creates a tenant and a user in that tenant via API
+- ✅ Manager lists and edits users within own tenant only; cross-tenant requests return `403`
+- ✅ Admin-only endpoints return `403` for manager and user roles
+- ✅ Deactivated users cannot log in
+- ✅ Admin password reset — user logs in with new password
+- ✅ Delete tenant with users returns clean `409`; empty tenant deletes successfully
 
 **References:** [backend-architecture.md](../backend-architecture.md) §3.7, §3.8, [admin-area-architecture.md](../admin-area-architecture.md) §4.3, §4.4
 
