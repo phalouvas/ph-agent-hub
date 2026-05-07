@@ -170,6 +170,7 @@ UPLOAD_ALLOWED_TYPES=text/plain,text/csv,text/markdown,application/pdf,applicati
 
 JWT_SECRET=your-secret-key
 JWT_EXPIRES_IN=3600
+JWT_REFRESH_EXPIRES_IN=604800
 
 # Application-level encryption key for sensitive DB fields (models.api_key, erpnext credentials)
 # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

@@ -175,7 +175,7 @@ POST   /chat/session/:id/tools/:toolId
 DELETE /chat/session/:id/tools/:toolId
 ```
 
-### **3.6 Admin / Manager Users**
+### **3.7 Admin / Manager Users**
 ```
 GET    /admin/users
 POST   /admin/users
@@ -185,7 +185,7 @@ DELETE /admin/users/:id
 
 > Admins see users across all tenants. Managers see only users within their own tenant. Scope is enforced by the backend using the `tenant_id` claim in the JWT.
 
-### **3.7 Admin Tenants** *(admin only)*
+### **3.8 Admin Tenants** *(admin only)*
 ```
 GET    /admin/tenants
 POST   /admin/tenants
@@ -193,7 +193,7 @@ PUT    /admin/tenants/:id
 DELETE /admin/tenants/:id
 ```
 
-### **3.8 Admin / Manager Models**
+### **3.9 Admin / Manager Models**
 ```
 GET    /admin/models
 POST   /admin/models
@@ -201,7 +201,7 @@ PUT    /admin/models/:id
 DELETE /admin/models/:id
 ```
 
-### **3.9 Admin / Manager Tools**
+### **3.10 Admin / Manager Tools**
 ```
 GET    /admin/tools
 POST   /admin/tools
@@ -209,7 +209,7 @@ PUT    /admin/tools/:id
 DELETE /admin/tools/:id
 ```
 
-### **3.10 Admin / Manager Templates**
+### **3.11 Admin / Manager Templates**
 ```
 GET    /admin/templates
 POST   /admin/templates
@@ -217,7 +217,7 @@ PUT    /admin/templates/:id
 DELETE /admin/templates/:id
 ```
 
-### **3.11 Admin / Manager Skills**
+### **3.12 Admin / Manager Skills**
 ```
 GET    /admin/skills
 POST   /admin/skills
@@ -225,7 +225,7 @@ PUT    /admin/skills/:id
 DELETE /admin/skills/:id
 ```
 
-### **3.12 Analytics**
+### **3.13 Analytics**
 ```
 GET /admin/usage
 GET /admin/logs
@@ -338,26 +338,42 @@ This module is fully monkey‑patchable.
 
 ---
 
-## 7. Multi‑Tenant Logic
+## 7. JWT Payload and Multi-Tenant Enforcement
 
-Each request includes a JWT with:
+Every protected request carries a JWT signed with `JWT_SECRET`. The payload contains:
 
-- `user_id`
-- `tenant_id`
-- `role` (admin | manager | user)
-- `permissions`
+```json
+{
+  "sub": "<user_id>",
+  "tenant_id": "<tenant_id>",
+  "role": "admin | manager | user",
+  "exp": 1234567890,
+  "iat": 1234567890
+}
+```
 
-The backend enforces:
+**Why no `permissions` field:** The three roles are rigid and fully defined — a manager always has exactly the same capabilities as every other manager. There is nothing a `permissions` array could express that `role` does not already cover. Putting a derived permissions list in the JWT would create a split-brain risk: if the token's claims diverge from DB state (e.g. a role change before token expiry), the backend could enforce stale permissions. All access decisions are derived from `role` at request time using a single authorisation dependency injected into every protected endpoint.
 
-- tenant‑specific model lists
-- tenant‑specific tool lists
-- tenant‑specific ERPNext instance
-- tenant‑specific templates and shared skills
-- user‑scoped prompts and personal skills
-- manager‑scoped write access to tools, models, templates, and skills within their tenant only
-- session‑level active tool list applied to each agent request
+### Role enforcement rules
 
-No data is shared across tenants.
+| Claim check | Enforcement point |
+|---|---|
+| `role == admin` | Admin-only endpoints (tenant management, system settings) |
+| `role in (admin, manager)` | Admin area endpoints; manager is additionally scoped to own `tenant_id` |
+| `tenant_id` matches resource | Every data query — no cross-tenant data ever returned |
+| `role == user` OR any role | Chat area endpoints |
+
+### Token lifetime and refresh
+
+- Access token TTL: configurable via `JWT_EXPIRES_IN` (default 3600 seconds)
+- Refresh token: issued alongside the access token; stored as an `httpOnly` cookie; TTL configurable via `JWT_REFRESH_EXPIRES_IN` (default 7 days)
+- The `/auth/refresh` endpoint validates the refresh token cookie and issues a new access token
+- On logout, the refresh token is invalidated server-side via a Redis denylist keyed by `jti` claim
+- Role changes (e.g. a manager being demoted) take effect at the next token refresh
+
+### Implementation
+
+JWT logic lives exclusively in `/backend/src/core/jwt.py`. No other module encodes or decodes tokens directly.
 
 ---
 
