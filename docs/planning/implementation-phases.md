@@ -282,7 +282,7 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 ## Phase 11 — RAG (Optional)
 
 **What gets built:**
-- Vector DB service added to Docker Compose (Qdrant recommended)
+- Vector DB service added to both `docker-compose.yml` (dev) and `docker-compose.prod.yml` (production with Traefik labels) — Qdrant recommended
 - Document ingestion pipeline: upload → extract text → embed → store in vector DB + `rag_documents` table
 - Retrieval integrated into agent context assembly (top-k similarity search before agent run)
 - Admin UI for RAG document management
