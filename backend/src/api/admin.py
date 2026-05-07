@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 def _get_client_ip(request: Request) -> str | None:
     """Resolve the real client IP from X-Real-IP header or fall back to request.client."""
-    return request.headers.get("X-Real-IP") or (_get_client_ip(request))
+    return request.headers.get("X-Real-IP") or (
+        request.client.host if request.client else None
+    )
 
 from ..core.dependencies import (
     get_db,

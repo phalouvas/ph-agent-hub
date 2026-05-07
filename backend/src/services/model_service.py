@@ -2,11 +2,13 @@
 # PH Agent Hub — Model Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import NotFoundError
 from ..db.orm.models import Model
+from ..db.orm.sessions import Session
+from ..db.orm.templates import Template
 
 
 async def list_models(
@@ -73,10 +75,25 @@ async def update_model(db: AsyncSession, model_id: str, **fields) -> Model:
 
 
 async def delete_model(db: AsyncSession, model_id: str) -> None:
-    """Delete a model by ID. Raises NotFoundError if missing."""
+    """Delete a model by ID. Raises NotFoundError if missing.
+    Clears references from sessions that use this model first."""
     model = await get_model_by_id(db, model_id)
     if model is None:
         raise NotFoundError("Model not found")
+
+    # Clear selected_model_id in sessions that reference this model
+    await db.execute(
+        update(Session)
+        .where(Session.selected_model_id == model_id)
+        .values(selected_model_id=None)
+    )
+
+    # Clear default_model_id in templates that reference this model
+    await db.execute(
+        update(Template)
+        .where(Template.default_model_id == model_id)
+        .values(default_model_id=None)
+    )
 
     await db.delete(model)
     await db.commit()
