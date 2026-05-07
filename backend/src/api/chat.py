@@ -5,16 +5,19 @@
 # sending (agent run), and session-level tool activation.
 # =============================================================================
 
+import asyncio
+import json
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sse_starlette.sse import EventSourceResponse
 
-from ..agents.runner import run_agent
+from ..agents.runner import run_agent, run_agent_stream
 from ..core.dependencies import get_current_user, get_db
 from ..core.exceptions import (
     ForbiddenError,
@@ -23,9 +26,11 @@ from ..core.exceptions import (
 )
 from ..core.redis import (
     append_temp_message,
+    clear_stream_cancel,
     delete_temp_session,
     get_temp_messages,
     get_temp_session,
+    set_stream_cancel,
     store_temp_session,
 )
 from ..db.orm.messages import Message
@@ -389,14 +394,33 @@ async def list_messages(
 async def send_message(
     session_id: str,
     body: MessageCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Send a user message and run the agent. Returns the assistant's response."""
+    """Send a user message and run the agent.
+
+    When the request includes ``Accept: text/event-stream`` the response
+    is a Server-Sent Events stream.  Otherwise a plain JSON response is
+    returned (Phase 6 backward-compatible path).
+    """
     data = await _load_session(db, session_id)
     await _require_session_owner(data, current_user)
 
-    # Run the agent
+    # Detect streaming request via Accept header
+    accept = request.headers.get("accept", "")
+    is_streaming = "text/event-stream" in accept.lower()
+
+    if is_streaming:
+        return await _handle_streaming_message(
+            session_id=session_id,
+            body=body,
+            data=data,
+            db=db,
+            current_user=current_user,
+        )
+
+    # ---- Non-streaming path (Phase 6 backward compat) --------------------
     response_text = await run_agent(
         session_data=data,
         user_message=body.content,
@@ -404,7 +428,6 @@ async def send_message(
         current_user=current_user,
     )
 
-    # Get the most recent assistant message ID for the response
     message_id = str(uuid.uuid4())
     model_id = data.get("selected_model_id")
 
@@ -413,6 +436,79 @@ async def send_message(
         content=response_text,
         model_id=model_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Streaming helpers (Phase 7)
+# ---------------------------------------------------------------------------
+
+
+async def _handle_streaming_message(
+    session_id: str,
+    body: MessageCreate,
+    data: dict[str, Any],
+    db: AsyncSession,
+    current_user: UserORM,
+) -> EventSourceResponse:
+    """Assemble and return an SSE EventSourceResponse for a streaming agent run."""
+    message_id = str(uuid.uuid4())
+
+    async def inner_gen() -> AsyncIterator[dict]:
+        """The inner generator that yields SSE event dicts."""
+        async for event_dict in run_agent_stream(
+            session_data=data,
+            user_message=body.content,
+            db=db,
+            current_user=current_user,
+            message_id=message_id,
+        ):
+            yield event_dict
+
+    # Wrap with heartbeat to keep proxy connections alive
+    gen = _stream_with_heartbeat(inner_gen(), interval=15)
+
+    return EventSourceResponse(gen, media_type="text/event-stream")
+
+
+async def _stream_with_heartbeat(
+    inner_gen: AsyncIterator[dict],
+    interval: int = 15,
+) -> AsyncIterator[dict]:
+    """Wrap an SSE event generator with heartbeat events.
+
+    Emits ``{"event": "heartbeat", "data": "{}"}`` every *interval*
+    seconds when no other event has been emitted, to keep proxy
+    connections from closing due to idle timeout.
+    """
+    while True:
+        try:
+            event_dict = await asyncio.wait_for(
+                inner_gen.__anext__(), timeout=interval
+            )
+            yield event_dict
+        except asyncio.TimeoutError:
+            yield {"event": "heartbeat", "data": "{}"}
+        except StopAsyncIteration:
+            break
+
+
+@router.delete("/session/{session_id}/stream", status_code=204)
+async def cancel_stream(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Cancel an active streaming agent run for *session_id*.
+
+    Sets a cancellation flag in Redis that the streaming agent runner
+    checks on each token yield.  The stream will terminate and partial
+    output will be persisted.
+    """
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    await set_stream_cancel(session_id, ttl=60)
+    return Response(status_code=204)
 
 
 # =============================================================================

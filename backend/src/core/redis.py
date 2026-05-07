@@ -133,3 +133,31 @@ async def get_temp_messages(session_id: str) -> list[dict]:
     if raw is None:
         return []
     return json.loads(raw)
+
+
+# ---------------------------------------------------------------------------
+# Stream cancellation helpers — used by the SSE streaming endpoint to
+# signal an in-progress agent run that it should abort.
+# ---------------------------------------------------------------------------
+STREAM_CANCEL_PREFIX = "stream:cancel:"
+
+
+async def set_stream_cancel(session_id: str, ttl: int = 60) -> None:
+    """Set a stream cancellation flag for *session_id*.
+
+    The flag auto-expires after *ttl* seconds to prevent stale keys.
+    """
+    r = await get_redis()
+    await r.setex(f"{STREAM_CANCEL_PREFIX}{session_id}", ttl, "1")
+
+
+async def check_stream_cancel(session_id: str) -> bool:
+    """Return True if a cancellation has been requested for *session_id*."""
+    r = await get_redis()
+    return await r.exists(f"{STREAM_CANCEL_PREFIX}{session_id}") > 0
+
+
+async def clear_stream_cancel(session_id: str) -> None:
+    """Remove the stream cancellation flag for *session_id*."""
+    r = await get_redis()
+    await r.delete(f"{STREAM_CANCEL_PREFIX}{session_id}")
