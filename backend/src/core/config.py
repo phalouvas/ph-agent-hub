@@ -40,9 +40,7 @@ class Settings(BaseSettings):
     DEEPSEEK_MAX_RETRIES: int = 3
     DEEPSEEK_STRIP_REASONING: bool = True
     DEEPSEEK_VALIDATE_TOOL_CALLS: bool = True
-    DEEPSEEK_MAX_AGENT_STEPS: int = 8
     DEEPSEEK_JSON_REPAIR: bool = True
-    DEEPSEEK_STREAM_FILTER: bool = True
 
     # --- Session ---
     TEMPORARY_SESSION_TTL_SECONDS: int = 86400  # 24 hours
