@@ -4,6 +4,8 @@
 # Single-module rule: ONLY this file imports `redis.asyncio`.
 # =============================================================================
 
+import asyncio
+
 import redis.asyncio as aioredis
 
 from .config import settings
@@ -12,14 +14,18 @@ from .config import settings
 # Lazy singleton Redis connection
 # ---------------------------------------------------------------------------
 _redis: aioredis.Redis | None = None
+_redis_lock: asyncio.Lock | None = None
 
 
 async def get_redis() -> aioredis.Redis:
     """Return a connected async Redis client (lazy singleton)."""
-    global _redis
-    if _redis is None:
-        _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-    return _redis
+    global _redis, _redis_lock
+    if _redis_lock is None:
+        _redis_lock = asyncio.Lock()
+    async with _redis_lock:
+        if _redis is None:
+            _redis = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+        return _redis
 
 
 # ---------------------------------------------------------------------------
@@ -58,11 +64,9 @@ async def store_temp_session(
     """
     import json
 
-    from .config import settings as _settings
-
     r = await get_redis()
     key = f"{TEMP_SESSION_PREFIX}{session_id}"
-    ttl = ttl if ttl is not None else _settings.TEMPORARY_SESSION_TTL_SECONDS
+    ttl = ttl if ttl is not None else settings.TEMPORARY_SESSION_TTL_SECONDS
     await r.setex(key, ttl, json.dumps(data))
 
 
@@ -97,8 +101,6 @@ async def append_temp_message(session_id: str, msg: dict) -> None:
     """
     import json
 
-    from .config import settings as _settings
-
     r = await get_redis()
     msg_key = f"{TEMP_SESSION_PREFIX}{session_id}:messages"
     session_key = f"{TEMP_SESSION_PREFIX}{session_id}"
@@ -112,7 +114,7 @@ async def append_temp_message(session_id: str, msg: dict) -> None:
     messages: list[dict] = json.loads(existing_raw) if existing_raw else []
     messages.append(msg)
 
-    ttl = ttl if ttl and ttl > 0 else _settings.TEMPORARY_SESSION_TTL_SECONDS
+    ttl = ttl if ttl and ttl > 0 else settings.TEMPORARY_SESSION_TTL_SECONDS
     pipe2 = r.pipeline()
     pipe2.setex(msg_key, ttl, json.dumps(messages))
     # Refresh the session blob TTL too so it doesn't expire before messages

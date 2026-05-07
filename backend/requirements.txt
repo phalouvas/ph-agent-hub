@@ -36,3 +36,6 @@ agent-framework
 
 # Async HTTP (ERPNext tool calls)
 httpx
+
+# Rate limiting
+slowapi

@@ -5,10 +5,16 @@
 # =============================================================================
 
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def _get_client_ip(request: Request) -> str | None:
+    """Resolve the real client IP from X-Real-IP header or fall back to request.client."""
+    return request.headers.get("X-Real-IP") or (_get_client_ip(request))
 
 from ..core.dependencies import (
     get_db,
@@ -131,14 +137,14 @@ class UserCreate(BaseModel):
     password: str
     display_name: str
     tenant_id: str
-    role: str = "user"
+    role: Literal["admin", "manager", "user"] = "user"
 
 
 class UserUpdate(BaseModel):
     email: str | None = None
     password: str | None = None
     display_name: str | None = None
-    role: str | None = None
+    role: Literal["admin", "manager", "user"] | None = None
     is_active: bool | None = None
     tenant_id: str | None = None
 
@@ -276,7 +282,7 @@ async def create_tenant(
         action="tenant.created",
         target_type="tenant",
         target_id=tenant.id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
         tenant_id=None,  # platform-level action
     )
     return TenantResponse.model_validate(tenant)
@@ -298,7 +304,7 @@ async def update_tenant(
         action="tenant.updated",
         target_type="tenant",
         target_id=tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
         tenant_id=None,
     )
     return TenantResponse.model_validate(tenant)
@@ -319,7 +325,7 @@ async def delete_tenant(
         action="tenant.deleted",
         target_type="tenant",
         target_id=tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
         tenant_id=None,
     )
 
@@ -371,7 +377,7 @@ async def create_user(
         target_type="user",
         target_id=user.id,
         tenant_id=body.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return UserResponse.model_validate(user)
 
@@ -433,7 +439,7 @@ async def update_user(
         target_type="user",
         target_id=user_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return UserResponse.model_validate(user)
 
@@ -462,7 +468,7 @@ async def delete_user(
         target_type="user",
         target_id=user_id,
         tenant_id=target.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
 
 
@@ -514,7 +520,7 @@ async def create_model(
         target_id=model.id,
         payload={"name": body.name, "provider": body.provider},
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return ModelResponse.model_validate(model)
 
@@ -562,7 +568,7 @@ async def update_model(
         target_type="model",
         target_id=model_id,
         tenant_id=target.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return ModelResponse.model_validate(model)
 
@@ -589,7 +595,7 @@ async def delete_model(
         target_type="model",
         target_id=model_id,
         tenant_id=target.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
 
 
@@ -636,7 +642,7 @@ async def create_tool(
         target_type="tool",
         target_id=tool.id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return ToolResponse.model_validate(tool)
 
@@ -681,7 +687,7 @@ async def update_tool(
         target_type="tool",
         target_id=tool_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return ToolResponse.model_validate(tool)
 
@@ -708,7 +714,7 @@ async def delete_tool(
         target_type="tool",
         target_id=tool_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
 
 
@@ -757,7 +763,7 @@ async def create_erpnext_instance(
         target_type="erpnext_instance",
         target_id=instance.id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return ERPNextResponse.model_validate(instance)
 
@@ -797,7 +803,7 @@ async def update_erpnext_instance(
         target_type="erpnext_instance",
         target_id=instance_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return ERPNextResponse.model_validate(instance)
 
@@ -826,7 +832,7 @@ async def delete_erpnext_instance(
         target_type="erpnext_instance",
         target_id=instance_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
 
 
@@ -927,7 +933,7 @@ async def admin_create_template(
         target_type="template",
         target_id=template.id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return resp
 
@@ -974,7 +980,7 @@ async def admin_update_template(
         target_type="template",
         target_id=template_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return resp
 
@@ -1001,7 +1007,7 @@ async def admin_delete_template(
         target_type="template",
         target_id=template_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
 
 
@@ -1116,7 +1122,7 @@ async def admin_create_skill(
         target_type="skill",
         target_id=skill.id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return resp
 
@@ -1159,7 +1165,7 @@ async def admin_update_skill(
         target_type="skill",
         target_id=skill_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
     return resp
 
@@ -1186,7 +1192,7 @@ async def admin_delete_skill(
         target_type="skill",
         target_id=skill_id,
         tenant_id=current_user.tenant_id,
-        ip_address=request.client.host if request.client else None,
+        ip_address=_get_client_ip(request),
     )
 
 

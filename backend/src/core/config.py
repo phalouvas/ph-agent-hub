@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # --- Session ---
     TEMPORARY_SESSION_TTL_SECONDS: int = 86400  # 24 hours
 
+    # --- Security ---
+    COOKIE_SECURE: bool = False
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:3000"
+    LOGIN_RATE_LIMIT: str = "5/minute"
+    SEED_ALLOW_WEAK_PASSWORD: bool = False
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
     def __init__(self, **kwargs):

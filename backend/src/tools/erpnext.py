@@ -46,6 +46,10 @@ def build_erpnext_tools(
         A list of callables ready to pass to ``Agent(tools=...)``.
     """
     auth_header = _build_auth_header(api_key, api_secret)
+    client = httpx.AsyncClient(
+        base_url=base_url.rstrip("/"),
+        headers=auth_header,
+    )
 
     # ------------------------------------------------------------------
     @tool
@@ -56,13 +60,12 @@ def build_erpnext_tools(
             doctype: The DocType name (e.g. "Sales Order").
             name: The document name/id.
         """
-        url = f"{base_url.rstrip('/')}/api/resource/{doctype}/{name}"
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=auth_header)
-            resp.raise_for_status()
-            data: dict = resp.json()
-            logger.debug("get_doc %s/%s → %d bytes", doctype, name, len(json.dumps(data)))
-            return data
+        url = f"/api/resource/{doctype}/{name}"
+        resp = await client.get(url)
+        resp.raise_for_status()
+        data: dict = resp.json()
+        logger.debug("get_doc %s/%s → %d bytes", doctype, name, len(json.dumps(data)))
+        return data
 
     # ------------------------------------------------------------------
     @tool
@@ -88,18 +91,17 @@ def build_erpnext_tools(
         if limit_page_length is not None:
             params["limit_page_length"] = limit_page_length
 
-        url = f"{base_url.rstrip('/')}/api/resource/{doctype}"
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(url, headers=auth_header, params=params)
-            resp.raise_for_status()
-            data: dict = resp.json()
-            results: list[dict] = data.get("data", [])
-            logger.debug(
-                "get_list %s (filters=%s) → %d records",
-                doctype,
-                filters,
-                len(results),
-            )
-            return results
+        url = f"/api/resource/{doctype}"
+        resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        data: dict = resp.json()
+        results: list[dict] = data.get("data", [])
+        logger.debug(
+            "get_list %s (filters=%s) → %d records",
+            doctype,
+            filters,
+            len(results),
+        )
+        return results
 
     return [get_doc, get_list]

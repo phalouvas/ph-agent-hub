@@ -18,6 +18,7 @@
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
@@ -45,6 +46,68 @@ from ..models.base import get_chat_client
 from ..services.usage_service import write_usage_log
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Session config resolution (shared by run_agent / run_agent_stream)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SessionConfig:
+    """Resolved configuration for a single agent run."""
+    model: Model
+    model_client: Any
+    system_prompt: str
+    skill: Skill | None
+    active_tool_callables: list
+    execution_type: str
+    agent_name: str
+
+
+async def _resolve_session_config(
+    db: AsyncSession,
+    session_data: dict,
+    tenant_id: str,
+) -> SessionConfig:
+    """Resolve model, system prompt, skill, tools, execution type, and agent name.
+
+    Centralises the resolution chain shared by ``run_agent()``,
+    ``run_agent_stream()``, and ``run_agent_assistant_only()``.
+    """
+    # 1. Resolve model
+    model = await _resolve_model(db, session_data)
+    model_client = get_chat_client(model)
+
+    # 2. Build system prompt
+    system_prompt = await _build_system_prompt(db, session_data)
+
+    # 3. Resolve skill
+    skill = await _resolve_skill(db, session_data)
+
+    # 4. Resolve active tools
+    active_tool_callables = await _resolve_tool_callables(
+        db, session_data, tenant_id
+    )
+
+    # 5. Determine execution type and name
+    execution_type = skill.execution_type if skill else "agent"
+    agent_name = skill.title if skill else "assistant"
+
+    # 6. Apply DeepSeek middleware
+    if model.provider.lower() == "deepseek":
+        from .deepseek_patch import apply_deepseek_patches
+        apply_deepseek_patches()
+
+    return SessionConfig(
+        model=model,
+        model_client=model_client,
+        system_prompt=system_prompt,
+        skill=skill,
+        active_tool_callables=active_tool_callables,
+        execution_type=execution_type,
+        agent_name=agent_name,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -79,52 +142,31 @@ async def run_agent(
     session_id = session_data["id"]
     is_temporary = session_data.get("is_temporary", False)
 
-    # ---- 1. Resolve model ------------------------------------------------
-    model = await _resolve_model(db, session_data)
-    model_client = get_chat_client(model)
-
-    # ---- 2. Build system prompt ------------------------------------------
-    system_prompt = await _build_system_prompt(db, session_data)
-
-    # ---- 3. Resolve skill ------------------------------------------------
-    skill = await _resolve_skill(db, session_data)
-
-    # ---- 4. Resolve active tools -----------------------------------------
-    active_tool_callables = await _resolve_tool_callables(
-        db, session_data, tenant_id
-    )
-
-    # ---- 5. Determine execution type and name ----------------------------
-    execution_type = skill.execution_type if skill else "agent"
-    agent_name = skill.title if skill else "assistant"
-
-    # ---- 6. Apply DeepSeek middleware ------------------------------------
-    if model.provider.lower() == "deepseek":
-        from .deepseek_patch import apply_deepseek_patches
-        apply_deepseek_patches()
+    # ---- 1-6. Resolve session config ------------------------------------
+    cfg = await _resolve_session_config(db, session_data, tenant_id)
 
     # ---- 7. Run agent or workflow ----------------------------------------
     raw_response: str
 
     try:
-        if execution_type == "workflow":
+        if cfg.execution_type == "workflow":
             raw_response, tokens_in, tokens_out = await _run_workflow(
-                model=model,
-                skill=skill,
-                model_client=model_client,
-                system_prompt=system_prompt,
-                tools=active_tool_callables,
+                model=cfg.model,
+                skill=cfg.skill,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
                 user_message=user_message,
-                agent_name=agent_name,
+                agent_name=cfg.agent_name,
             )
         else:
             raw_response, tokens_in, tokens_out = await _run_agent(
-                model=model,
-                model_client=model_client,
-                system_prompt=system_prompt,
-                tools=active_tool_callables,
+                model=cfg.model,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
                 user_message=user_message,
-                agent_name=agent_name,
+                agent_name=cfg.agent_name,
             )
     except Exception as exc:
         logger.error("Agent run failed: %s", exc)
@@ -133,7 +175,7 @@ async def run_agent(
         ) from exc
 
     # ---- 8. Stabilise DeepSeek output -----------------------------------
-    if model.provider.lower() == "deepseek" and settings.DEEPSEEK_STRIP_REASONING:
+    if cfg.model.provider.lower() == "deepseek" and settings.DEEPSEEK_STRIP_REASONING:
         from .stabilizer import stabilize_text
         raw_response = stabilize_text(raw_response)
 
@@ -144,7 +186,7 @@ async def run_agent(
         is_temporary=is_temporary,
         user_message=user_message,
         assistant_response=raw_response,
-        model_id=model.id,
+        model_id=cfg.model.id,
         parent_message_id=parent_message_id,
         user_branch_index=user_branch_index,
     )
@@ -155,7 +197,7 @@ async def run_agent(
             db,
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
-            model_id=model.id,
+            model_id=cfg.model.id,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
         )
@@ -581,6 +623,10 @@ class ThinkBlockStreamFilter:
                     # Flush any remaining buffered text that is not inside
                     # a think block.  If we're still inside a think block
                     # the closing tag was never emitted — discard.
+                    if self._buffer and not self._inside_think:
+                        remaining = self._buffer
+                        self._buffer = ""
+                        return remaining
                     raise
 
             if self._inside_think:
@@ -653,52 +699,31 @@ async def run_agent_stream(
     _stream_token_info: dict = {}  # mutated by _run_agent_stream to propagate token counts
 
     try:
-        # ---- 1. Resolve model --------------------------------------------
-        model = await _resolve_model(db, session_data)
-        model_client = get_chat_client(model)
-
-        # ---- 2. Build system prompt --------------------------------------
-        system_prompt = await _build_system_prompt(db, session_data)
-
-        # ---- 3. Resolve skill --------------------------------------------
-        skill = await _resolve_skill(db, session_data)
-
-        # ---- 4. Resolve active tools -------------------------------------
-        active_tool_callables = await _resolve_tool_callables(
-            db, session_data, tenant_id
-        )
-
-        # ---- 5. Determine execution type and name ------------------------
-        execution_type = skill.execution_type if skill else "agent"
-        agent_name = skill.title if skill else "assistant"
-
-        # ---- 6. Apply DeepSeek middleware --------------------------------
-        if model.provider.lower() == "deepseek":
-            from .deepseek_patch import apply_deepseek_patches
-            apply_deepseek_patches()
+        # ---- 1-6. Resolve session config --------------------------------
+        cfg = await _resolve_session_config(db, session_data, tenant_id)
 
         # ---- 7. Run agent or workflow (streaming) ------------------------
-        if execution_type == "workflow":
+        if cfg.execution_type == "workflow":
             stream = _run_workflow_stream(
-                model=model,
-                skill=skill,
-                model_client=model_client,
-                system_prompt=system_prompt,
-                tools=active_tool_callables,
+                model=cfg.model,
+                skill=cfg.skill,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
                 user_message=user_message,
-                agent_name=agent_name,
+                agent_name=cfg.agent_name,
                 session_id=session_id,
                 message_id=message_id,
                 token_counts=_stream_token_info,
             )
         else:
             stream = _run_agent_stream(
-                model=model,
-                model_client=model_client,
-                system_prompt=system_prompt,
-                tools=active_tool_callables,
+                model=cfg.model,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
                 user_message=user_message,
-                agent_name=agent_name,
+                agent_name=cfg.agent_name,
                 session_id=session_id,
                 message_id=message_id,
                 token_counts=_stream_token_info,
@@ -740,7 +765,7 @@ async def run_agent_stream(
 
     # ---- 8. Stabilise DeepSeek output (on full text) ---------------------
     if (
-        model.provider.lower() == "deepseek"
+        cfg.model.provider.lower() == "deepseek"
         and settings.DEEPSEEK_STRIP_REASONING
     ):
         from .stabilizer import stabilize_text
@@ -756,7 +781,7 @@ async def run_agent_stream(
         is_temporary=is_temporary,
         user_message=user_message,
         assistant_response=accumulated_text,
-        model_id=model.id,
+        model_id=cfg.model.id,
     )
 
     # ---- 11. Write usage log ---------------------------------------------
@@ -765,7 +790,7 @@ async def run_agent_stream(
             db,
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
-            model_id=model.id,
+            model_id=cfg.model.id,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
         )
@@ -780,7 +805,7 @@ async def run_agent_stream(
             "message_id": message_id,
             "branch_index": 0,
             "total_tokens": total_tokens,
-            "model_id": model.id,
+            "model_id": cfg.model.id,
         }),
     }
 
@@ -1119,52 +1144,31 @@ async def run_agent_assistant_only(
     session_id = session_data["id"]
     is_temporary = session_data.get("is_temporary", False)
 
-    # ---- 1. Resolve model ------------------------------------------------
-    model = await _resolve_model(db, session_data)
-    model_client = get_chat_client(model)
-
-    # ---- 2. Build system prompt ------------------------------------------
-    system_prompt = await _build_system_prompt(db, session_data)
-
-    # ---- 3. Resolve skill ------------------------------------------------
-    skill = await _resolve_skill(db, session_data)
-
-    # ---- 4. Resolve active tools -----------------------------------------
-    active_tool_callables = await _resolve_tool_callables(
-        db, session_data, tenant_id
-    )
-
-    # ---- 5. Determine execution type and name ----------------------------
-    execution_type = skill.execution_type if skill else "agent"
-    agent_name = skill.title if skill else "assistant"
-
-    # ---- 6. Apply DeepSeek middleware ------------------------------------
-    if model.provider.lower() == "deepseek":
-        from .deepseek_patch import apply_deepseek_patches
-        apply_deepseek_patches()
+    # ---- 1-6. Resolve session config ------------------------------------
+    cfg = await _resolve_session_config(db, session_data, tenant_id)
 
     # ---- 7. Run agent or workflow ----------------------------------------
     raw_response: str
 
     try:
-        if execution_type == "workflow":
+        if cfg.execution_type == "workflow":
             raw_response, tokens_in, tokens_out = await _run_workflow(
-                model=model,
-                skill=skill,
-                model_client=model_client,
-                system_prompt=system_prompt,
-                tools=active_tool_callables,
+                model=cfg.model,
+                skill=cfg.skill,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
                 user_message=user_message_text,
-                agent_name=agent_name,
+                agent_name=cfg.agent_name,
             )
         else:
             raw_response, tokens_in, tokens_out = await _run_agent(
-                model=model,
-                model_client=model_client,
-                system_prompt=system_prompt,
-                tools=active_tool_callables,
+                model=cfg.model,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
                 user_message=user_message_text,
-                agent_name=agent_name,
+                agent_name=cfg.agent_name,
             )
     except Exception as exc:
         logger.error("Agent run (assistant-only) failed: %s", exc)
@@ -1173,7 +1177,7 @@ async def run_agent_assistant_only(
         ) from exc
 
     # ---- 8. Stabilise DeepSeek output -----------------------------------
-    if model.provider.lower() == "deepseek" and settings.DEEPSEEK_STRIP_REASONING:
+    if cfg.model.provider.lower() == "deepseek" and settings.DEEPSEEK_STRIP_REASONING:
         from .stabilizer import stabilize_text
         raw_response = stabilize_text(raw_response)
 
@@ -1188,7 +1192,7 @@ async def run_agent_assistant_only(
                 "id": assistant_msg_id,
                 "sender": "assistant",
                 "content": assistant_msg_content,
-                "model_id": model.id,
+                "model_id": cfg.model.id,
                 "parent_message_id": assistant_parent_message_id,
                 "branch_index": assistant_branch_index,
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1200,7 +1204,7 @@ async def run_agent_assistant_only(
             session_id=session_id,
             sender="assistant",
             content=assistant_msg_content,
-            model_id=model.id,
+            model_id=cfg.model.id,
             parent_message_id=assistant_parent_message_id,
             branch_index=assistant_branch_index,
         )
@@ -1213,7 +1217,7 @@ async def run_agent_assistant_only(
             db,
             tenant_id=current_user.tenant_id,
             user_id=current_user.id,
-            model_id=model.id,
+            model_id=cfg.model.id,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
         )
