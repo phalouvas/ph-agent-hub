@@ -209,7 +209,17 @@ PUT    /admin/tools/:id
 DELETE /admin/tools/:id
 ```
 
-### **3.11 Admin / Manager Templates**
+### **3.11 Admin / Manager ERPNext Instances**
+```
+GET    /admin/tools/erpnext
+POST   /admin/tools/erpnext
+PUT    /admin/tools/erpnext/:instance_id
+DELETE /admin/tools/erpnext/:instance_id
+```
+
+> Sensitive fields (`api_key`, `api_secret`) are never returned in response bodies. Values are transparently encrypted at rest via the `EncryptedString` ORM type.
+
+### **3.12 Admin / Manager Templates**
 ```
 GET    /admin/templates
 POST   /admin/templates
@@ -217,7 +227,7 @@ PUT    /admin/templates/:id
 DELETE /admin/templates/:id
 ```
 
-### **3.12 Admin / Manager Skills**
+### **3.13 Admin / Manager Skills**
 ```
 GET    /admin/skills
 POST   /admin/skills
@@ -225,7 +235,7 @@ PUT    /admin/skills/:id
 DELETE /admin/skills/:id
 ```
 
-### **3.13 Analytics and Audit**
+### **3.14 Analytics and Audit**
 ```
 GET /admin/usage
 GET /admin/logs
@@ -244,6 +254,7 @@ GET /admin/audit
     /api
       auth.py
       chat.py
+      models.py
       prompts.py
       skills.py
       admin.py
@@ -267,6 +278,7 @@ GET /admin/audit
       tenant_service.py
       model_service.py
       tool_service.py
+      erpnext_service.py
       template_service.py
       prompt_service.py
       skill_service.py
@@ -277,6 +289,7 @@ GET /admin/audit
         tenants.py
         models.py
         tools.py
+        erpnext_instances.py
         templates.py
         prompts.py
         skills.py
