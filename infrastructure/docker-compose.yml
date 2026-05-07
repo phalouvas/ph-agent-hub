@@ -13,11 +13,12 @@ services:
   # ── MariaDB ──────────────────────────────────────────────────────────────
   mariadb:
     image: mariadb:11
+    env_file: ./env
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: phagent_hub
-      MYSQL_USER: phagent
-      MYSQL_PASSWORD: phagent_password
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
