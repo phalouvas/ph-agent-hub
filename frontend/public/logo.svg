@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="PH Agent Hub">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4096ff"/>
+      <stop offset="100%" stop-color="#0958d9"/>
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="100" height="100" rx="20" fill="url(#bgGrad)"/>
+  <!-- Subtle top highlight -->
+  <rect width="100" height="50" rx="20" fill="url(#glowGrad)"/>
+
+  <!-- Subtle background network (decorative) -->
+  <line x1="50" y1="50" x2="50"  y2="10"  stroke="rgba(255,255,255,0.10)" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="50" y1="50" x2="85"  y2="30"  stroke="rgba(255,255,255,0.10)" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="50" y1="50" x2="85"  y2="70"  stroke="rgba(255,255,255,0.10)" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="50" y1="50" x2="50"  y2="90"  stroke="rgba(255,255,255,0.10)" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="50" y1="50" x2="15"  y2="70"  stroke="rgba(255,255,255,0.10)" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="50" y1="50" x2="15"  y2="30"  stroke="rgba(255,255,255,0.10)" stroke-width="1.2" stroke-linecap="round"/>
+  <polygon points="50,10 85,30 85,70 50,90 15,70 15,30"
+           fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <circle cx="85" cy="30" r="2" fill="rgba(255,255,255,0.28)"/>
+  <circle cx="85" cy="70" r="2" fill="rgba(255,255,255,0.28)"/>
+  <circle cx="50" cy="90" r="2" fill="rgba(255,255,255,0.28)"/>
+  <circle cx="15" cy="70" r="2" fill="rgba(255,255,255,0.28)"/>
+  <circle cx="15" cy="30" r="2" fill="rgba(255,255,255,0.28)"/>
+
+  <!-- ===== ROBOT FACE ===== -->
+
+  <!-- Antenna ball -->
+  <circle cx="50" cy="12" r="4" fill="white" opacity="0.92"/>
+  <!-- Antenna stem -->
+  <rect x="48" y="16" width="4" height="11" rx="2" fill="white" opacity="0.92"/>
+
+  <!-- Ear bumps (left & right of head) -->
+  <rect x="14" y="36" width="7" height="11" rx="2.5" fill="white" opacity="0.55"/>
+  <rect x="79" y="36" width="7" height="11" rx="2.5" fill="white" opacity="0.55"/>
+
+  <!-- Head (rounded rectangle) -->
+  <rect x="21" y="27" width="58" height="50" rx="10"
+        fill="rgba(255,255,255,0.14)" stroke="white" stroke-width="2.8"/>
+
+  <!-- Left eye (white sclera + blue iris) -->
+  <circle cx="37" cy="44" r="7" fill="white" opacity="0.95"/>
+  <circle cx="37" cy="44" r="3.4" fill="#0958d9"/>
+  <circle cx="35" cy="42" r="1.3" fill="white" opacity="0.65"/>
+
+  <!-- Right eye -->
+  <circle cx="63" cy="44" r="7" fill="white" opacity="0.95"/>
+  <circle cx="63" cy="44" r="3.4" fill="#0958d9"/>
+  <circle cx="61" cy="42" r="1.3" fill="white" opacity="0.65"/>
+
+  <!-- Mouth (neutral flat bar) -->
+  <rect x="34" y="59" width="32" height="7" rx="3.5" fill="white" opacity="0.88"/>
+</svg>
