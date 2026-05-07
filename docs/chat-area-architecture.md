@@ -148,7 +148,7 @@ The chat area is a thin client. It renders state returned by the backend but doe
 - Results scoped to the authenticated user's data within their tenant
 - Search UI accessible from the session sidebar
 
-### **4.8 Memory Management**
+### **4.11 Memory Management**
 - View all memory items associated with the current user
 - Filter memory by session or view all
 - Delete individual memory entries
@@ -156,7 +156,7 @@ The chat area is a thin client. It renders state returned by the backend but doe
 - Entries created by the agent are marked as automatic; user-added entries are marked as manual
 - All memory actions are proxied through the backend; no direct DB access from the frontend
 
-### **4.9 Session Tool Activation**
+### **4.12 Session Tool Activation**
 - Users can view tools enabled for their tenant
 - Users can activate or deactivate individual tools for the current session
 - Only tools enabled by the tenant admin or manager are available for activation

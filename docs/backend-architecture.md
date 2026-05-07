@@ -165,13 +165,15 @@ POST   /chat/session/:id/tools/:toolId
 DELETE /chat/session/:id/tools/:toolId
 ```
 
-### **3.6 Admin Users** *(admin only)*
+### **3.6 Admin / Manager Users**
 ```
 GET    /admin/users
 POST   /admin/users
 PUT    /admin/users/:id
 DELETE /admin/users/:id
 ```
+
+> Admins see users across all tenants. Managers see only users within their own tenant. Scope is enforced by the backend using the `tenant_id` claim in the JWT.
 
 ### **3.7 Admin Tenants** *(admin only)*
 ```
@@ -213,15 +215,7 @@ PUT    /admin/skills/:id
 DELETE /admin/skills/:id
 ```
 
-### **3.12 Admin / Manager Users (tenant-scoped)**
-```
-GET    /admin/users
-POST   /admin/users
-PUT    /admin/users/:id
-DELETE /admin/users/:id
-```
-
-### **3.13 Analytics**
+### **3.12 Analytics**
 ```
 GET /admin/usage
 GET /admin/logs
