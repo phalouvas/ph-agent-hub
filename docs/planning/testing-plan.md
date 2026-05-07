@@ -9,12 +9,12 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 1.1 | Login with valid credentials (admin@phagent.local / admin) | ⬜ | |
+| 1.1 | Login with valid credentials (admin@phagent.local / admin) | ✅ | |
 | 1.2 | Login with invalid credentials shows error | ⬜ | |
 | 1.3 | Logout redirects to login page | ⬜ | |
 | 1.4 | Protected routes redirect unauthenticated users to /login | ⬜ | |
 | 1.5 | Non-admin users cannot access /admin routes | ⬜ | |
-| 1.6 | Admin link visible in sidebar for admin/manager users | ⬜ | |
+| 1.6 | Admin link visible in sidebar for admin/manager users | ✅ | Clicking navigates to /admin |
 
 ---
 
@@ -46,10 +46,10 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 4.1 | **CREATE** — Add a new tenant | ⬜ | |
-| 4.2 | **READ** — Tenant appears in list | ⬜ | |
-| 4.3 | **UPDATE** — Edit tenant settings | ⬜ | |
-| 4.4 | **DELETE** — Remove a tenant | ⬜ | |
+| 4.1 | **CREATE** — Add a new tenant | ✅ | |
+| 4.2 | **READ** — Tenant appears in list | ✅ | |
+| 4.3 | **UPDATE** — Edit tenant settings | ✅ | Name changed successfully |
+| 4.4 | **DELETE** — Remove a tenant | ✅ | Only Default remains |
 
 ---
 
@@ -57,10 +57,10 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 5.1 | **CREATE** — Add a new tool | ⬜ | |
-| 5.2 | **READ** — Tool appears in list | ⬜ | |
-| 5.3 | **UPDATE** — Edit tool configuration | ⬜ | |
-| 5.4 | **DELETE** — Remove a tool | ⬜ | |
+| 5.1 | **CREATE** — Add a new tool | ✅ | |
+| 5.2 | **READ** — Tool appears in list | ✅ | |
+| 5.3 | **UPDATE** — Edit tool configuration | ✅ | |
+| 5.4 | **DELETE** — Remove a tool | ✅ | |
 
 ---
 
@@ -68,10 +68,10 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 6.1 | **CREATE** — Add a new template | ⬜ | |
-| 6.2 | **READ** — Template appears in list | ⬜ | |
-| 6.3 | **UPDATE** — Edit template content | ⬜ | |
-| 6.4 | **DELETE** — Remove a template | ⬜ | |
+| 6.1 | **CREATE** — Add a new template | ✅ | System Prompt shows validation but still created |
+| 6.2 | **READ** — Template appears in list | ✅ | |
+| 6.3 | **UPDATE** — Edit template content | ✅ | Title changed successfully |
+| 6.4 | **DELETE** — Remove a template | ❌ | FK constraint with sessions (500 error) — same bug as models had |
 
 ---
 
@@ -79,7 +79,7 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 7.1 | **CREATE** — Add a new skill | ⬜ | |
+| 7.1 | **CREATE** — Add a new skill | ❌ | Backend 500 error |
 | 7.2 | **READ** — Skill appears in list | ⬜ | |
 | 7.3 | **UPDATE** — Edit skill | ⬜ | |
 | 7.4 | **DELETE** — Remove a skill | ⬜ | |
@@ -99,8 +99,8 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 9.1 | Create a new chat session | ⬜ | |
-| 9.2 | Session appears in sidebar | ⬜ | |
+| 9.1 | Create a new chat session | ✅ | |
+| 9.2 | Session appears in sidebar | ✅ | |
 | 9.3 | Pin / Unpin a session | ⬜ | |
 | 9.4 | Delete a session | ⬜ | |
 | 9.5 | Search sessions | ⬜ | |
@@ -112,9 +112,9 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 10.1 | Send a message and receive a response | ⬜ | |
+| 10.1 | Send a message and receive a response | ❌ | Model selection not persisted to session — "No model configured" |
 | 10.2 | Streaming response works (tokens appear progressively) | ⬜ | |
-| 10.3 | Select a different model from dropdown | ⬜ | |
+| 10.3 | Select a different model from dropdown | ❌ | Dropdown works but selection not saved to session |
 | 10.4 | Select a template | ⬜ | |
 | 10.5 | Select a skill | ⬜ | |
 | 10.6 | Select a prompt | ⬜ | |
@@ -126,17 +126,38 @@
 
 | Area | Passed | Failed | Not Tested |
 |------|--------|--------|------------|
-| Authentication | 0 | 0 | 6 |
+| Authentication | 2 | 0 | 4 |
 | Models CRUD | 5 | 0 | 0 |
 | Users CRUD | 4 | 0 | 1 |
-| Tenants CRUD | 0 | 0 | 4 |
-| Tools CRUD | 0 | 0 | 4 |
-| Templates CRUD | 0 | 0 | 4 |
-| Skills CRUD | 0 | 0 | 4 |
+| Tenants CRUD | 4 | 0 | 0 |
+| Tools CRUD | 4 | 0 | 0 |
+| Templates CRUD | 3 | 1 | 0 |
+| Skills CRUD | 0 | 1 | 3 |
 | Analytics & Settings | 0 | 0 | 2 |
-| Session Management | 0 | 0 | 6 |
-| Chat Messaging | 0 | 0 | 7 |
-| **TOTAL** | **9** | **0** | **38** |
+| Session Management | 2 | 0 | 4 |
+| Chat Messaging | 0 | 2 | 5 |
+| **TOTAL** | **24** | **4** | **19** |
+
+---
+
+## Bugs Found
+
+| # | Severity | Area | Description |
+|---|----------|------|-------------|
+| B1 | 🔴 Critical | Chat | Model selection in chat UI not persisted to session — can't send messages |
+| B2 | 🟡 Medium | Templates | DELETE fails with FK constraint error (sessions.selected_template_id) |
+| B3 | 🟡 Medium | Skills | CREATE fails with 500 Internal Server Error |
+| B4 | 🟢 Low | Model form | API key shown in plaintext when editing (Input.Password shows value) |
+
+---
+
+## Changes Made During Testing
+
+1. **Added `model_id` column to models** — Separate display `name` from API `model_id` (required field)
+2. **Fixed model DELETE FK constraint** — Clear sessions/model references before deleting
+3. **Made `tenant_id` optional in UserCreate** — Defaults to current user's tenant
+4. **Fixed `_get_client_ip` infinite recursion** — Fallback now uses `request.client.host`
+5. **Made "Admin" text a clickable link** — Navigates to `/admin` for admin/manager users
 
 ---
 
