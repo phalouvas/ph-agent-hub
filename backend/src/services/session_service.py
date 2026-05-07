@@ -95,20 +95,33 @@ async def update_session(
 async def delete_session(db: AsyncSession, session_id: str) -> None:
     """Delete a session by ID.
 
-    Clears FK references from messages and session_active_tools,
+    Clears all FK references (message feedback, messages, active tools),
     then deletes the session. Raises NotFoundError if missing.
     """
-    from sqlalchemy import delete as sa_delete
-    from ..db.orm.messages import Message
+    from sqlalchemy import delete as sa_delete, update as sa_update
+    from ..db.orm.messages import Message, MessageFeedback
     from ..db.orm.sessions import SessionActiveTool
 
     session = await get_session_by_id(db, session_id)
     if session is None:
         raise NotFoundError("Session not found")
 
-    # Clear FK references before deleting the session.
-    # 1. Null out parent_message_id self-references within this session
-    from sqlalchemy import update as sa_update
+    # Get all message IDs for this session first
+    result = await db.execute(
+        select(Message.id).where(Message.session_id == session_id)
+    )
+    message_ids = [row[0] for row in result.all()]
+
+    # 1. Delete message feedbacks for these messages
+    if message_ids:
+        await db.execute(
+            sa_delete(MessageFeedback).where(
+                MessageFeedback.message_id.in_(message_ids)
+            )
+        )
+        await db.flush()
+
+    # 2. Null out parent_message_id self-references
     await db.execute(
         sa_update(Message)
         .where(Message.session_id == session_id)
@@ -116,11 +129,13 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 2. Delete all messages in this session
+    # 3. Delete all messages in this session
     await db.execute(
         sa_delete(Message).where(Message.session_id == session_id)
     )
-    # 3. Delete active tool associations
+    await db.flush()
+
+    # 4. Delete active tool associations
     await db.execute(
         sa_delete(SessionActiveTool).where(
             SessionActiveTool.session_id == session_id
@@ -128,6 +143,7 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
+    # 5. Delete the session itself
     await db.delete(session)
     await db.commit()
 
