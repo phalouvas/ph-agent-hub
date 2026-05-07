@@ -40,7 +40,6 @@ Edit the `env` file and set the following **required** values:
 | `ENCRYPTION_KEY` | Fernet key for encrypting API keys at rest. Generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
 | `ADMIN_EMAIL` | Initial admin user email (default: `admin@phagent.local`) |
 | `ADMIN_PASSWORD` | Initial admin password — **change before production** |
-| At least one of: `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | AI provider API keys |
 
 ### 2.3 Start the Platform
 

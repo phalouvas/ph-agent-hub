@@ -19,10 +19,10 @@ import {
   SettingOutlined,
   LogoutOutlined,
   MenuOutlined,
-  WalletOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../../../providers/AuthProvider";
+import { Logo } from "../../../shared/components/Logo";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -89,9 +89,7 @@ export function AdminLayout() {
           borderBottom: "1px solid rgba(255,255,255,0.1)",
         }}
       >
-        <Text strong style={{ color: "#fff", fontSize: 16 }}>
-          <WalletOutlined /> Admin
-        </Text>
+        <Logo size={30} showText textColor="#fff" />
       </div>
       <Menu
         theme="dark"

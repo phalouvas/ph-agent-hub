@@ -29,8 +29,8 @@ import {
   PushpinFilled,
   DeleteOutlined,
   MenuOutlined,
-  WalletOutlined,
 } from "@ant-design/icons";
+import { Logo } from "../../../shared/components/Logo";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../../providers/AuthProvider";
@@ -146,9 +146,7 @@ export function SessionSidebar() {
             justifyContent: "space-between",
           }}
         >
-          <Text strong style={{ fontSize: 16 }}>
-            <WalletOutlined /> PH Agent
-          </Text>
+          <Logo size={28} showText textColor="#141414" />
           <Space size={4}>
             <Tooltip title="Search">
               <Button

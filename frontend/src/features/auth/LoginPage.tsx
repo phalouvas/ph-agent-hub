@@ -10,6 +10,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Form, Input, Button, Typography, Alert, Card, Space } from "antd";
 import { UserOutlined, LockOutlined } from "@ant-design/icons";
 import { useAuth } from "../../providers/AuthProvider";
+import { Logo } from "../../shared/components/Logo";
 
 const { Title } = Typography;
 
@@ -68,6 +69,9 @@ export function LoginPage() {
       >
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <div style={{ textAlign: "center" }}>
+            <div style={{ marginBottom: 12, display: "flex", justifyContent: "center" }}>
+              <Logo size={64} />
+            </div>
             <Title level={3} style={{ margin: 0 }}>
               PH Agent Hub
             </Title>
