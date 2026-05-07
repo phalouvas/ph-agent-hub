@@ -51,6 +51,7 @@ The backend provides the following core capabilities:
 - Memory items (per user, optionally per session; supports manual user entries)
 - RAG documents
 - ERPNext instance configurations
+- Schema defined as SQLAlchemy ORM models; migrations versioned and applied with Alembic
 
 ### **1.6 Multi‑Tenant Routing**
 Each request is routed based on:
@@ -261,8 +262,24 @@ GET /admin/logs
       prompt_service.py
       skill_service.py
     /db
-      schema.sql
-      migrations/
+      base.py              — SQLAlchemy declarative base and async session factory
+      /orm                 — SQLAlchemy ORM model definitions
+        users.py
+        tenants.py
+        models.py
+        tools.py
+        templates.py
+        prompts.py
+        skills.py
+        sessions.py
+        messages.py
+        memory.py
+        rag.py
+        logs.py
+      /migrations          — Alembic migration scripts
+        env.py
+        versions/
+    alembic.ini
     /core
       config.py
       security.py
@@ -273,7 +290,31 @@ GET /admin/logs
 
 ---
 
-## 5. DeepSeek Stabilization Layer
+## 5. ORM & Database Migrations
+
+The backend uses **SQLAlchemy 2.0** as the ORM and **Alembic** for schema migrations.
+
+### **5.1 SQLAlchemy ORM**
+- All database tables are defined as SQLAlchemy model classes under `/db/orm/`
+- The async session factory (`AsyncSession`) is configured in `/db/base.py` using `aiomysql` as the MariaDB driver
+- Complex queries (e.g., message branching tree, full-text search) are written as raw SQL via `session.execute(text(...))` and called from the service layer
+- JSON columns (`messages.content`, `messages.tool_calls`, `tools.config`, etc.) map to SQLAlchemy's `JSON` column type and are read/written as Python dicts
+
+### **5.2 Alembic Migrations**
+- Migration scripts live in `/db/migrations/versions/`
+- Alembic tracks applied migrations in the `alembic_version` table it manages in MariaDB
+- To generate a migration after changing a model: `alembic revision --autogenerate -m "description"`
+- All generated migration files must be reviewed before applying — autogenerate does not detect changes inside JSON columns, custom check constraints, or complex index types
+- To apply all pending migrations: `alembic upgrade head`
+
+### **5.3 Migration on Startup**
+- The backend container runs `alembic upgrade head` as part of its Docker entrypoint before starting the application server
+- This ensures the schema is always up to date on every deployment without manual intervention
+- The MariaDB container must be healthy before the backend starts; a health-check is used in `docker-compose.yml` for this purpose
+
+---
+
+## 6. DeepSeek Stabilization Layer
 
 The backend includes a dedicated stabilization module responsible for:
 
@@ -289,7 +330,7 @@ This module is fully monkey‑patchable.
 
 ---
 
-## 6. Multi‑Tenant Logic
+## 7. Multi‑Tenant Logic
 
 Each request includes a JWT with:
 
@@ -312,7 +353,7 @@ No data is shared across tenants.
 
 ---
 
-## 7. Deployment
+## 8. Deployment
 
 The backend runs as a Docker container and depends on:
 
@@ -325,7 +366,7 @@ It is designed for both single‑server and multi‑server deployments.
 
 ---
 
-## 8. Goals of the Backend
+## 9. Goals of the Backend
 
 - Provide a stable, extensible agent runtime
 - Support DeepSeek and other advanced models

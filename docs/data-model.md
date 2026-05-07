@@ -3,6 +3,8 @@
 This document defines the database schema for PH Agent Hub.  
 The platform uses MariaDB as the primary relational database and Redis for caching, queues, and ephemeral memory.
 
+The schema is implemented as **SQLAlchemy 2.0 ORM models** (one file per entity group under `/backend/src/db/orm/`). Schema changes are versioned and applied via **Alembic** migration scripts. The tables, columns, and constraints defined below map directly to those ORM models.
+
 Because MariaDB is the primary store, relationships that require joins or referential integrity are normalized into dedicated tables. JSON columns are reserved for flexible payloads that are typically stored and retrieved as complete documents.
 
 The data model supports:

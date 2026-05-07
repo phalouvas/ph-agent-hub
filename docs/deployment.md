@@ -70,9 +70,12 @@ services:
   backend:
     build: ../backend
     env_file: ./env
+    command: ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"]
     depends_on:
-      - mariadb
-      - redis
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "8000:8000"
 
@@ -96,6 +99,11 @@ services:
       --collation-server=utf8mb4_unicode_ci
     volumes:
       - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
@@ -187,6 +195,8 @@ In production, SSL termination should be added.
 ```
 docker compose up --build
 ```
+
+Alembic migrations run automatically inside the backend container on startup before the application server starts.
 
 ## **7.2 Production Deployment**
 Recommended options:
