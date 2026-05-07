@@ -41,7 +41,7 @@ Recommended stack:
 - **TypeScript**
 - **Refine Core** for CRUD-heavy admin resources
 - **REST API client** for backend communication
-- **Material UI or Ant Design** for administrative components
+- **Ant Design 5 + @refinedev/antd** for administrative components
 - **JWT authentication** shared with the rest of the frontend
 
 Refine should be used where it accelerates resource management. It should not be treated as the architecture for the entire web app.
