@@ -7,10 +7,10 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout, Empty, Button, Typography, Spin } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SessionSidebar } from "../components/SessionSidebar";
 import { ChatWindow } from "../components/ChatWindow";
-import { getSession, createSession } from "../services/chat";
+import { getSession, createSession, updateSession } from "../services/chat";
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -18,6 +18,7 @@ const { Title, Text } = Typography;
 export function ChatPage() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: session, isLoading: loadingSession } = useQuery({
     queryKey: ["session", sessionId],
@@ -25,9 +26,10 @@ export function ChatPage() {
     enabled: !!sessionId,
   });
 
-  const handleSessionUpdate = (_data: Record<string, unknown>) => {
-    // This would call updateSession, but for simplicity in the ChatWindow
-    // we just pass this handler through
+  const handleSessionUpdate = async (data: Record<string, unknown>) => {
+    if (!sessionId) return;
+    await updateSession(sessionId, data as Record<string, string | null>);
+    queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
   };
 
   const handleNewChat = async () => {

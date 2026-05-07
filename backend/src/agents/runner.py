@@ -92,6 +92,11 @@ async def _resolve_session_config(
 
     # 5. Determine execution type and name
     execution_type = skill.execution_type if skill else "agent"
+    # Normalize: workflow_based → workflow, prompt_based → agent
+    if execution_type == "workflow_based":
+        execution_type = "workflow"
+    if execution_type == "prompt_based":
+        execution_type = "agent"
     agent_name = skill.title if skill else "assistant"
 
     # 6. Apply DeepSeek middleware

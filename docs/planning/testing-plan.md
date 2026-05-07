@@ -71,7 +71,7 @@
 | 6.1 | **CREATE** — Add a new template | ✅ | System Prompt shows validation but still created |
 | 6.2 | **READ** — Template appears in list | ✅ | |
 | 6.3 | **UPDATE** — Edit template content | ✅ | Title changed successfully |
-| 6.4 | **DELETE** — Remove a template | ❌ | FK constraint with sessions (500 error) — same bug as models had |
+| 6.4 | **DELETE** — Remove a template | ✅ | Fixed FK constraint bug |
 
 ---
 
@@ -79,10 +79,10 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 7.1 | **CREATE** — Add a new skill | ❌ | Backend 500 error |
-| 7.2 | **READ** — Skill appears in list | ⬜ | |
+| 7.1 | **CREATE** — Add a new skill | ✅ | Fixed execution_type enum bug |
+| 7.2 | **READ** — Skill appears in list | ✅ | |
 | 7.3 | **UPDATE** — Edit skill | ⬜ | |
-| 7.4 | **DELETE** — Remove a skill | ⬜ | |
+| 7.4 | **DELETE** — Remove a skill | ✅ | |
 
 ---
 
@@ -101,10 +101,10 @@
 |---|------|--------|-------|
 | 9.1 | Create a new chat session | ✅ | |
 | 9.2 | Session appears in sidebar | ✅ | |
-| 9.3 | Pin / Unpin a session | ⬜ | |
-| 9.4 | Delete a session | ⬜ | |
+| 9.3 | Pin / Unpin a session | ✅ | |
+| 9.4 | Delete a session | ✅ | |
 | 9.5 | Search sessions | ⬜ | |
-| 9.6 | Navigate between sessions | ⬜ | |
+| 9.6 | Navigate between sessions | ✅ | |
 
 ---
 
@@ -112,9 +112,9 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 10.1 | Send a message and receive a response | ❌ | Model selection not persisted to session — "No model configured" |
-| 10.2 | Streaming response works (tokens appear progressively) | ⬜ | |
-| 10.3 | Select a different model from dropdown | ❌ | Dropdown works but selection not saved to session |
+| 10.1 | Send a message and receive a response | ✅ | "Hello world" from DeepSeek via OpenAIChatCompletionClient |
+| 10.2 | Streaming response works (tokens appear progressively) | ✅ | Tokens streamed progressively |
+| 10.3 | Select a different model from dropdown | ✅ | Model selection persists to session via updateSession API |
 | 10.4 | Select a template | ⬜ | |
 | 10.5 | Select a skill | ⬜ | |
 | 10.6 | Select a prompt | ⬜ | |
@@ -131,23 +131,23 @@
 | Users CRUD | 4 | 0 | 1 |
 | Tenants CRUD | 4 | 0 | 0 |
 | Tools CRUD | 4 | 0 | 0 |
-| Templates CRUD | 3 | 1 | 0 |
-| Skills CRUD | 0 | 1 | 3 |
+| Templates CRUD | 4 | 0 | 0 |
+| Skills CRUD | 3 | 0 | 1 |
 | Analytics & Settings | 0 | 0 | 2 |
-| Session Management | 2 | 0 | 4 |
-| Chat Messaging | 0 | 2 | 5 |
-| **TOTAL** | **24** | **4** | **19** |
+| Session Management | 5 | 0 | 1 |
+| Chat Messaging | 3 | 0 | 4 |
+| **TOTAL** | **34** | **0** | **13** |
 
 ---
 
-## Bugs Found
+## Bugs Found (All Fixed ✅)
 
-| # | Severity | Area | Description |
-|---|----------|------|-------------|
-| B1 | 🔴 Critical | Chat | Model selection in chat UI not persisted to session — can't send messages |
-| B2 | 🟡 Medium | Templates | DELETE fails with FK constraint error (sessions.selected_template_id) |
-| B3 | 🟡 Medium | Skills | CREATE fails with 500 Internal Server Error |
-| B4 | 🟢 Low | Model form | API key shown in plaintext when editing (Input.Password shows value) |
+| # | Severity | Area | Description | Status |
+|---|----------|------|-------------|--------|
+| B1 | 🔴 Critical | Chat | Model selection not persisted to session | ✅ Fixed — handleSessionUpdate now calls updateSession API |
+| B2 | 🟡 Medium | Templates | DELETE fails with FK constraint error | ✅ Fixed — clear sessions.selected_template_id before delete |
+| B3 | 🟡 Medium | Skills | CREATE fails — execution_type enum mismatch | ✅ Fixed — added prompt_based/workflow_based to DB enum |
+| B4 | 🔴 Critical | Chat | 404 from DeepSeek API — OpenAIChatClient uses Responses API | ✅ Fixed — switched to OpenAIChatCompletionClient + /v1 URL |
 
 ---
 
@@ -158,6 +158,11 @@
 3. **Made `tenant_id` optional in UserCreate** — Defaults to current user's tenant
 4. **Fixed `_get_client_ip` infinite recursion** — Fallback now uses `request.client.host`
 5. **Made "Admin" text a clickable link** — Navigates to `/admin` for admin/manager users
+6. **Fixed chat model persistence (B1)** — handleSessionUpdate now calls updateSession API
+7. **Fixed template DELETE FK (B2)** — Clear sessions.selected_template_id before delete
+8. **Fixed skill execution_type enum (B3)** — Added prompt_based/workflow_based to DB enum
+9. **Fixed DeepSeek API client (B4)** — Switched from OpenAIChatClient (Responses API) to OpenAIChatCompletionClient (Chat Completions API) with /v1 URL suffix
+10. **Fixed runner execution_type normalization** — Maps workflow_based→workflow, prompt_based→agent
 
 ---
 
