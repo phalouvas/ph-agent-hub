@@ -51,6 +51,22 @@ from ..services.erpnext_service import (
     list_erpnext_instances as _svc_list_erpnext_instances,
     update_erpnext_instance as _svc_update_erpnext_instance,
 )
+from ..services.template_service import (
+    create_template as _svc_create_template,
+    delete_template as _svc_delete_template,
+    get_template_by_id,
+    list_template_tools as _svc_list_template_tools,
+    list_templates as _svc_list_templates,
+    update_template as _svc_update_template,
+)
+from ..services.skill_service import (
+    create_skill as _svc_create_skill,
+    delete_skill as _svc_delete_skill,
+    get_skill_by_id,
+    list_skill_tools as _svc_list_skill_tools,
+    list_skills as _svc_list_skills,
+    update_skill as _svc_update_skill,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -609,3 +625,303 @@ async def delete_erpnext_instance(
             )
 
     await _svc_delete_erpnext_instance(db, instance_id)
+
+
+# =============================================================================
+# Template Admin Endpoints (admin or manager)
+# =============================================================================
+
+
+class AdminTemplateCreate(BaseModel):
+    title: str
+    description: str
+    system_prompt: str
+    scope: str = "tenant"
+    default_model_id: str | None = None
+    assigned_user_id: str | None = None
+    tool_ids: list[str] | None = None
+
+
+class AdminTemplateUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    system_prompt: str | None = None
+    scope: str | None = None
+    default_model_id: str | None = None
+    assigned_user_id: str | None = None
+    tool_ids: list[str] | None = None
+
+
+class AdminTemplateResponse(BaseModel):
+    id: str
+    tenant_id: str
+    title: str
+    description: str
+    system_prompt: str
+    scope: str
+    default_model_id: str | None
+    assigned_user_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    tool_ids: list[str] = []
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/templates", response_model=list[AdminTemplateResponse])
+async def admin_list_templates(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List templates. Admin sees all. Manager sees own tenant only."""
+    if current_user.role == "admin":
+        # Admin sees all templates across all tenants
+        from sqlalchemy import select
+        from ..db.orm.templates import Template as TemplateORM
+        result = await db.execute(select(TemplateORM).order_by(TemplateORM.created_at))
+        templates = list(result.scalars().all())
+    else:
+        templates = await _svc_list_templates(
+            db, tenant_id=current_user.tenant_id, current_user=current_user
+        )
+
+    resp_list: list[AdminTemplateResponse] = []
+    for t in templates:
+        tools = await _svc_list_template_tools(db, t.id)
+        resp = AdminTemplateResponse.model_validate(t)
+        resp.tool_ids = [tool.tool_id for tool in tools]
+        resp_list.append(resp)
+
+    return resp_list
+
+
+@router.post("/templates", response_model=AdminTemplateResponse, status_code=201)
+async def admin_create_template(
+    body: AdminTemplateCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Create a template. Manager scoped to own tenant."""
+    template = await _svc_create_template(
+        db,
+        tenant_id=current_user.tenant_id,
+        title=body.title,
+        description=body.description,
+        system_prompt=body.system_prompt,
+        scope=body.scope,
+        default_model_id=body.default_model_id,
+        assigned_user_id=body.assigned_user_id,
+        tool_ids=body.tool_ids,
+    )
+    tools = await _svc_list_template_tools(db, template.id)
+    resp = AdminTemplateResponse.model_validate(template)
+    resp.tool_ids = [t.tool_id for t in tools]
+    return resp
+
+
+@router.put("/templates/{template_id}", response_model=AdminTemplateResponse)
+async def admin_update_template(
+    template_id: str,
+    body: AdminTemplateUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Update a template. Manager scoped to own tenant."""
+    target = await get_template_by_id(db, template_id)
+
+    if current_user.role == "manager":
+        if target.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only modify templates in their own tenant")
+
+    update_kwargs: dict = {}
+    if body.title is not None:
+        update_kwargs["title"] = body.title
+    if body.description is not None:
+        update_kwargs["description"] = body.description
+    if body.system_prompt is not None:
+        update_kwargs["system_prompt"] = body.system_prompt
+    if body.scope is not None:
+        update_kwargs["scope"] = body.scope
+    if body.default_model_id is not None:
+        update_kwargs["default_model_id"] = body.default_model_id
+    if body.assigned_user_id is not None:
+        update_kwargs["assigned_user_id"] = body.assigned_user_id
+
+    template = await _svc_update_template(
+        db, template_id, tool_ids=body.tool_ids, **update_kwargs
+    )
+    tools = await _svc_list_template_tools(db, template.id)
+    resp = AdminTemplateResponse.model_validate(template)
+    resp.tool_ids = [t.tool_id for t in tools]
+    return resp
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+async def admin_delete_template(
+    template_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Delete a template. Manager scoped to own tenant."""
+    target = await get_template_by_id(db, template_id)
+
+    if current_user.role == "manager":
+        if target.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only delete templates in their own tenant")
+
+    await _svc_delete_template(db, template_id)
+
+
+# =============================================================================
+# Skill Admin Endpoints (admin or manager)
+# =============================================================================
+
+
+class AdminSkillCreate(BaseModel):
+    title: str
+    description: str
+    execution_type: str
+    maf_target_key: str
+    visibility: str = "tenant"
+    template_id: str | None = None
+    default_prompt_id: str | None = None
+    default_model_id: str | None = None
+    enabled: bool = True
+    tool_ids: list[str] | None = None
+
+
+class AdminSkillUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    execution_type: str | None = None
+    maf_target_key: str | None = None
+    visibility: str | None = None
+    template_id: str | None = None
+    default_prompt_id: str | None = None
+    default_model_id: str | None = None
+    enabled: bool | None = None
+    tool_ids: list[str] | None = None
+
+
+class AdminSkillResponse(BaseModel):
+    id: str
+    tenant_id: str
+    user_id: str | None
+    title: str
+    description: str
+    execution_type: str
+    maf_target_key: str
+    visibility: str
+    template_id: str | None
+    default_prompt_id: str | None
+    default_model_id: str | None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    tool_ids: list[str] = []
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/skills", response_model=list[AdminSkillResponse])
+async def admin_list_skills(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List skills. Admin sees all. Manager sees own tenant only."""
+    if current_user.role == "admin":
+        from sqlalchemy import select
+        from ..db.orm.skills import Skill as SkillORM
+        result = await db.execute(select(SkillORM).order_by(SkillORM.created_at))
+        skills = list(result.scalars().all())
+    else:
+        skills = await _svc_list_skills(
+            db, tenant_id=current_user.tenant_id
+        )
+
+    resp_list: list[AdminSkillResponse] = []
+    for s in skills:
+        tools = await _svc_list_skill_tools(db, s.id)
+        resp = AdminSkillResponse.model_validate(s)
+        resp.tool_ids = [t.tool_id for t in tools]
+        resp_list.append(resp)
+
+    return resp_list
+
+
+@router.post("/skills", response_model=AdminSkillResponse, status_code=201)
+async def admin_create_skill(
+    body: AdminSkillCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Create a skill. Admin creates with specified visibility.
+    Manager scoped to own tenant, creates tenant-shared skills."""
+    skill = await _svc_create_skill(
+        db,
+        tenant_id=current_user.tenant_id,
+        user_id=None,  # Admin-managed skills have no owner user
+        title=body.title,
+        description=body.description,
+        execution_type=body.execution_type,
+        maf_target_key=body.maf_target_key,
+        visibility=body.visibility,
+        template_id=body.template_id,
+        default_prompt_id=body.default_prompt_id,
+        default_model_id=body.default_model_id,
+        enabled=body.enabled,
+        tool_ids=body.tool_ids,
+    )
+    tools = await _svc_list_skill_tools(db, skill.id)
+    resp = AdminSkillResponse.model_validate(skill)
+    resp.tool_ids = [t.tool_id for t in tools]
+    return resp
+
+
+@router.put("/skills/{skill_id}", response_model=AdminSkillResponse)
+async def admin_update_skill(
+    skill_id: str,
+    body: AdminSkillUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Update a skill. Manager scoped to own tenant."""
+    target = await get_skill_by_id(db, skill_id)
+
+    if current_user.role == "manager":
+        if target.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only modify skills in their own tenant")
+
+    update_kwargs: dict = {}
+    for field in (
+        "title", "description", "execution_type", "maf_target_key",
+        "visibility", "template_id", "default_prompt_id", "default_model_id",
+        "enabled",
+    ):
+        val = getattr(body, field, None)
+        if val is not None:
+            update_kwargs[field] = val
+
+    skill = await _svc_update_skill(
+        db, skill_id, tool_ids=body.tool_ids, **update_kwargs
+    )
+    tools = await _svc_list_skill_tools(db, skill.id)
+    resp = AdminSkillResponse.model_validate(skill)
+    resp.tool_ids = [t.tool_id for t in tools]
+    return resp
+
+
+@router.delete("/skills/{skill_id}", status_code=204)
+async def admin_delete_skill(
+    skill_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Delete a skill. Manager scoped to own tenant."""
+    target = await get_skill_by_id(db, skill_id)
+
+    if current_user.role == "manager":
+        if target.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only delete skills in their own tenant")
+
+    await _svc_delete_skill(db, skill_id)

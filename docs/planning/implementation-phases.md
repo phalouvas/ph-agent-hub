@@ -150,9 +150,9 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 5 — Templates, Prompts and Skills
+## ✅ Phase 5 — Templates, Prompts and Skills (Completed)
 
-**What gets built:**
+**What was built:**
 - Template CRUD: `GET/POST/PUT/DELETE /admin/templates` (admin + manager)
 - Prompt CRUD: `GET/POST/PUT/DELETE /prompts` (user-owned)
 - Skill CRUD: `GET/POST/PUT/DELETE /admin/skills` (admin + manager) and `GET/POST/PUT/DELETE /skills` (user-owned personal skills)
@@ -161,10 +161,15 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 4 complete — models and tools exist.
 
-**Exit condition (done when):**
-- Admin can create a template with allowed tools; user can retrieve it via `GET /templates`
-- User can create, edit, and delete their own personal skill
-- Registry startup scan completes without errors; unknown `maf_target_key` emits a warning, not a crash
+**Exit condition verified:**
+- ✅ Admin template CRUD with inline `tool_ids` works: `GET/POST/PUT/DELETE /admin/templates`
+- ✅ Admin skill CRUD works: `GET/POST/PUT/DELETE /admin/skills` with `visibility=tenant`
+- ✅ User-facing `GET /templates` returns scope-filtered templates
+- ✅ Prompt CRUD works: `GET/POST/PUT/DELETE /prompts` with ownership checks (403 for non-owner)
+- ✅ Skill CRUD works: `GET/POST/PUT/DELETE /skills` with 403 on tenant-shared skills
+- ✅ Manager cross-tenant requests to `/admin/templates` and `/admin/skills` return 403
+- ✅ MAF registry scans `src/agents/skills/` and `src/agents/workflows/` on startup
+- ✅ Registry logs WARNING for DB skills with unregistered `maf_target_key` (does not crash)
 
 **References:** [data-model.md](../data-model.md) §2, [agent-framework-integration.md](../agent-framework-integration.md) §7
 

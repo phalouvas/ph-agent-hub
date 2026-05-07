@@ -1,0 +1,54 @@
+# =============================================================================
+# PH Agent Hub — Templates API Router (User-Facing)
+# =============================================================================
+
+from datetime import datetime
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..core.dependencies import get_current_user, get_db
+from ..db.orm.users import User as UserORM
+from ..services.template_service import (
+    list_templates as _svc_list_templates,
+    list_template_tools as _svc_list_template_tools,
+)
+
+router = APIRouter(prefix="/templates", tags=["templates"])
+
+
+class TemplateResponse(BaseModel):
+    id: str
+    tenant_id: str
+    title: str
+    description: str
+    system_prompt: str
+    scope: str
+    default_model_id: str | None
+    assigned_user_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    tool_ids: list[str] = []
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("", response_model=list[TemplateResponse])
+async def list_templates(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Return templates visible to the requesting user within their tenant."""
+    templates = await _svc_list_templates(
+        db, tenant_id=current_user.tenant_id, current_user=current_user
+    )
+
+    result: list[TemplateResponse] = []
+    for t in templates:
+        tools = await _svc_list_template_tools(db, t.id)
+        resp = TemplateResponse.model_validate(t)
+        resp.tool_ids = [tool.tool_id for tool in tools]
+        result.append(resp)
+
+    return result
