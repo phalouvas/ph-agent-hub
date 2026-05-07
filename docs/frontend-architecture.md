@@ -65,7 +65,7 @@ Recommended stack:
 - **TypeScript**
 - **React Router**
 - **TanStack Query** for data fetching and mutations
-- **SSE or WebSockets** for streaming responses and agent events
+- **SSE** ([`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source)) for streaming responses and agent events — see [streaming-protocol.md](streaming-protocol.md)
 - **TailwindCSS, Material UI, or another shared design system**
 - **Refine Core** for the admin area only
 
@@ -92,7 +92,7 @@ The frontend should remain framework-light and avoid duplicating backend behavio
 │                                                      │
 │  Shared: auth, API client, tenant context, routing   │
 └───────────────────────────────┬──────────────────────┘
-                                │ REST + SSE/WebSocket
+                                │ REST + SSE (text/event-stream)
                                 ▼
 ┌──────────────────────────────────────────────────────┐
 │          Backend + Microsoft Agent Framework        │

@@ -38,7 +38,7 @@ Recommended stack:
 - **React**
 - **TypeScript**
 - **TanStack Query**
-- **WebSockets or SSE** for streaming
+- **SSE** ([`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source)) for streaming — see [streaming-protocol.md](streaming-protocol.md)
 - **REST API client** for backend communication
 - **JWT authentication** shared with the rest of the frontend
 
@@ -58,7 +58,7 @@ Refine is **not** used for the chat area.
 │  - Session history                           │
 │  - Streaming renderer                        │
 └───────────────────────────────┬──────────────┘
-                                │ REST + SSE/WebSocket
+                                │ REST + SSE (text/event-stream)
                                 ▼
 ┌──────────────────────────────────────────────┐
 │   Backend + Microsoft Agent Framework        │

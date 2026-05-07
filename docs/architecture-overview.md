@@ -175,5 +175,6 @@ Additional documentation is provided in:
 - [deployment.md](deployment.md)
 - [deepseek-stabilizer.md](deepseek-stabilizer.md)
 - [agent-framework-integration.md](agent-framework-integration.md)
+- [streaming-protocol.md](streaming-protocol.md)
 
 These documents define the detailed implementation plan for PH Agent Hub.

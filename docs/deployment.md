@@ -174,6 +174,16 @@ http {
 
     location /api/ {
       proxy_pass http://backend:8000/;
+      proxy_http_version 1.1;
+
+      # Required for SSE — disable buffering so tokens are flushed immediately
+      proxy_buffering off;
+      proxy_cache off;
+      proxy_read_timeout 300s;
+
+      # Keep-alive headers for SSE connections
+      proxy_set_header Connection '';
+      chunked_transfer_encoding on;
     }
 
     location / {
