@@ -1,3 +1,18 @@
+# Prompt
+You are implementing PH Agent Hub, a multi-tenant AI agent platform. Read all the documentation carefully before producing anything.
+
+Task: Produce a detailed implementation plan for Phase X — BLA BLA BLA
+
+The plan must:
+
+List every file to create, in the order it should be created
+For each file: the exact path, its purpose, what it must contain, and any constraints from the architecture docs (e.g. single-module rules)
+Note dependencies between files (e.g. "encryption.py must exist before running the first migration")
+List any third-party packages required with exact names
+End with the exact steps to verify the exit condition is met
+Do not write code yet. Do not make decisions that are already made in the docs — follow the docs exactly. If you find a conflict or ambiguity in the docs, flag it instead of resolving it silently.
+
+
 # Implementation Phases — PH Agent Hub
 
 This document defines the implementation order for PH Agent Hub. Each phase has a clear entry condition, a definition of done, and references to the architecture docs it implements.
@@ -6,25 +21,26 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 0 — Monorepo Scaffold
+## ✅ Phase 0 — Monorepo Scaffold (Completed)
 
-**What gets built:**
+**What was built:**
 - Repository directory structure: `/backend`, `/frontend`, `/infrastructure`, `/docs`
 - `Dockerfile` for backend (Python/FastAPI)
 - `Dockerfile` for frontend (Node/React)
-- `docker-compose.yml` with all services: backend, frontend, mariadb, redis, minio, nginx
+- `docker-compose.yml` (dev) and `docker-compose.prod.yml` (production) with all services: backend, frontend, mariadb, redis, minio, nginx, phpMyAdmin
 - `infrastructure/env.example` with all required env vars
-- `infrastructure/nginx.conf` (basic reverse proxy, SSE-ready)
+- `infrastructure/nginx.conf` (basic reverse proxy, SSE-ready, phpMyAdmin route)
+- `.gitignore`
 - MariaDB, Redis, and MinIO health checks passing
-- Backend container starts, reaches the `alembic upgrade head` step (no migrations yet — just no crash)
+- Backend container starts, reaches the `alembic upgrade head` step (no migrations yet — no crash)
 
-**Entry condition:** Repository created.
-
-**Exit condition (done when):**
-- `docker compose up --build` starts all containers without errors
-- `docker compose ps` shows all services healthy
-- nginx routes `/api/` to backend and `/` to frontend
-- MinIO console reachable at `:9001` in development
+**Exit condition verified:**
+- ✅ `docker compose up --build` starts all containers without errors
+- ✅ `docker compose ps` shows all 7 services healthy
+- ✅ nginx routes `/` to frontend (200), `/api/` to backend (backend responds), `/pma/` to phpMyAdmin
+- ✅ MinIO console reachable at `:9001` (200)
+- ✅ Alembic runs cleanly: "Context impl MySQLImpl"
+- ✅ phpMyAdmin reachable at `:8080`
 
 **References:** [deployment.md](../deployment.md), [architecture-overview.md](../architecture-overview.md)
 

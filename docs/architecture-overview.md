@@ -103,7 +103,10 @@ The repository is organized as:
 /docs
 ```
 
-Each application has its own Dockerfile and is orchestrated via `docker compose`.
+Each application has its own Dockerfile and is orchestrated via `docker compose`. Two compose files are provided:
+
+- **`infrastructure/docker-compose.yml`** — development (nginx, exposed ports, phpMyAdmin)
+- **`infrastructure/docker-compose.prod.yml`** — production (Traefik, no exposed ports, external volumes)
 
 ---
 
@@ -117,9 +120,10 @@ PH Agent Hub is deployed as a set of Docker services:
 - **redis** — caching, queues, memory store
 - **minio** — object storage for file uploads (S3-compatible)
 - **optional vector DB** — for RAG
-- **nginx** — reverse proxy
+- **nginx** — reverse proxy (dev only)
+- **phpMyAdmin** — database admin UI (dev: port 8080; prod: via Traefik subdomain)
 
-This structure supports both single-server and multi-server deployments.
+This structure supports single-server deployments via Docker Compose, and can be extended to multi-server with a load balancer.
 
 ---
 

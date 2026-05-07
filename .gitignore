@@ -1,0 +1,37 @@
+# =============================================================================
+# PH Agent Hub — .gitignore
+# =============================================================================
+
+# --- Environment (contains secrets) ---
+infrastructure/env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# --- Node / Frontend ---
+node_modules/
+dist/
+.vite/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Docker ---
+.docker/

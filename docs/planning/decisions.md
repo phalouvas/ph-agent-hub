@@ -34,7 +34,17 @@ A log of key design decisions made during the design phase, with rationale. Orde
 
 ---
 
-## D-04 — MinIO for file upload object storage
+## D-04 — Docker Compose for deployment (not Kubernetes)
+
+**Date:** 2026-05-07
+**Decision:** Use Docker Compose as the production deployment method. No Kubernetes.
+**Rationale:** The platform is designed for single-VPS deployment. Docker Compose is simpler to operate, has lower resource overhead, and is sufficient for the target deployment scale. Kubernetes would add operational complexity (cluster management, ingress controllers, Helm) with no benefit for a single-server workload. If horizontal scaling is needed later, a load balancer in front of replicated backend services is sufficient.
+**Alternatives considered:** Kubernetes (rejected — overkill for single-server, adds operational complexity), raw Docker (docker-compose provides better orchestration for multi-container stacks).
+**Reference:** [deployment.md](../deployment.md)
+
+---
+
+## D-05 — MinIO for file upload object storage
 
 **Date:** 2026-05-07
 **Decision:** Use MinIO (self-hosted, S3-compatible) as the object storage backend for file uploads.
@@ -44,7 +54,7 @@ A log of key design decisions made during the design phase, with rationale. Orde
 
 ---
 
-## D-05 — Single storage module rule (boto3 calls only in s3.py)
+## D-06 — Single storage module rule (boto3 calls only in s3.py)
 
 **Date:** 2026-05-07
 **Decision:** All MinIO/boto3 interactions are contained in `/backend/src/storage/s3.py`. No service, agent, or API handler calls `boto3` directly.
@@ -54,7 +64,7 @@ A log of key design decisions made during the design phase, with rationale. Orde
 
 ---
 
-## D-06 — Fernet/AES-128-CBC for API key encryption
+## D-07 — Fernet/AES-128-CBC for API key encryption
 
 **Date:** 2026-05-07
 **Decision:** Use application-level Fernet symmetric encryption (from the Python `cryptography` library) for sensitive DB fields: `models.api_key`, `erpnext_instances.api_key`, `erpnext_instances.api_secret`.
@@ -64,7 +74,7 @@ A log of key design decisions made during the design phase, with rationale. Orde
 
 ---
 
-## D-07 — No permissions field in JWT; role-only claims
+## D-08 — No permissions field in JWT; role-only claims
 
 **Date:** 2026-05-07
 **Decision:** The JWT payload contains only `sub` (user_id), `tenant_id`, `role`, `exp`, and `iat`. There is no `permissions` array.
@@ -74,7 +84,7 @@ A log of key design decisions made during the design phase, with rationale. Orde
 
 ---
 
-## D-08 — Refresh token as httpOnly cookie with Redis jti denylist
+## D-09 — Refresh token as httpOnly cookie with Redis jti denylist
 
 **Date:** 2026-05-07
 **Decision:** Refresh tokens are issued as `httpOnly` cookies. Logout invalidates the token via a Redis denylist keyed by `jti` claim. Access tokens are stored in memory (not localStorage).
@@ -84,7 +94,7 @@ A log of key design decisions made during the design phase, with rationale. Orde
 
 ---
 
-## D-09 — Append-only audit log; no delete endpoint
+## D-10 — Append-only audit log; no delete endpoint
 
 **Date:** 2026-05-07
 **Decision:** The `audit_logs` table is append-only. No API endpoint exposes a delete operation on audit records. Retention purge is handled by a scheduled background job only.
@@ -93,7 +103,7 @@ A log of key design decisions made during the design phase, with rationale. Orde
 
 ---
 
-## D-10 — MariaDB full-text indexes for chat search (no dedicated search engine)
+## D-11 — MariaDB full-text indexes for chat search (no dedicated search engine)
 
 **Date:** 2026-05-07
 **Decision:** Full-text search across sessions and messages is implemented via MariaDB full-text indexes on `sessions.title` and text parts within `messages.content`. No dedicated search engine (Elasticsearch, Meilisearch) is introduced.
