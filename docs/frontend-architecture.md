@@ -66,7 +66,7 @@ Recommended stack:
 - **React Router**
 - **TanStack Query** for data fetching and mutations
 - **SSE** ([`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source)) for streaming responses and agent events — see [streaming-protocol.md](streaming-protocol.md)
-- **TailwindCSS, Material UI, or another shared design system**
+- **Ant Design 5** — the design system for both chat and admin areas
 - **Refine Core** for the admin area only
 
 The frontend should remain framework-light and avoid duplicating backend behavior.
@@ -203,7 +203,7 @@ The frontend is designed to be mobile-friendly and installable as a PWA on Andro
 
 ### **10.1 Responsive Design**
 - All chat area layouts must be responsive and usable on small screens
-- TailwindCSS responsive prefixes (`sm:`, `md:`, `lg:`) are the primary tool for adaptive layouts
+- Ant Design Grid (`Row`/`Col` + `useBreakpoint`) is used for adaptive layouts instead of TailwindCSS responsive prefixes
 - The admin area should be functional on tablet and above; full mobile optimization is secondary for admin screens
 
 ### **10.2 PWA Requirements**

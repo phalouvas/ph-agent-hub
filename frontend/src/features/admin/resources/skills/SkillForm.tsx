@@ -1,0 +1,191 @@
+// =============================================================================
+// PH Agent Hub — Admin SkillForm
+// =============================================================================
+// Ant Design Create/Edit Modal+Form; maf_target_key, default_model_id, tool_ids.
+// =============================================================================
+
+import React from "react";
+import {
+  Modal,
+  Form,
+  Input,
+  Select,
+  Switch,
+  message,
+} from "antd";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  createSkill,
+  updateSkill,
+  SkillData,
+  listTools,
+  listModels,
+} from "../../services/admin";
+
+const { TextArea } = Input;
+
+interface SkillFormProps {
+  open: boolean;
+  skill: SkillData | null;
+  onClose: () => void;
+}
+
+export function SkillForm({ open, skill, onClose }: SkillFormProps) {
+  const [form] = Form.useForm();
+  const queryClient = useQueryClient();
+  const isEdit = !!skill;
+
+  const { data: tools } = useQuery({
+    queryKey: ["admin-tools"],
+    queryFn: listTools,
+    enabled: open,
+  });
+
+  const { data: models } = useQuery({
+    queryKey: ["admin-models"],
+    queryFn: listModels,
+    enabled: open,
+  });
+
+  React.useEffect(() => {
+    if (open) {
+      if (skill) {
+        form.setFieldsValue({
+          title: skill.title,
+          description: skill.description,
+          execution_type: skill.execution_type,
+          maf_target_key: skill.maf_target_key,
+          visibility: skill.visibility,
+          default_model_id: skill.default_model_id,
+          enabled: skill.enabled,
+          tool_ids: skill.tool_ids || [],
+        });
+      } else {
+        form.resetFields();
+        form.setFieldsValue({
+          execution_type: "prompt_based",
+          visibility: "tenant",
+          enabled: true,
+          tool_ids: [],
+        });
+      }
+    }
+  }, [open, skill, form]);
+
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      createSkill(data as unknown as Partial<SkillData>),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-skills"] });
+      message.success("Skill created");
+      onClose();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: Record<string, unknown>;
+    }) => updateSkill(id, data as unknown as Partial<SkillData>),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-skills"] });
+      message.success("Skill updated");
+      onClose();
+    },
+  });
+
+  return (
+    <Modal
+      title={isEdit ? "Edit Skill" : "Create Skill"}
+      open={open}
+      onOk={async () => {
+        const values = await form.validateFields();
+        if (isEdit) {
+          await updateMutation.mutateAsync({
+            id: skill!.id,
+            data: values,
+          });
+        } else {
+          await createMutation.mutateAsync(values);
+        }
+      }}
+      onCancel={onClose}
+      confirmLoading={createMutation.isPending || updateMutation.isPending}
+      width={640}
+    >
+      <Form form={form} layout="vertical">
+        <Form.Item
+          name="title"
+          label="Title"
+          rules={[{ required: true }]}
+        >
+          <Input />
+        </Form.Item>
+        <Form.Item
+          name="description"
+          label="Description"
+          rules={[{ required: true }]}
+        >
+          <TextArea rows={2} />
+        </Form.Item>
+        <Form.Item
+          name="execution_type"
+          label="Execution Type"
+          rules={[{ required: true }]}
+        >
+          <Select
+            options={[
+              { label: "Prompt Based", value: "prompt_based" },
+              { label: "Workflow Based", value: "workflow_based" },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item
+          name="maf_target_key"
+          label="MAF Target Key"
+          rules={[{ required: true }]}
+        >
+          <Input placeholder="e.g., erpnext_invoice_analyzer" />
+        </Form.Item>
+        <Form.Item name="visibility" label="Visibility">
+          <Select
+            options={[
+              { label: "Tenant", value: "tenant" },
+              { label: "Personal", value: "personal" },
+              { label: "Public", value: "public" },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item name="default_model_id" label="Default Model">
+          <Select
+            allowClear
+            placeholder="Select default model"
+            options={(models || []).map((m) => ({
+              label: `${m.name} (${m.provider})`,
+              value: m.id,
+            }))}
+          />
+        </Form.Item>
+        <Form.Item name="tool_ids" label="Tools">
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="Select tools"
+            options={(tools || []).map((t) => ({
+              label: t.name,
+              value: t.id,
+            }))}
+          />
+        </Form.Item>
+        <Form.Item name="enabled" label="Enabled" valuePropName="checked">
+          <Switch />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
+export default SkillForm;

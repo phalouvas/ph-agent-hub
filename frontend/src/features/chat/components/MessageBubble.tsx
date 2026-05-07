@@ -1,0 +1,304 @@
+// =============================================================================
+// PH Agent Hub — MessageBubble
+// =============================================================================
+// Renders user/assistant message; markdown via react-markdown+remark-gfm;
+// code blocks via react-syntax-highlighter; includes MessageFeedback +
+// MessageBranchNav; tool activity display for tool_start/tool_result events.
+// =============================================================================
+
+import React from "react";
+import { Typography, Space, Collapse, Tag, Button, Popconfirm } from "antd";
+import {
+  UserOutlined,
+  RobotOutlined,
+  ToolOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  RedoOutlined,
+} from "@ant-design/icons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { MessageFeedback } from "./MessageFeedback";
+import { MessageBranchNav } from "./MessageBranchNav";
+import type { MessageData } from "../services/chat";
+
+const { Text, Paragraph } = Typography;
+
+// ---------------------------------------------------------------------------
+// Internal: parse content into displayable items
+// ---------------------------------------------------------------------------
+
+interface ContentItem {
+  type: string;
+  text?: string;
+  name?: string;
+  arguments?: Record<string, unknown>;
+  output?: string;
+  is_error?: boolean;
+  id?: string;
+}
+
+function parseContent(content: unknown): ContentItem[] {
+  if (!content) return [];
+  if (Array.isArray(content)) {
+    return content as ContentItem[];
+  }
+  if (typeof content === "string") {
+    return [{ type: "text", text: content }];
+  }
+  if (typeof content === "object" && content !== null) {
+    return [content as ContentItem];
+  }
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+interface MessageBubbleProps {
+  message: MessageData;
+  sessionId: string;
+  onEdit?: (messageId: string) => void;
+  onDelete?: (messageId: string) => void;
+  onRegenerate?: (messageId: string) => void;
+  branchInfo?: { currentIndex: number; totalBranches: number } | null;
+  onNavigateBranch?: (branchIndex: number) => void;
+  disabled?: boolean;
+}
+
+export function MessageBubble({
+  message,
+  sessionId,
+  onEdit,
+  onDelete,
+  onRegenerate,
+  branchInfo,
+  onNavigateBranch,
+  disabled,
+}: MessageBubbleProps) {
+  const isUser = message.sender === "user";
+  const contentItems = parseContent(message.content);
+
+  // Separate text from tool events
+  const textItems = contentItems.filter((c) => c.type === "text");
+  const toolItems = contentItems.filter(
+    (c) => c.type === "function_call" || c.type === "function_result",
+  );
+
+  const bubbleStyle: React.CSSProperties = {
+    maxWidth: "80%",
+    padding: "12px 16px",
+    borderRadius: 12,
+    marginBottom: 8,
+    ...(isUser
+      ? {
+          background: "#1677ff",
+          color: "#fff",
+          marginLeft: "auto",
+          borderBottomRightRadius: 4,
+        }
+      : {
+          background: "#f0f0f0",
+          borderBottomLeftRadius: 4,
+        }),
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {/* Sender indicator */}
+      <Space style={{ marginBottom: 4, marginLeft: isUser ? undefined : 4 }}>
+        {isUser ? (
+          <UserOutlined style={{ color: "#1677ff" }} />
+        ) : (
+          <RobotOutlined style={{ color: "#52c41a" }} />
+        )}
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {isUser ? "You" : "Assistant"}
+        </Text>
+        {message.model_id && !isUser && (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            · {message.model_id.slice(0, 8)}
+          </Text>
+        )}
+      </Space>
+
+      {/* Bubble */}
+      <div style={bubbleStyle}>
+        {textItems.map((item, i) => (
+          <div key={i}>
+            {isUser ? (
+              <Text style={{ color: "#fff", whiteSpace: "pre-wrap" }}>
+                {item.text}
+              </Text>
+            ) : (
+              <div className="markdown-body" style={{ fontSize: 14 }}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    code({ className, children, ...props }) {
+                      const match = /language-(\w+)/.exec(
+                        className || "",
+                      );
+                      const codeStr = String(children).replace(
+                        /\n$/,
+                        "",
+                      );
+                      if (match) {
+                        return (
+                          <SyntaxHighlighter
+                            style={oneDark}
+                            language={match[1]}
+                            PreTag="div"
+                          >
+                            {codeStr}
+                          </SyntaxHighlighter>
+                        );
+                      }
+                      return (
+                        <code
+                          className={className}
+                          {...(props as Record<string, unknown>)}
+                        >
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
+                  {item.text || ""}
+                </ReactMarkdown>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Tool calls / results */}
+        {toolItems.length > 0 && (
+          <Collapse
+            ghost
+            size="small"
+            items={[
+              {
+                key: "tools",
+                label: (
+                  <Space>
+                    <ToolOutlined />
+                    <Text style={{ fontSize: 12, color: isUser ? "#fff" : undefined }}>
+                      Tool Activity ({toolItems.length})
+                    </Text>
+                  </Space>
+                ),
+                children: (
+                  <div style={{ maxHeight: 200, overflow: "auto" }}>
+                    {toolItems.map((item, i) => (
+                      <div key={i} style={{ marginBottom: 8 }}>
+                        {item.type === "function_call" ? (
+                          <Tag color="blue">
+                            🔧 {item.name}
+                          </Tag>
+                        ) : (
+                          <div>
+                            <Tag
+                              color={
+                                item.is_error
+                                  ? "red"
+                                  : "green"
+                              }
+                            >
+                              ✓ {item.name || "result"}
+                            </Tag>
+                            {item.output && (
+                              <Paragraph
+                                ellipsis={{ rows: 2 }}
+                                style={{
+                                  fontSize: 12,
+                                  margin: "4px 0 0 0",
+                                  color: isUser ? "#fff" : "#666",
+                                }}
+                              >
+                                {typeof item.output === "string"
+                                  ? item.output
+                                  : JSON.stringify(item.output)}
+                              </Paragraph>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ),
+                style: {
+                  marginTop: 8,
+                  background: isUser
+                    ? "rgba(255,255,255,0.1)"
+                    : "rgba(0,0,0,0.03)",
+                  borderRadius: 6,
+                },
+              },
+            ]}
+          />
+        )}
+      </div>
+
+      {/* Actions row (assistant messages only) */}
+      {!isUser && (
+        <Space
+          style={{ marginLeft: 4, marginTop: 2 }}
+          size="small"
+        >
+          <MessageFeedback
+            sessionId={sessionId}
+            messageId={message.id}
+          />
+          {onRegenerate && (
+            <Button
+              type="text"
+              size="small"
+              icon={<RedoOutlined />}
+              onClick={() => onRegenerate(message.id)}
+              disabled={disabled}
+            />
+          )}
+          <MessageBranchNav
+            branches={branchInfo}
+            onNavigate={(idx) => onNavigateBranch?.(idx)}
+          />
+        </Space>
+      )}
+
+      {/* Actions row (user messages only) */}
+      {isUser && (
+        <Space style={{ marginLeft: "auto", display: "flex" }} size="small">
+          {onEdit && (
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => onEdit(message.id)}
+              disabled={disabled}
+            />
+          )}
+          {onDelete && (
+            <Popconfirm
+              title="Delete this message?"
+              onConfirm={() => onDelete(message.id)}
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<DeleteOutlined />}
+                danger
+                disabled={disabled}
+              />
+            </Popconfirm>
+          )}
+        </Space>
+      )}
+    </div>
+  );
+}
+
+export default MessageBubble;

@@ -1,0 +1,142 @@
+// =============================================================================
+// PH Agent Hub — Admin TenantList
+// =============================================================================
+// Admin only; Ant Design Table/List.
+// =============================================================================
+
+import { useState } from "react";
+import {
+  Table,
+  Button,
+  Space,
+  Popconfirm,
+  message,
+  Grid,
+  List,
+  Card,
+  Typography,
+} from "antd";
+import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  listTenants,
+  deleteTenant,
+  TenantData,
+} from "../../services/admin";
+import { TenantForm } from "./TenantForm";
+
+const { useBreakpoint } = Grid;
+const { Text } = Typography;
+
+export function TenantList() {
+  const [editingTenant, setEditingTenant] = useState<TenantData | null>(null);
+  const [creating, setCreating] = useState(false);
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
+  const queryClient = useQueryClient();
+
+  const { data: tenants, isLoading } = useQuery({
+    queryKey: ["admin-tenants"],
+    queryFn: listTenants,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteTenant,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-tenants"] });
+      message.success("Tenant deleted");
+    },
+  });
+
+  const columns = [
+    { title: "Name", dataIndex: "name", key: "name" },
+    {
+      title: "Created",
+      dataIndex: "created_at",
+      key: "created_at",
+      render: (v: string) => new Date(v).toLocaleDateString(),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_: unknown, record: TenantData) => (
+        <Space>
+          <Button
+            icon={<EditOutlined />}
+            size="small"
+            onClick={() => setEditingTenant(record)}
+          />
+          <Popconfirm
+            title="Delete this tenant?"
+            onConfirm={() => deleteMutation.mutate(record.id)}
+          >
+            <Button icon={<DeleteOutlined />} size="small" danger />
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 16 }}>
+        <Button type="primary" onClick={() => setCreating(true)}>
+          Create Tenant
+        </Button>
+      </Space>
+
+      {isMobile ? (
+        <List
+          loading={isLoading}
+          dataSource={tenants || []}
+          renderItem={(tenant) => (
+            <Card
+              size="small"
+              style={{ marginBottom: 8 }}
+              actions={[
+                <Button
+                  icon={<EditOutlined />}
+                  type="link"
+                  onClick={() => setEditingTenant(tenant)}
+                />,
+                <Popconfirm
+                  title="Delete?"
+                  onConfirm={() => deleteMutation.mutate(tenant.id)}
+                >
+                  <Button icon={<DeleteOutlined />} type="link" danger />
+                </Popconfirm>,
+              ]}
+            >
+              <Card.Meta
+                title={tenant.name}
+                description={
+                  <Text type="secondary">
+                    Created: {new Date(tenant.created_at).toLocaleDateString()}
+                  </Text>
+                }
+              />
+            </Card>
+          )}
+        />
+      ) : (
+        <Table
+          columns={columns}
+          dataSource={tenants || []}
+          rowKey="id"
+          loading={isLoading}
+        />
+      )}
+
+      <TenantForm
+        open={!!editingTenant || creating}
+        tenant={creating ? null : editingTenant}
+        onClose={() => {
+          setEditingTenant(null);
+          setCreating(false);
+        }}
+      />
+    </div>
+  );
+}
+
+export default TenantList;

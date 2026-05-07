@@ -77,7 +77,7 @@ async def login(
         value=refresh_token,
         httponly=True,
         samesite="lax",
-        path="/auth",
+        path="/api/auth",
         secure=False,
         max_age=settings.JWT_REFRESH_EXPIRES_IN,
     )
@@ -157,5 +157,5 @@ async def logout(request: Request, response: Response):
         except Exception:
             pass  # Token invalid — nothing to revoke
 
-    response.delete_cookie(key="refresh_token", path="/auth")
+    response.delete_cookie(key="refresh_token", path="/api/auth")
     return {"detail": "Logged out"}
