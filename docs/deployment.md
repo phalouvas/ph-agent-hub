@@ -1,6 +1,9 @@
 # Deployment Guide — PH Agent Hub
 
-This document describes how PH Agent Hub is deployed using Docker, Docker Compose, and optional reverse-proxy components. The platform is designed for simple local development as well as scalable production deployment.
+This document describes how PH Agent Hub is deployed using Docker and Docker Compose. The platform provides two compose files:
+
+- **`docker-compose.yml`** — development (nginx, exposed ports, phpMyAdmin)
+- **`docker-compose.prod.yml`** — production (Traefik, no exposed ports, external volumes)
 
 ---
 
@@ -13,9 +16,10 @@ PH Agent Hub is deployed as a multi-service Docker stack consisting of:
 - **MariaDB** — primary relational database
 - **Redis** — caching, queues, memory store
 - **Optional Vector DB** — for RAG (Qdrant, Milvus, Weaviate)
-- **Nginx** — reverse proxy for production
+- **Nginx** — reverse proxy (dev only)
+- **phpMyAdmin** — database admin UI (dev: port 8080; prod: via Traefik subdomain)
 
-All services run inside a single Docker Compose environment.
+All services run inside a shared `phagent-network` bridge network.
 
 ---
 
@@ -23,34 +27,58 @@ All services run inside a single Docker Compose environment.
 
 ```
 /infrastructure
-  docker-compose.yml
-  nginx.conf
-  env.example
-  scripts/
+  docker-compose.yml          # Development
+  docker-compose.prod.yml     # Production (Traefik)
+  nginx.conf                  # Dev reverse proxy
+  env.example                 # Environment variable template
 ```
 
 Each application (`backend`, `frontend`) contains its own Dockerfile.
 
 ---
 
-# 3. Docker Compose Architecture
+# 3. Architecture
 
-The deployment uses a multi-container setup:
+## 3.1 Development
 
 ```
 ┌──────────────────────────────────────────────┐
 │                  Nginx Proxy                 │
-│  - SSL termination                           │
-│  - Routing to backend and frontend           │
-└───────────────────────────────┬──────────────┘
-                                │
-                                ▼
+│  - localhost routing                         │
+│  - /api/ → backend, / → frontend, /pma/ →   │
+│    phpMyAdmin                                │
+└───────────────────────┬──────────────────────┘
+                        │
+                        ▼
 ┌──────────────────────────────────────────────┐
-│                Application Layer             │
-│               backend     frontend           │
-└───────────────────────────────┬──────────────┘
-                                │
-                                ▼
+│            Application Layer                 │
+│  backend  frontend  phpMyAdmin               │
+└───────────────────────┬──────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────┐
+│                Data Layer                    │
+│  MariaDB  Redis  MinIO  Vector DB (optional)  │
+└──────────────────────────────────────────────┘
+```
+
+## 3.2 Production
+
+```
+┌──────────────────────────────────────────────┐
+│              Traefik Proxy                   │
+│  - SSL termination (Let's Encrypt)           │
+│  - Host-based routing                        │
+│  - HTTP → HTTPS redirect                     │
+└───────────────────────┬──────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────┐
+│            Application Layer                 │
+│  backend  frontend  phpMyAdmin               │
+└───────────────────────┬──────────────────────┘
+                        │
+                        ▼
 ┌──────────────────────────────────────────────┐
 │                Data Layer                    │
 │  MariaDB  Redis  MinIO  Vector DB (optional)  │
@@ -59,193 +87,133 @@ The deployment uses a multi-container setup:
 
 ---
 
-# 4. Example `docker-compose.yml`
+# 4. Compose Files
 
-Below is the recommended structure (values omitted for clarity):
+## 4.1 Development (`docker-compose.yml`)
 
-```yaml
-version: "3.9"
+See the actual file at `infrastructure/docker-compose.yml`. Key characteristics:
 
-services:
-  backend:
-    build: ../backend
-    env_file: ./env
-    command: ["sh", "-c", "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"]
-    depends_on:
-      mariadb:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    ports:
-      - "8000:8000"
+- Uses **nginx** as reverse proxy (no SSL)
+- All ports exposed for debugging (`:3306`, `:6379`, `:8000`, `:3000`, `:9000`, `:9001`, `:8080`)
+- phpMyAdmin available at `http://localhost:8080` or `http://localhost/pma/`
+- Volumes are auto-created by Docker Compose
+- Network `phagent-network` is auto-created
 
-  frontend:
-    build: ../frontend
-    env_file: ./env
-    depends_on:
-      - backend
-    ports:
-      - "3000:3000"
-
-  mariadb:
-    image: mariadb:11
-    environment:
-      MARIADB_ROOT_PASSWORD: root-secret
-      MARIADB_DATABASE: phhub
-      MARIADB_USER: phhub
-      MARIADB_PASSWORD: phhub
-    command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
-    volumes:
-      - mariadb_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7
-    volumes:
-      - redis_data:/data
-
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    volumes:
-      - minio_data:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"  # MinIO web console (dev only; remove in production)
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # Optional vector DB
-  # qdrant:
-  #   image: qdrant/qdrant
-  #   ports:
-  #     - "6333:6333"
-
-  nginx:
-    image: nginx:latest
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - backend
-      - frontend
-
-volumes:
-  mariadb_data:
-  redis_data:
-  minio_data:
+```bash
+cd infrastructure
+docker compose up --build
 ```
+
+## 4.2 Production (`docker-compose.prod.yml`)
+
+See the actual file at `infrastructure/docker-compose.prod.yml`. Key characteristics:
+
+- Uses **Traefik** for SSL termination (Let's Encrypt) and host-based routing
+- No infrastructure ports exposed — only Traefik listens on 80/443
+- `restart: unless-stopped` on all services
+- Volumes are **external** (must be created before first run)
+- Network `phagent-network` is **external** (must be created before first run)
+- Requires a running Traefik stack with `traefik-public` network
+
+### Prerequisites (one-time)
+
+```bash
+docker network create phagent-network
+docker volume create phagent_mariadb_data
+docker volume create phagent_redis_data
+docker volume create phagent_minio_data
+```
+
+### Start
+
+```bash
+cd infrastructure
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Traefik routing
+
+| Service    | Domain env var     | Example                          |
+|------------|--------------------|----------------------------------|
+| Backend    | `API_DOMAIN`       | `api.phagent.example.com`        |
+| Frontend   | `APP_DOMAIN`       | `app.phagent.example.com`        |
+| phpMyAdmin | `PMA_DOMAIN`       | `pma.phagent.example.com`        |
 
 ---
 
 # 5. Environment Variables
 
-All services share a common `.env` file:
+All services share a common `infrastructure/env` file (copy from `env.example`). See `infrastructure/env.example` for the full list with documentation.
 
-```
-DATABASE_URL=mysql://phhub:phhub@mariadb:3306/phhub
-REDIS_URL=redis://redis:6379/0
+Key variables:
 
-MINIO_ENDPOINT=http://minio:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET_PREFIX=phhub-tenant
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | MariaDB connection string |
+| `REDIS_URL` | Redis connection string |
+| `MINIO_ENDPOINT` | MinIO internal endpoint |
+| `JWT_SECRET` | JWT signing key |
+| `ENCRYPTION_KEY` | Fernet key for DB field encryption |
+| `VITE_API_URL` | Frontend API base path (`/api`) |
+| `API_DOMAIN` | Production backend domain (Traefik) |
+| `APP_DOMAIN` | Production frontend domain (Traefik) |
+| `PMA_DOMAIN` | Production phpMyAdmin domain (Traefik) |
 
-UPLOAD_MAX_SIZE_BYTES=20971520
-UPLOAD_ALLOWED_TYPES=text/plain,text/csv,text/markdown,application/pdf,application/json,image/png,image/jpeg,image/gif,image/webp
-
-JWT_SECRET=your-secret-key
-JWT_EXPIRES_IN=3600
-JWT_REFRESH_EXPIRES_IN=604800
-
-# Application-level encryption key for sensitive DB fields (models.api_key, erpnext credentials)
-# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-ENCRYPTION_KEY=
-
-# Model provider keys (stored in DB encrypted; these are only needed for initial seed or CLI use)
-DEEPSEEK_API_KEY=
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-```
-
-The frontend may also include:
-
-```
-VITE_API_URL=/api
-```
-
-Using a relative API base keeps the frontend deployment simple behind a reverse proxy.
+**Important:** `infrastructure/env` is in `.gitignore` — keep secrets out of version control.
 
 ---
 
-# 6. Nginx Reverse Proxy
+# 6. Reverse Proxy
 
-A minimal `nginx.conf`:
+## 6.1 Development (nginx)
 
-```nginx
-events {}
+See `infrastructure/nginx.conf`. Routes:
 
-http {
-  server {
-    listen 80;
-
-    location /api/ {
-      proxy_pass http://backend:8000/;
-      proxy_http_version 1.1;
-
-      # Required for SSE — disable buffering so tokens are flushed immediately
-      proxy_buffering off;
-      proxy_cache off;
-      proxy_read_timeout 300s;
-
-      # Keep-alive headers for SSE connections
-      proxy_set_header Connection '';
-      chunked_transfer_encoding on;
-    }
-
-    location / {
-      proxy_pass http://frontend:3000/;
-    }
-  }
-}
-```
+| Path | Target |
+|------|--------|
+| `/api/` | `backend:8000` (SSE-ready) |
+| `/pma/` | `phpmyadmin:80` |
+| `/` | `frontend:3000` |
 
 The frontend router handles `/chat/*` and `/admin/*` inside the same web app.
 
-In production, SSL termination should be added.
+## 6.2 Production (Traefik)
+
+Production uses Traefik (external stack) with Let's Encrypt auto-SSL. Each service declares its own routing via Docker labels in `docker-compose.prod.yml`. No separate nginx config is needed.
 
 ---
 
 # 7. Deployment Modes
 
 ## **7.1 Local Development**
-```
+```bash
+cd infrastructure
 docker compose up --build
 ```
+
+Access:
+- App: `http://localhost`
+- API: `http://localhost/api/`
+- phpMyAdmin: `http://localhost:8080` or `http://localhost/pma/`
+- MinIO Console: `http://localhost:9001`
 
 Alembic migrations run automatically inside the backend container on startup before the application server starts.
 
 ## **7.2 Production Deployment**
-Recommended options:
 
-- Docker Compose on a single VPS
-- Portainer or Coolify
-- Kubernetes (optional for scaling)
-- Traefik or Nginx for SSL
+```bash
+cd infrastructure
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Recommended setup:
+
+- Deploy on a single VPS (e.g. $10–$20/month)
+- Requires a running Traefik stack with `traefik-public` network
+- Set domains in `infrastructure/env` (`API_DOMAIN`, `APP_DOMAIN`, `PMA_DOMAIN`)
+- Keep `infrastructure/env` out of version control
+- Optionally manage via Portainer or Coolify for a web UI
+- For horizontal scaling, add a load balancer and replicate the backend service
 
 ---
 

@@ -1,0 +1,167 @@
+# =============================================================================
+# PH Agent Hub — Docker Compose (Production)
+# =============================================================================
+# Start with:  docker compose -f docker-compose.prod.yml up -d
+# Stop with:   docker compose -f docker-compose.prod.yml down
+#
+# Uses Traefik for SSL termination and routing. No ports are exposed on
+# internal services — only Traefik listens on 80/443.
+#
+# Prerequisites:
+#   - Traefik running in a separate stack with network "traefik-public"
+#   - External network "phagent-network" created: docker network create phagent-network
+#   - External volumes created before first run
+# =============================================================================
+
+name: phagent-hub
+services:
+  # ── MariaDB ──────────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: phagent_hub
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - phagent-network
+
+  # ── Redis ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - phagent-network
+
+  # ── MinIO ────────────────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - minio_data:/data
+    networks:
+      - phagent-network
+
+  # ── Backend ──────────────────────────────────────────────────────────────
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    env_file: ./env
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - phagent-network
+      - traefik-public
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik-public
+      traefik.http.routers.phagent-api-http.entrypoints: http
+      traefik.http.routers.phagent-api-http.middlewares: https-redirect
+      traefik.http.routers.phagent-api-http.rule: Host(`${API_DOMAIN}`)
+      traefik.http.routers.phagent-api-http.service: phagent-api
+      traefik.http.routers.phagent-api-https.entrypoints: https
+      traefik.http.routers.phagent-api-https.rule: Host(`${API_DOMAIN}`)
+      traefik.http.routers.phagent-api-https.service: phagent-api
+      traefik.http.routers.phagent-api-https.tls: "true"
+      traefik.http.routers.phagent-api-https.tls.certresolver: le
+      traefik.http.services.phagent-api.loadbalancer.server.port: "8000"
+
+  # ── Frontend ─────────────────────────────────────────────────────────────
+  frontend:
+    build: ../frontend
+    restart: unless-stopped
+    env_file: ./env
+    depends_on:
+      - backend
+    networks:
+      - phagent-network
+      - traefik-public
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik-public
+      traefik.http.routers.phagent-web-http.entrypoints: http
+      traefik.http.routers.phagent-web-http.middlewares: https-redirect
+      traefik.http.routers.phagent-web-http.rule: Host(`${APP_DOMAIN}`)
+      traefik.http.routers.phagent-web-http.service: phagent-web
+      traefik.http.routers.phagent-web-https.entrypoints: https
+      traefik.http.routers.phagent-web-https.rule: Host(`${APP_DOMAIN}`)
+      traefik.http.routers.phagent-web-https.service: phagent-web
+      traefik.http.routers.phagent-web-https.tls: "true"
+      traefik.http.routers.phagent-web-https.tls.certresolver: le
+      traefik.http.services.phagent-web.loadbalancer.server.port: "3000"
+
+  # ── phpMyAdmin ───────────────────────────────────────────────────────────
+  phpmyadmin:
+    image: phpmyadmin:latest
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mariadb
+      PMA_PORT: 3306
+      PMA_USER: root
+      PMA_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    depends_on:
+      - mariadb
+    networks:
+      - phagent-network
+      - traefik-public
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: traefik-public
+      traefik.http.routers.phagent-pma-http.entrypoints: http
+      traefik.http.routers.phagent-pma-http.middlewares: https-redirect
+      traefik.http.routers.phagent-pma-http.rule: Host(`${PMA_DOMAIN}`)
+      traefik.http.routers.phagent-pma-http.service: phagent-pma
+      traefik.http.routers.phagent-pma-https.entrypoints: https
+      traefik.http.routers.phagent-pma-https.rule: Host(`${PMA_DOMAIN}`)
+      traefik.http.routers.phagent-pma-https.service: phagent-pma
+      traefik.http.routers.phagent-pma-https.tls: "true"
+      traefik.http.routers.phagent-pma-https.tls.certresolver: le
+      traefik.http.services.phagent-pma.loadbalancer.server.port: "80"
+
+volumes:
+  mariadb_data:
+    name: phagent_mariadb_data
+    external: true
+  redis_data:
+    name: phagent_redis_data
+    external: true
+  minio_data:
+    name: phagent_minio_data
+    external: true
+
+networks:
+  phagent-network:
+    name: phagent-network
+    external: true
+  traefik-public:
+    name: traefik-public
+    external: true

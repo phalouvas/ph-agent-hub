@@ -1,0 +1,34 @@
+# =============================================================================
+# PH Agent Hub — Backend Python Dependencies
+# =============================================================================
+
+# Web framework
+fastapi
+uvicorn[standard]
+
+# Database
+sqlalchemy[asyncio]>=2.0
+aiomysql
+pymysql
+alembic
+
+# Encryption & Auth
+cryptography
+passlib[bcrypt]
+python-jose[cryptography]
+
+# Cache & Storage
+redis
+boto3
+
+# SSE
+sse-starlette
+
+# Config
+pydantic-settings
+
+# File uploads
+python-multipart
+
+# AI Agent Framework
+agent-framework
