@@ -83,7 +83,8 @@ The frontend should remain framework-light and avoid duplicating backend behavio
 │  │   Chat Area        │  │      Admin Area        │  │
 │  │ - chat sessions    │  │ - users/tenants        │  │
 │  │ - streaming UI     │  │ - models/tools         │  │
-│  │ - files/prompts    │  │ - templates/skills     │  │
+│  │ - files/templates  │  │ - templates/skills     │  │
+│  │ - prompts/skills   │  │ - analytics/settings   │  │
 │  └────────────────────┘  └────────────────────────┘  │
 │                                                      │
 │  Shared: auth, API client, tenant context, routing   │
