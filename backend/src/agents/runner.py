@@ -56,7 +56,9 @@ async def run_agent(
     user_message: str,
     db: AsyncSession,
     current_user: User,
-) -> str:
+    parent_message_id: str | None = None,
+    user_branch_index: int = 0,
+) -> tuple[str, str]:
     """Assemble and run a MAF agent for a single user message.
 
     Args:
@@ -64,9 +66,13 @@ async def run_agent(
         user_message: The text the user sent.
         db: Active async DB session.
         current_user: The authenticated user.
+        parent_message_id: If editing/regenerating, the parent message ID
+            for the branch point.
+        user_branch_index: Branch index for this user message (default 0
+            for the root of the conversation).
 
     Returns:
-        The assistant's response text.
+        A tuple of (assistant response text, assistant message ID).
     """
     tenant_id = current_user.tenant_id
     session_id = session_data["id"]
@@ -131,16 +137,18 @@ async def run_agent(
         raw_response = stabilize_text(raw_response)
 
     # ---- 9. Persist messages --------------------------------------------
-    await _persist_messages(
+    _user_msg_id, assistant_msg_id = await _persist_messages(
         db=db,
         session_id=session_id,
         is_temporary=is_temporary,
         user_message=user_message,
         assistant_response=raw_response,
         model_id=model.id,
+        parent_message_id=parent_message_id,
+        user_branch_index=user_branch_index,
     )
 
-    return raw_response
+    return raw_response, assistant_msg_id
 
 
 # ---------------------------------------------------------------------------
@@ -438,54 +446,73 @@ async def _persist_messages(
     user_message: str,
     assistant_response: str,
     model_id: str,
-) -> None:
-    """Persist the user message and assistant response."""
+    parent_message_id: str | None = None,
+    user_branch_index: int = 0,
+) -> tuple[str, str]:
+    """Persist the user message and assistant response.
+
+    Returns:
+        A tuple of (user_message_id, assistant_message_id).
+    """
     user_msg_content = [{"type": "text", "text": user_message}]
     assistant_msg_content = [{"type": "text", "text": assistant_response}]
 
     if is_temporary:
         # Store in Redis
+        user_msg_id = str(uuid.uuid4())
+        assistant_msg_id = str(uuid.uuid4())
         await append_temp_message(
             session_id,
             {
-                "id": str(uuid.uuid4()),
+                "id": user_msg_id,
                 "sender": "user",
                 "content": user_msg_content,
-                "branch_index": 0,
+                "parent_message_id": parent_message_id,
+                "branch_index": user_branch_index,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
         await append_temp_message(
             session_id,
             {
-                "id": str(uuid.uuid4()),
+                "id": assistant_msg_id,
                 "sender": "assistant",
                 "content": assistant_msg_content,
                 "model_id": model_id,
+                "parent_message_id": user_msg_id,
                 "branch_index": 0,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
+        return user_msg_id, assistant_msg_id
     else:
         # Store in MariaDB
+        user_msg_id = str(uuid.uuid4())
         user_msg = Message(
+            id=user_msg_id,
             session_id=session_id,
             sender="user",
             content=user_msg_content,
-            branch_index=0,
+            parent_message_id=parent_message_id,
+            branch_index=user_branch_index,
         )
         db.add(user_msg)
         await db.flush()
 
+        assistant_msg_id = str(uuid.uuid4())
         assistant_msg = Message(
+            id=assistant_msg_id,
             session_id=session_id,
             sender="assistant",
             content=assistant_msg_content,
             model_id=model_id,
+            parent_message_id=user_msg_id,
             branch_index=0,
         )
         db.add(assistant_msg)
         await db.commit()
+
+        return user_msg_id, assistant_msg_id
 
 
 # =============================================================================
@@ -977,3 +1004,156 @@ def _exc_to_error_code(exc: Exception) -> str:
     if "invalid" in name or "output" in name or "parse" in name:
         return "invalid_output"
     return "internal_error"
+
+
+# =============================================================================
+# Phase 8 — Branch-aware helpers
+# =============================================================================
+
+
+async def _get_next_branch_index(
+    db: AsyncSession,
+    session_id: str,
+    parent_message_id: str,
+) -> int:
+    """Return the next available branch index for messages under a parent.
+
+    Queries ``MAX(branch_index) + 1`` for messages where
+    ``session_id`` and ``parent_message_id`` match.  Returns 0 if the
+    parent has no existing children.
+    """
+    from sqlalchemy import func as sa_func
+
+    result = await db.execute(
+        select(sa_func.max(Message.branch_index)).where(
+            Message.session_id == session_id,
+            Message.parent_message_id == parent_message_id,
+        )
+    )
+    max_idx = result.scalar()
+    if max_idx is None:
+        return 0
+    return max_idx + 1
+
+
+async def run_agent_assistant_only(
+    session_data: dict,
+    user_message_text: str,
+    user_message_id: str,
+    db: AsyncSession,
+    current_user: User,
+    assistant_parent_message_id: str,
+    assistant_branch_index: int,
+) -> tuple[str, str]:
+    """Run the agent and persist ONLY an assistant message (no user message).
+
+    Used by the regenerate endpoint — the parent user message already
+    exists, and we only need a new assistant response branched from it.
+
+    Args:
+        session_data: Unified session dict (from DB or Redis).
+        user_message_text: The original user message text to re-run.
+        user_message_id: ID of the existing parent user message.
+        db: Active async DB session.
+        current_user: The authenticated user.
+        assistant_parent_message_id: The parent message ID to link the
+            new assistant message to (typically *user_message_id*).
+        assistant_branch_index: The branch index for this assistant
+            message.
+
+    Returns:
+        A tuple of (assistant response text, assistant message ID).
+    """
+    tenant_id = current_user.tenant_id
+    session_id = session_data["id"]
+    is_temporary = session_data.get("is_temporary", False)
+
+    # ---- 1. Resolve model ------------------------------------------------
+    model = await _resolve_model(db, session_data)
+    model_client = get_chat_client(model)
+
+    # ---- 2. Build system prompt ------------------------------------------
+    system_prompt = await _build_system_prompt(db, session_data)
+
+    # ---- 3. Resolve skill ------------------------------------------------
+    skill = await _resolve_skill(db, session_data)
+
+    # ---- 4. Resolve active tools -----------------------------------------
+    active_tool_callables = await _resolve_tool_callables(
+        db, session_data, tenant_id
+    )
+
+    # ---- 5. Determine execution type and name ----------------------------
+    execution_type = skill.execution_type if skill else "agent"
+    agent_name = skill.title if skill else "assistant"
+
+    # ---- 6. Apply DeepSeek middleware ------------------------------------
+    if model.provider.lower() == "deepseek":
+        from .deepseek_patch import apply_deepseek_patches
+        apply_deepseek_patches()
+
+    # ---- 7. Run agent or workflow ----------------------------------------
+    raw_response: str
+
+    try:
+        if execution_type == "workflow":
+            raw_response = await _run_workflow(
+                model=model,
+                skill=skill,
+                model_client=model_client,
+                system_prompt=system_prompt,
+                tools=active_tool_callables,
+                user_message=user_message_text,
+                agent_name=agent_name,
+            )
+        else:
+            raw_response = await _run_agent(
+                model=model,
+                model_client=model_client,
+                system_prompt=system_prompt,
+                tools=active_tool_callables,
+                user_message=user_message_text,
+                agent_name=agent_name,
+            )
+    except Exception as exc:
+        logger.error("Agent run (assistant-only) failed: %s", exc)
+        raise ValidationError(
+            f"Agent execution failed: {exc}"
+        ) from exc
+
+    # ---- 8. Stabilise DeepSeek output -----------------------------------
+    if model.provider.lower() == "deepseek" and settings.DEEPSEEK_STRIP_REASONING:
+        from .stabilizer import stabilize_text
+        raw_response = stabilize_text(raw_response)
+
+    # ---- 9. Persist ONLY the assistant message --------------------------
+    assistant_msg_content = [{"type": "text", "text": raw_response}]
+    assistant_msg_id = str(uuid.uuid4())
+
+    if is_temporary:
+        await append_temp_message(
+            session_id,
+            {
+                "id": assistant_msg_id,
+                "sender": "assistant",
+                "content": assistant_msg_content,
+                "model_id": model.id,
+                "parent_message_id": assistant_parent_message_id,
+                "branch_index": assistant_branch_index,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+    else:
+        assistant_msg = Message(
+            id=assistant_msg_id,
+            session_id=session_id,
+            sender="assistant",
+            content=assistant_msg_content,
+            model_id=model.id,
+            parent_message_id=assistant_parent_message_id,
+            branch_index=assistant_branch_index,
+        )
+        db.add(assistant_msg)
+        await db.commit()
+
+    return raw_response, assistant_msg_id

@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from .api.admin import router as admin_router
 from .api.auth import router as auth_router
 from .api.chat import router as chat_router
+from .api.memory import router as memory_router
 from .api.models import router as models_router
 from .api.prompts import router as prompts_router
 from .api.skills import router as skills_router
@@ -48,6 +49,7 @@ app.add_exception_handler(AppException, app_exception_handler)
 # ---------------------------------------------------------------------------
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(memory_router)
 app.include_router(models_router)
 app.include_router(admin_router)
 app.include_router(templates_router)

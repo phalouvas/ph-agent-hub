@@ -11,13 +11,18 @@ import uuid
 from datetime import datetime
 from typing import Any, AsyncIterator
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
-from ..agents.runner import run_agent, run_agent_stream
+from ..agents.runner import (
+    _get_next_branch_index,
+    run_agent,
+    run_agent_assistant_only,
+    run_agent_stream,
+)
 from ..core.dependencies import get_current_user, get_db
 from ..core.exceptions import (
     ForbiddenError,
@@ -33,11 +38,11 @@ from ..core.redis import (
     set_stream_cancel,
     store_temp_session,
 )
-from ..db.orm.messages import Message
+from ..db.orm.messages import Message, MessageFeedback
 from ..db.orm.sessions import Session
 from ..db.orm.tools import Tool
 from ..db.orm.users import User as UserORM
-from ..services import session_service
+from ..services import session_service, upload_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -85,6 +90,7 @@ class SessionResponse(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str
+    file_ids: list[str] | None = None
 
 
 class MessageResponse(BaseModel):
@@ -118,6 +124,32 @@ class ToolResponse(BaseModel):
     enabled: bool
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FeedbackCreate(BaseModel):
+    rating: str
+    comment: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    id: str
+    message_id: str
+    user_id: str
+    rating: str
+    comment: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FileUploadResponse(BaseModel):
+    file_id: str
+    original_filename: str
+    content_type: str
+    size_bytes: int
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -380,7 +412,10 @@ async def list_messages(
     else:
         result = await db.execute(
             select(Message)
-            .where(Message.session_id == session_id)
+            .where(
+                Message.session_id == session_id,
+                Message.is_deleted == False,  # noqa: E712
+            )
             .order_by(Message.created_at)
         )
         messages = result.scalars().all()
@@ -421,18 +456,26 @@ async def send_message(
         )
 
     # ---- Non-streaming path (Phase 6 backward compat) --------------------
-    response_text = await run_agent(
+    response_text, assistant_msg_id = await run_agent(
         session_data=data,
         user_message=body.content,
         db=db,
         current_user=current_user,
     )
 
-    message_id = str(uuid.uuid4())
+    # Link file uploads to the assistant message
+    if body.file_ids:
+        await upload_service.link_uploads_to_message(
+            db=db,
+            file_ids=body.file_ids,
+            message_id=assistant_msg_id,
+            user_id=current_user.id,
+        )
+
     model_id = data.get("selected_model_id")
 
     return SendMessageResponse(
-        message_id=message_id,
+        message_id=assistant_msg_id,
         content=response_text,
         model_id=model_id,
     )
@@ -512,8 +555,443 @@ async def cancel_stream(
 
 
 # =============================================================================
-# Session Tools
+# Message Branching (Edit / Regenerate / Soft-Delete) — Phase 8
 # =============================================================================
+
+
+@router.put(
+    "/session/{session_id}/message/{message_id}",
+    response_model=SendMessageResponse,
+)
+async def edit_user_message(
+    session_id: str,
+    message_id: str,
+    body: MessageCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Edit a user message and re-run the agent, creating a new branch.
+
+    The original user message remains in the DB; a new user message
+    with an incremented ``branch_index`` is created, and the agent
+    generates a new assistant response off that branch.
+    """
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    # Reject temporary sessions (no proper message ID tree in Redis)
+    if data.get("is_temporary", False):
+        raise ValidationError("Message editing is not supported for temporary sessions")
+
+    # Load the original user message
+    msg_result = await db.execute(
+        select(Message).where(
+            Message.id == message_id,
+            Message.session_id == session_id,
+        )
+    )
+    original_msg = msg_result.scalar_one_or_none()
+    if original_msg is None:
+        raise NotFoundError("Message not found")
+    if original_msg.sender != "user":
+        raise ValidationError("Only user messages can be edited")
+
+    # Calculate next branch index at the same parent level
+    next_branch = await _get_next_branch_index(
+        db=db,
+        session_id=session_id,
+        parent_message_id=original_msg.parent_message_id,
+    )
+
+    # Run agent with branching
+    response_text, assistant_msg_id = await run_agent(
+        session_data=data,
+        user_message=body.content,
+        db=db,
+        current_user=current_user,
+        parent_message_id=original_msg.parent_message_id,
+        user_branch_index=next_branch,
+    )
+
+    model_id = data.get("selected_model_id")
+    return SendMessageResponse(
+        message_id=assistant_msg_id,
+        content=response_text,
+        model_id=model_id,
+    )
+
+
+@router.delete(
+    "/session/{session_id}/message/{message_id}",
+    status_code=204,
+)
+async def delete_message(
+    session_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Soft-delete a message (sets ``is_deleted=True``)."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    if data.get("is_temporary", False):
+        raise ValidationError("Message deletion is not supported for temporary sessions")
+
+    msg_result = await db.execute(
+        select(Message).where(
+            Message.id == message_id,
+            Message.session_id == session_id,
+        )
+    )
+    msg = msg_result.scalar_one_or_none()
+    if msg is None:
+        raise NotFoundError("Message not found")
+
+    msg.is_deleted = True
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post(
+    "/session/{session_id}/message/{message_id}/regenerate",
+    response_model=SendMessageResponse,
+)
+async def regenerate_assistant_message(
+    session_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Regenerate an assistant response, creating a new branch.
+
+    Uses the parent user message's text to re-run the agent, then
+    persists only the new assistant message (no duplicate user message).
+    """
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    if data.get("is_temporary", False):
+        raise ValidationError("Regeneration is not supported for temporary sessions")
+
+    # Load the assistant message to regenerate
+    msg_result = await db.execute(
+        select(Message).where(
+            Message.id == message_id,
+            Message.session_id == session_id,
+        )
+    )
+    assistant_msg = msg_result.scalar_one_or_none()
+    if assistant_msg is None:
+        raise NotFoundError("Message not found")
+    if assistant_msg.sender != "assistant":
+        raise ValidationError("Only assistant messages can be regenerated")
+
+    # Load the parent user message
+    if assistant_msg.parent_message_id is None:
+        raise ValidationError(
+            "Cannot regenerate: assistant message has no parent user message"
+        )
+
+    parent_result = await db.execute(
+        select(Message).where(Message.id == assistant_msg.parent_message_id)
+    )
+    parent_user_msg = parent_result.scalar_one_or_none()
+    if parent_user_msg is None or parent_user_msg.sender != "user":
+        raise ValidationError(
+            "Cannot regenerate: parent message not found or is not a user message"
+        )
+
+    # Extract user text from the parent message content
+    user_text = ""
+    if parent_user_msg.content and isinstance(parent_user_msg.content, list):
+        for item in parent_user_msg.content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                user_text = item.get("text", "")
+                break
+    if not user_text:
+        raise ValidationError(
+            "Cannot regenerate: parent user message has no text content"
+        )
+
+    # Calculate next branch index at the parent level
+    next_branch = await _get_next_branch_index(
+        db=db,
+        session_id=session_id,
+        parent_message_id=parent_user_msg.id,
+    )
+
+    # Run agent (assistant-only, no duplicate user message)
+    response_text, new_assistant_msg_id = await run_agent_assistant_only(
+        session_data=data,
+        user_message_text=user_text,
+        user_message_id=parent_user_msg.id,
+        db=db,
+        current_user=current_user,
+        assistant_parent_message_id=parent_user_msg.id,
+        assistant_branch_index=next_branch,
+    )
+
+    model_id = data.get("selected_model_id")
+    return SendMessageResponse(
+        message_id=new_assistant_msg_id,
+        content=response_text,
+        model_id=model_id,
+    )
+
+
+# =============================================================================
+# Message Feedback — Phase 8
+# =============================================================================
+
+
+@router.post(
+    "/session/{session_id}/message/{message_id}/feedback",
+    response_model=FeedbackResponse,
+    status_code=201,
+)
+async def submit_feedback(
+    session_id: str,
+    message_id: str,
+    body: FeedbackCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Submit feedback (up/down) for an assistant message."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    # Validate rating
+    if body.rating not in ("up", "down"):
+        raise ValidationError("Rating must be 'up' or 'down'")
+
+    # Load message
+    msg_result = await db.execute(
+        select(Message).where(
+            Message.id == message_id,
+            Message.session_id == session_id,
+        )
+    )
+    msg = msg_result.scalar_one_or_none()
+    if msg is None:
+        raise NotFoundError("Message not found")
+    if msg.sender != "assistant":
+        raise ValidationError("Feedback can only be submitted for assistant messages")
+
+    feedback = MessageFeedback(
+        message_id=message_id,
+        user_id=current_user.id,
+        rating=body.rating,
+        comment=body.comment,
+    )
+    db.add(feedback)
+    await db.commit()
+    await db.refresh(feedback)
+
+    return FeedbackResponse.model_validate(feedback)
+
+
+# =============================================================================
+# Session Search — Phase 8
+# =============================================================================
+
+
+@router.get(
+    "/sessions/search",
+    response_model=list[SessionResponse],
+)
+async def search_sessions(
+    q: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Full-text search across session titles and message content.
+
+    Query is scoped to the authenticated user's tenant and user ID.
+    Uses FULLTEXT index on ``sessions.title`` and ``LIKE`` on
+    ``messages.content`` (JSON column).
+    """
+    if not q or not q.strip():
+        raise ValidationError("Search query 'q' is required")
+
+    search_term = f"%{q.strip()}%"
+
+    # Search sessions by title (FULLTEXT) and by message content (LIKE)
+    from sqlalchemy import text, type_coerce, String as SAString
+
+    # FULLTEXT on sessions.title
+    title_stmt = (
+        select(Session)
+        .where(
+            Session.user_id == current_user.id,
+            Session.tenant_id == current_user.tenant_id,
+            Session.is_temporary == False,  # noqa: E712
+            text("MATCH(sessions.title) AGAINST(:query IN NATURAL LANGUAGE MODE)"),
+        )
+        .params(query=q.strip())
+    )
+
+    # LIKE fallback on sessions.title (covers cases where FULLTEXT can't)
+    like_stmt = (
+        select(Session)
+        .where(
+            Session.user_id == current_user.id,
+            Session.tenant_id == current_user.tenant_id,
+            Session.is_temporary == False,  # noqa: E712
+            Session.title.ilike(search_term),
+        )
+    )
+
+    # Search sessions via message content (LIKE on JSON column)
+    from sqlalchemy import func as sa_func, type_coerce, String as SAString
+
+    msg_stmt = (
+        select(Session)
+        .join(Message, Message.session_id == Session.id)
+        .where(
+            Session.user_id == current_user.id,
+            Session.tenant_id == current_user.tenant_id,
+            Session.is_temporary == False,  # noqa: E712
+            Message.is_deleted == False,  # noqa: E712
+            type_coerce(Message.content, SAString).ilike(search_term),
+        )
+    )
+
+    # Execute all three queries
+    title_results = await db.execute(title_stmt)
+    like_results = await db.execute(like_stmt)
+    msg_results = await db.execute(msg_stmt)
+
+    # Deduplicate by session ID (union of all three)
+    seen: set[str] = set()
+    sessions: list[Session] = []
+    for s in (
+        list(title_results.scalars().all())
+        + list(like_results.scalars().all())
+        + list(msg_results.scalars().all())
+    ):
+        if s.id not in seen:
+            seen.add(s.id)
+            sessions.append(s)
+
+    return [SessionResponse.model_validate(s) for s in sessions]
+
+
+# =============================================================================
+# File Uploads — Phase 8
+# =============================================================================
+
+
+@router.post(
+    "/session/{session_id}/upload",
+    response_model=FileUploadResponse,
+    status_code=201,
+)
+async def upload_file(
+    session_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Upload a file to a session (stored in MinIO)."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    if not file.filename:
+        raise ValidationError("File must have a filename")
+
+    file_bytes = await file.read()
+    content_type = file.content_type or "application/octet-stream"
+
+    upload = await upload_service.create_upload(
+        db=db,
+        session_data=data,
+        current_user=current_user,
+        file_bytes=file_bytes,
+        original_filename=file.filename,
+        content_type=content_type,
+    )
+
+    return FileUploadResponse(
+        file_id=upload.id,
+        original_filename=upload.original_filename,
+        content_type=upload.content_type,
+        size_bytes=upload.size_bytes,
+        created_at=upload.created_at,
+    )
+
+
+@router.get(
+    "/session/{session_id}/uploads",
+    response_model=list[FileUploadResponse],
+)
+async def list_uploads(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """List all file uploads for a session."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    uploads = await upload_service.list_uploads(
+        db=db,
+        session_id=session_id,
+        user_id=current_user.id,
+    )
+    return [
+        FileUploadResponse(
+            file_id=u.id,
+            original_filename=u.original_filename,
+            content_type=u.content_type,
+            size_bytes=u.size_bytes,
+            created_at=u.created_at,
+        )
+        for u in uploads
+    ]
+
+
+@router.get(
+    "/session/{session_id}/upload/{file_id}/url",
+)
+async def get_upload_url(
+    session_id: str,
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Generate a presigned download URL for an uploaded file."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    url = await upload_service.generate_presigned_url(
+        db=db,
+        file_id=file_id,
+        user_id=current_user.id,
+    )
+    return {"url": url}
+
+
+@router.delete(
+    "/session/{session_id}/upload/{file_id}",
+    status_code=204,
+)
+async def delete_upload(
+    session_id: str,
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Delete a file upload (MinIO object + DB row)."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    await upload_service.delete_upload(
+        db=db,
+        file_id=file_id,
+        user_id=current_user.id,
+    )
+    return Response(status_code=204)
 
 
 @router.get(

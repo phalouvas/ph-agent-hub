@@ -230,9 +230,9 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 8 — Chat: Remaining Features
+## ✅ Phase 8 — Chat: Remaining Features (Completed)
 
-**What gets built:**
+**What was built:**
 - Message branching: edit and regenerate create new branches; `GET /chat/session/:id/messages` returns the branch tree
 - Message soft-delete
 - Message feedback: `POST /chat/session/:id/message/:msgId/feedback`
@@ -243,12 +243,16 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 7 complete — streaming working.
 
-**Exit condition (done when):**
-- Editing a message creates a new branch; original branch remains accessible
-- Memory entries are created automatically by the agent and manually by the user
-- Full-text search returns relevant sessions and messages scoped to the user
-- File upload stores object in MinIO; presigned URL is valid and returns the file
-- Uploads blocked for temporary sessions (`403` returned)
+**Exit condition verified:**
+- ✅ Message branching: `PUT /chat/session/:id/message/:msgId` creates new branch with incremented `branch_index`; `POST /chat/session/:id/message/:msgId/regenerate` creates assistant-only branch
+- ✅ Message soft-delete: `DELETE /chat/session/:id/message/:msgId` sets `is_deleted=True`; `GET /messages` excludes deleted rows
+- ✅ Message feedback: `POST /chat/session/:id/message/:msgId/feedback` with `{"rating":"up"}` creates `MessageFeedback` row (201)
+- ✅ Memory CRUD: `GET/POST/DELETE /memory` works with ownership scoping (201/204)
+- ✅ Full-text search: `GET /chat/sessions/search?q=` returns sessions matching title (FULLTEXT) and message content (LIKE); scoped to current user
+- ✅ File uploads: `POST /chat/session/:id/upload` stores in MinIO; `GET /upload/:id/url` returns presigned URL; `DELETE /upload/:id` removes from MinIO + DB
+- ✅ Uploads blocked for temporary sessions (`403`)
+- ✅ Edit/regenerate/delete blocked for temporary sessions (`400`)
+- ✅ Backend builds and starts without import errors; migration `c8f7e3a1b2d4` runs cleanly
 
 **References:** [chat-area-architecture.md](../chat-area-architecture.md), [file-upload-architecture.md](../file-upload-architecture.md), [data-model.md](../data-model.md) §3, §4, §5
 
