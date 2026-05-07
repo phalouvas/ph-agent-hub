@@ -137,5 +137,15 @@ async def delete_template(db: AsyncSession, template_id: str) -> None:
     if template is None:
         raise NotFoundError("Template not found")
 
+    # Clear FK references in sessions that point to this template
+    from ..db.orm.sessions import Session as SessionORM
+    from sqlalchemy import update as sa_update
+
+    await db.execute(
+        sa_update(SessionORM)
+        .where(SessionORM.selected_template_id == template_id)
+        .values(selected_template_id=None)
+    )
+
     await db.delete(template)
     await db.commit()

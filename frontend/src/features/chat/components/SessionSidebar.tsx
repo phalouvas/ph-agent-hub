@@ -279,9 +279,18 @@ export function SessionSidebar() {
         <Space
           style={{ width: "100%", justifyContent: "space-between" }}
         >
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {user?.display_name}
-          </Text>
+          {user?.role !== "user" ? (
+            <a
+              onClick={() => navigate("/admin")}
+              style={{ fontSize: 12, cursor: "pointer", color: "#1677ff" }}
+            >
+              {user?.display_name}
+            </a>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {user?.display_name}
+            </Text>
+          )}
           <Tooltip title="Logout">
             <Button
               type="text"

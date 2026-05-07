@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 def _get_client_ip(request: Request) -> str | None:
     """Resolve the real client IP from X-Real-IP header or fall back to request.client."""
-    return request.headers.get("X-Real-IP") or (_get_client_ip(request))
+    return request.headers.get("X-Real-IP") or (
+        request.client.host if request.client else None
+    )
 
 from ..core.dependencies import (
     get_db,
@@ -136,7 +138,7 @@ class UserCreate(BaseModel):
     email: str
     password: str
     display_name: str
-    tenant_id: str
+    tenant_id: str | None = None
     role: Literal["admin", "manager", "user"] = "user"
 
 
@@ -164,6 +166,7 @@ class UserResponse(BaseModel):
 
 class ModelCreate(BaseModel):
     name: str
+    model_id: str
     provider: str
     api_key: str
     base_url: str | None = None
@@ -175,6 +178,7 @@ class ModelCreate(BaseModel):
 
 class ModelUpdate(BaseModel):
     name: str | None = None
+    model_id: str | None = None
     provider: str | None = None
     api_key: str | None = None
     base_url: str | None = None
@@ -188,6 +192,7 @@ class ModelResponse(BaseModel):
     id: str
     tenant_id: str
     name: str
+    model_id: str
     provider: str
     base_url: str | None
     enabled: bool
@@ -356,15 +361,16 @@ async def create_user(
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
     """Create a user. Admin: any tenant/role. Manager: own tenant, 'user' role only."""
+    tenant_id = body.tenant_id or current_user.tenant_id
     if current_user.role == "manager":
-        if body.tenant_id != current_user.tenant_id:
+        if tenant_id != current_user.tenant_id:
             raise ForbiddenError("Managers can only create users in their own tenant")
         if body.role != "user":
             raise ForbiddenError("Managers can only assign the 'user' role")
 
     user = await _svc_create_user(
         db,
-        tenant_id=body.tenant_id,
+        tenant_id=tenant_id,
         email=body.email,
         password=body.password,
         display_name=body.display_name,
@@ -376,7 +382,7 @@ async def create_user(
         action="user.created",
         target_type="user",
         target_id=user.id,
-        tenant_id=body.tenant_id,
+        tenant_id=tenant_id,
         ip_address=_get_client_ip(request),
     )
     return UserResponse.model_validate(user)
@@ -504,6 +510,7 @@ async def create_model(
         db,
         tenant_id=current_user.tenant_id,
         name=body.name,
+        model_id=body.model_id,
         provider=body.provider,
         api_key=body.api_key,
         base_url=body.base_url,

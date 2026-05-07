@@ -68,6 +68,13 @@ export function ModelList() {
       render: (v: string) => <Tag>{v}</Tag>,
     },
     {
+      title: "Model ID",
+      dataIndex: "model_id",
+      key: "model_id",
+      render: (v: string | null) =>
+        v ? <Text code>{v}</Text> : <Text type="secondary">—</Text>,
+    },
+    {
       title: "API Key",
       key: "api_key",
       render: () => <Text type="secondary">••••••••</Text>,

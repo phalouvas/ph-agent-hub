@@ -19,6 +19,7 @@ class ModelResponse(BaseModel):
     id: str
     tenant_id: str
     name: str
+    model_id: str | None
     provider: str
     base_url: str | None
     enabled: bool

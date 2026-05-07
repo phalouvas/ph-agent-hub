@@ -119,7 +119,11 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
         >
           <Input />
         </Form.Item>
-        <Form.Item name="description" label="Description">
+        <Form.Item
+          name="description"
+          label="Description"
+          rules={[{ required: true }]}
+        >
           <TextArea rows={2} />
         </Form.Item>
         <Form.Item

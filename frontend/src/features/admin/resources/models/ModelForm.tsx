@@ -33,6 +33,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
       if (model) {
         form.setFieldsValue({
           name: model.name,
+          model_id: model.model_id,
           provider: model.provider,
           base_url: model.base_url,
           enabled: model.enabled,
@@ -98,7 +99,10 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
     >
       <Form form={form} layout="vertical">
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
-          <Input />
+          <Input placeholder="Display name (e.g., Production DeepSeek)" />
+        </Form.Item>
+        <Form.Item name="model_id" label="Model ID" rules={[{ required: true }]}>
+          <Input placeholder="API model name (e.g., deepseek-v4-flash)" />
         </Form.Item>
         <Form.Item
           name="provider"

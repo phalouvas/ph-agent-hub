@@ -13,7 +13,7 @@ def build_anthropic_client(model: Model) -> AnthropicClient:
     The model.api_key is already decrypted by the EncryptedString ORM type.
     """
     return AnthropicClient(
-        model=model.name,
+        model=model.model_id or model.name,
         api_key=model.api_key,
         base_url=model.base_url,
     )
