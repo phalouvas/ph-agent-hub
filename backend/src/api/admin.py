@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,12 +17,14 @@ from ..core.dependencies import (
 )
 from ..core.exceptions import ForbiddenError
 from ..db.orm.users import User as UserORM
+from ..services.audit_service import list_audit_logs, write_audit_log
 from ..services.tenant_service import (
     create_tenant as _svc_create_tenant,
     delete_tenant as _svc_delete_tenant,
     list_tenants as _svc_list_tenants,
     update_tenant as _svc_update_tenant,
 )
+from ..services.usage_service import list_usage_logs
 from ..services.user_service import (
     create_user as _svc_create_user,
     delete_user as _svc_delete_user,
@@ -69,6 +71,38 @@ from ..services.skill_service import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# =============================================================================
+# Pydantic Schemas — Analytics & Audit (Phase 9)
+# =============================================================================
+
+
+class UsageLogResponse(BaseModel):
+    id: str
+    tenant_id: str
+    user_id: str
+    model_id: str
+    tokens_in: int
+    tokens_out: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AuditLogResponse(BaseModel):
+    id: str
+    tenant_id: str | None
+    actor_id: str
+    actor_role: str
+    action: str
+    target_type: str | None
+    target_id: str | None
+    payload: dict | None
+    ip_address: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
 
 # =============================================================================
 # Pydantic Schemas
@@ -230,11 +264,21 @@ async def list_tenants(
 @router.post("/tenants", response_model=TenantResponse, status_code=201)
 async def create_tenant(
     body: TenantCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _admin: UserORM = Depends(require_admin),
 ):
     """Create a new tenant (admin only)."""
     tenant = await _svc_create_tenant(db, body.name)
+    await write_audit_log(
+        db,
+        actor=_admin,
+        action="tenant.created",
+        target_type="tenant",
+        target_id=tenant.id,
+        ip_address=request.client.host if request.client else None,
+        tenant_id=None,  # platform-level action
+    )
     return TenantResponse.model_validate(tenant)
 
 
@@ -242,22 +286,42 @@ async def create_tenant(
 async def update_tenant(
     tenant_id: str,
     body: TenantUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _admin: UserORM = Depends(require_admin),
 ):
     """Update a tenant's name (admin only)."""
     tenant = await _svc_update_tenant(db, tenant_id, body.name)
+    await write_audit_log(
+        db,
+        actor=_admin,
+        action="tenant.updated",
+        target_type="tenant",
+        target_id=tenant_id,
+        ip_address=request.client.host if request.client else None,
+        tenant_id=None,
+    )
     return TenantResponse.model_validate(tenant)
 
 
 @router.delete("/tenants/{tenant_id}", status_code=204)
 async def delete_tenant(
     tenant_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     _admin: UserORM = Depends(require_admin),
 ):
     """Delete a tenant (admin only)."""
     await _svc_delete_tenant(db, tenant_id)
+    await write_audit_log(
+        db,
+        actor=_admin,
+        action="tenant.deleted",
+        target_type="tenant",
+        target_id=tenant_id,
+        ip_address=request.client.host if request.client else None,
+        tenant_id=None,
+    )
 
 
 # =============================================================================
@@ -281,6 +345,7 @@ async def list_users(
 @router.post("/users", response_model=UserResponse, status_code=201)
 async def create_user(
     body: UserCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -299,6 +364,15 @@ async def create_user(
         display_name=body.display_name,
         role=body.role,
     )
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="user.created",
+        target_type="user",
+        target_id=user.id,
+        tenant_id=body.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return UserResponse.model_validate(user)
 
 
@@ -306,6 +380,7 @@ async def create_user(
 async def update_user(
     user_id: str,
     body: UserUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -342,12 +417,31 @@ async def update_user(
         update_kwargs["tenant_id"] = body.tenant_id
 
     user = await _svc_update_user(db, user_id, **update_kwargs)
+
+    # Determine action key
+    if body.role is not None and body.role != target.role:
+        action = "user.role_changed"
+    elif body.is_active is not None and body.is_active == False:  # noqa: E712
+        action = "user.deactivated"
+    else:
+        action = "user.updated"
+
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action=action,
+        target_type="user",
+        target_id=user_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return UserResponse.model_validate(user)
 
 
 @router.delete("/users/{user_id}", status_code=204)
 async def delete_user(
     user_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -361,6 +455,15 @@ async def delete_user(
             raise ForbiddenError("Managers cannot delete admin or manager users")
 
     await _svc_delete_user(db, user_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="user.deleted",
+        target_type="user",
+        target_id=user_id,
+        tenant_id=target.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
 
 
 # =============================================================================
@@ -386,6 +489,7 @@ async def list_models(
 @router.post("/models", response_model=ModelResponse, status_code=201)
 async def create_model(
     body: ModelCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -402,6 +506,16 @@ async def create_model(
         temperature=body.temperature,
         routing_priority=body.routing_priority,
     )
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="model.created",
+        target_type="model",
+        target_id=model.id,
+        payload={"name": body.name, "provider": body.provider},
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return ModelResponse.model_validate(model)
 
 
@@ -409,6 +523,7 @@ async def create_model(
 async def update_model(
     model_id: str,
     body: ModelUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -438,12 +553,24 @@ async def update_model(
         update_kwargs["routing_priority"] = body.routing_priority
 
     model = await _svc_update_model(db, model_id, **update_kwargs)
+
+    action = "model.api_key_updated" if body.api_key is not None else "model.updated"
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action=action,
+        target_type="model",
+        target_id=model_id,
+        tenant_id=target.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return ModelResponse.model_validate(model)
 
 
 @router.delete("/models/{model_id}", status_code=204)
 async def delete_model(
     model_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -455,6 +582,15 @@ async def delete_model(
             raise ForbiddenError("Managers can only delete models in their own tenant")
 
     await _svc_delete_model(db, model_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="model.deleted",
+        target_type="model",
+        target_id=model_id,
+        tenant_id=target.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
 
 
 # =============================================================================
@@ -480,6 +616,7 @@ async def list_tools(
 @router.post("/tools", response_model=ToolResponse, status_code=201)
 async def create_tool(
     body: ToolCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -492,6 +629,15 @@ async def create_tool(
         config=body.config,
         enabled=body.enabled,
     )
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="tool.created",
+        target_type="tool",
+        target_id=tool.id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return ToolResponse.model_validate(tool)
 
 
@@ -499,6 +645,7 @@ async def create_tool(
 async def update_tool(
     tool_id: str,
     body: ToolUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -520,12 +667,29 @@ async def update_tool(
         update_kwargs["enabled"] = body.enabled
 
     tool = await _svc_update_tool(db, tool_id, **update_kwargs)
+
+    # Determine action key based on enabled state change
+    if body.enabled is not None:
+        action = "tool.enabled" if body.enabled else "tool.disabled"
+    else:
+        action = "tool.updated"
+
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action=action,
+        target_type="tool",
+        target_id=tool_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return ToolResponse.model_validate(tool)
 
 
 @router.delete("/tools/{tool_id}", status_code=204)
 async def delete_tool(
     tool_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -537,6 +701,15 @@ async def delete_tool(
             raise ForbiddenError("Managers can only delete tools in their own tenant")
 
     await _svc_delete_tool(db, tool_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="tool.deleted",
+        target_type="tool",
+        target_id=tool_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
 
 
 # =============================================================================
@@ -564,6 +737,7 @@ async def list_erpnext_instances(
 @router.post("/tools/erpnext", response_model=ERPNextResponse, status_code=201)
 async def create_erpnext_instance(
     body: ERPNextCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -576,6 +750,15 @@ async def create_erpnext_instance(
         api_secret=body.api_secret,
         version=body.version,
     )
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="erpnext.created",
+        target_type="erpnext_instance",
+        target_id=instance.id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return ERPNextResponse.model_validate(instance)
 
 
@@ -583,6 +766,7 @@ async def create_erpnext_instance(
 async def update_erpnext_instance(
     instance_id: str,
     body: ERPNextUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -606,12 +790,22 @@ async def update_erpnext_instance(
         update_kwargs["version"] = body.version
 
     instance = await _svc_update_erpnext_instance(db, instance_id, **update_kwargs)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="erpnext.updated",
+        target_type="erpnext_instance",
+        target_id=instance_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return ERPNextResponse.model_validate(instance)
 
 
 @router.delete("/tools/erpnext/{instance_id}", status_code=204)
 async def delete_erpnext_instance(
     instance_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -625,6 +819,15 @@ async def delete_erpnext_instance(
             )
 
     await _svc_delete_erpnext_instance(db, instance_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="erpnext.deleted",
+        target_type="erpnext_instance",
+        target_id=instance_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
 
 
 # =============================================================================
@@ -698,6 +901,7 @@ async def admin_list_templates(
 @router.post("/templates", response_model=AdminTemplateResponse, status_code=201)
 async def admin_create_template(
     body: AdminTemplateCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -716,6 +920,15 @@ async def admin_create_template(
     tools = await _svc_list_template_tools(db, template.id)
     resp = AdminTemplateResponse.model_validate(template)
     resp.tool_ids = [t.tool_id for t in tools]
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="template.created",
+        target_type="template",
+        target_id=template.id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return resp
 
 
@@ -723,6 +936,7 @@ async def admin_create_template(
 async def admin_update_template(
     template_id: str,
     body: AdminTemplateUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -753,12 +967,22 @@ async def admin_update_template(
     tools = await _svc_list_template_tools(db, template.id)
     resp = AdminTemplateResponse.model_validate(template)
     resp.tool_ids = [t.tool_id for t in tools]
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="template.updated",
+        target_type="template",
+        target_id=template_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return resp
 
 
 @router.delete("/templates/{template_id}", status_code=204)
 async def admin_delete_template(
     template_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -770,6 +994,15 @@ async def admin_delete_template(
             raise ForbiddenError("Managers can only delete templates in their own tenant")
 
     await _svc_delete_template(db, template_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="template.deleted",
+        target_type="template",
+        target_id=template_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
 
 
 # =============================================================================
@@ -852,6 +1085,7 @@ async def admin_list_skills(
 @router.post("/skills", response_model=AdminSkillResponse, status_code=201)
 async def admin_create_skill(
     body: AdminSkillCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -875,6 +1109,15 @@ async def admin_create_skill(
     tools = await _svc_list_skill_tools(db, skill.id)
     resp = AdminSkillResponse.model_validate(skill)
     resp.tool_ids = [t.tool_id for t in tools]
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="skill.created",
+        target_type="skill",
+        target_id=skill.id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return resp
 
 
@@ -882,6 +1125,7 @@ async def admin_create_skill(
 async def admin_update_skill(
     skill_id: str,
     body: AdminSkillUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -908,12 +1152,22 @@ async def admin_update_skill(
     tools = await _svc_list_skill_tools(db, skill.id)
     resp = AdminSkillResponse.model_validate(skill)
     resp.tool_ids = [t.tool_id for t in tools]
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="skill.updated",
+        target_type="skill",
+        target_id=skill_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
     return resp
 
 
 @router.delete("/skills/{skill_id}", status_code=204)
 async def admin_delete_skill(
     skill_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
@@ -925,3 +1179,66 @@ async def admin_delete_skill(
             raise ForbiddenError("Managers can only delete skills in their own tenant")
 
     await _svc_delete_skill(db, skill_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="skill.deleted",
+        target_type="skill",
+        target_id=skill_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=request.client.host if request.client else None,
+    )
+
+
+# =============================================================================
+# Analytics & Audit Endpoints (Phase 9)
+# =============================================================================
+
+
+@router.get("/usage", response_model=list[UsageLogResponse])
+async def get_usage(
+    tenant_id: str | None = None,
+    user_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List usage logs. Admin sees all; manager sees own tenant only."""
+    if current_user.role == "manager":
+        tenant_id = current_user.tenant_id
+
+    logs = await list_usage_logs(
+        db,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    return [UsageLogResponse.model_validate(log) for log in logs]
+
+
+@router.get("/audit", response_model=list[AuditLogResponse])
+async def get_audit(
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    _admin: UserORM = Depends(require_admin),
+):
+    """List audit logs (admin only)."""
+    logs = await list_audit_logs(db, limit=limit, offset=offset)
+    return [AuditLogResponse.model_validate(log) for log in logs]
+
+
+@router.get("/logs", response_model=list[dict])
+async def get_logs(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Stub: activity/error logs endpoint.
+
+    TODO (Phase 10+): Implement a proper activity/error log storage
+    strategy.  Currently returns an empty list — no dedicated logs
+    table exists in the data model.
+    """
+    return []

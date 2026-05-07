@@ -258,23 +258,28 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 9 — Admin: Analytics and Audit
+## ✅ Phase 9 — Admin: Analytics and Audit (Completed)
 
-**What gets built:**
+**What was built:**
 - Usage log writes on every completed agent run (tokens in/out, model, user, tenant)
 - `GET /admin/usage` — token usage analytics (admin: all tenants; manager: own tenant)
-- `GET /admin/logs` — error and agent activity logs
+- `GET /admin/logs` — error and agent activity logs (stub: returns `[]` pending dedicated log storage strategy in Phase 10+)
 - `GET /admin/audit` — audit log (admin only; read-only)
-- Audit log writes on all mutating admin operations (user create/delete, model add, tool enable/disable, etc.)
-- System settings endpoints (admin only)
+- Audit log writes on all mutating admin operations (18 endpoints across tenants, users, models, tools, ERPNext instances, templates, skills)
+- System settings endpoints deferred to Phase 10/11 (no data model exists yet)
 
 **Entry condition:** Phase 8 complete — full chat flow working.
 
-**Exit condition (done when):**
-- Every completed message writes a `usage_logs` row
-- Every admin mutation writes an `audit_logs` row
-- `GET /admin/audit` returns audit entries; manager role receives `403`
-- Audit log has no delete endpoint (verified: `DELETE /admin/audit` returns `405`)
+**Exit condition verified:**
+- ✅ `usage_service.py` writes a `usage_logs` row on every completed agent run (non-streaming, streaming, and assistant-only paths)
+- ✅ `audit_service.py` writes an `audit_logs` row on every admin mutation with differentiated action keys
+- ✅ `GET /admin/audit` returns audit entries (tested: `tenant.created` audit row verified end-to-end)
+- ✅ `DELETE /admin/audit` returns `405` Method Not Allowed
+- ✅ `GET /admin/usage` with admin JWT returns `200` with usage rows
+- ✅ `GET /admin/usage` with manager JWT returns `200` scoped to own tenant
+- ✅ `GET /admin/audit` with manager JWT returns `403`
+- ✅ `GET /admin/logs` returns `200` with empty list (stub)
+- ✅ Backend builds and starts without import errors; all 4 new/modified files pass syntax checks
 
 **References:** [backend-architecture.md](../backend-architecture.md) §3.13, [data-model.md](../data-model.md) §6, [admin-area-architecture.md](../admin-area-architecture.md) §4.9
 

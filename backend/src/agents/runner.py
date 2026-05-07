@@ -42,6 +42,7 @@ from ..db.orm.templates import Template
 from ..db.orm.tools import Tool
 from ..db.orm.users import User
 from ..models.base import get_chat_client
+from ..services.usage_service import write_usage_log
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ async def run_agent(
 
     try:
         if execution_type == "workflow":
-            raw_response = await _run_workflow(
+            raw_response, tokens_in, tokens_out = await _run_workflow(
                 model=model,
                 skill=skill,
                 model_client=model_client,
@@ -117,7 +118,7 @@ async def run_agent(
                 agent_name=agent_name,
             )
         else:
-            raw_response = await _run_agent(
+            raw_response, tokens_in, tokens_out = await _run_agent(
                 model=model,
                 model_client=model_client,
                 system_prompt=system_prompt,
@@ -147,6 +148,19 @@ async def run_agent(
         parent_message_id=parent_message_id,
         user_branch_index=user_branch_index,
     )
+
+    # ---- 10. Write usage log --------------------------------------------
+    try:
+        await write_usage_log(
+            db,
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            model_id=model.id,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
+    except Exception:
+        logger.exception("Failed to write usage log (non-streaming)")
 
     return raw_response, assistant_msg_id
 
@@ -371,8 +385,12 @@ async def _run_agent(
     tools: list,
     user_message: str,
     agent_name: str,
-) -> str:
-    """Run a simple MAF Agent."""
+) -> tuple[str, int, int]:
+    """Run a simple MAF Agent.
+
+    Returns:
+        A tuple of (response_text, tokens_in, tokens_out).
+    """
     from agent_framework import Agent
 
     agent = Agent(
@@ -384,17 +402,20 @@ async def _run_agent(
 
     result = await agent.run(user_message)
 
+    # Extract token counts (best-effort)
+    tokens_in, tokens_out = _extract_token_counts(result)
+
     # result could be a string or a structured object
     if isinstance(result, str):
-        return result
+        return result, tokens_in, tokens_out
 
     # MAF may return an object with a .final_output or .content attribute
     if hasattr(result, "final_output"):
-        return str(result.final_output)
+        return str(result.final_output), tokens_in, tokens_out
     if hasattr(result, "content"):
-        return str(result.content)
+        return str(result.content), tokens_in, tokens_out
 
-    return str(result)
+    return str(result), tokens_in, tokens_out
 
 
 async def _run_workflow(
@@ -405,8 +426,12 @@ async def _run_workflow(
     tools: list,
     user_message: str,
     agent_name: str,
-) -> str:
-    """Run a MAF Workflow via the registry."""
+) -> tuple[str, int, int]:
+    """Run a MAF Workflow via the registry.
+
+    Returns:
+        A tuple of (response_text, tokens_in, tokens_out).
+    """
     from .registry import get_registered
 
     if skill is None or not skill.maf_target_key:
@@ -625,6 +650,7 @@ async def run_agent_stream(
     accumulated_text: str = ""
     step_index: int = 0
     total_tokens: int = 0
+    _stream_token_info: dict = {}  # mutated by _run_agent_stream to propagate token counts
 
     try:
         # ---- 1. Resolve model --------------------------------------------
@@ -653,7 +679,7 @@ async def run_agent_stream(
 
         # ---- 7. Run agent or workflow (streaming) ------------------------
         if execution_type == "workflow":
-            stream = await _run_workflow_stream(
+            stream = _run_workflow_stream(
                 model=model,
                 skill=skill,
                 model_client=model_client,
@@ -663,9 +689,10 @@ async def run_agent_stream(
                 agent_name=agent_name,
                 session_id=session_id,
                 message_id=message_id,
+                token_counts=_stream_token_info,
             )
         else:
-            stream = await _run_agent_stream(
+            stream = _run_agent_stream(
                 model=model,
                 model_client=model_client,
                 system_prompt=system_prompt,
@@ -674,6 +701,7 @@ async def run_agent_stream(
                 agent_name=agent_name,
                 session_id=session_id,
                 message_id=message_id,
+                token_counts=_stream_token_info,
             )
 
         async for event_dict in stream:
@@ -718,7 +746,10 @@ async def run_agent_stream(
         from .stabilizer import stabilize_text
         accumulated_text = stabilize_text(accumulated_text)
 
-    # ---- 9. Persist messages ---------------------------------------------
+    # ---- 9. Extract token counts from stream final response -------------
+    tokens_in, tokens_out = _stream_token_info.get("in", 0), _stream_token_info.get("out", 0)
+
+    # ---- 10. Persist messages --------------------------------------------
     await _persist_messages(
         db=db,
         session_id=session_id,
@@ -728,7 +759,20 @@ async def run_agent_stream(
         model_id=model.id,
     )
 
-    # ---- 10. Emit message_complete ---------------------------------------
+    # ---- 11. Write usage log ---------------------------------------------
+    try:
+        await write_usage_log(
+            db,
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            model_id=model.id,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
+    except Exception:
+        logger.exception("Failed to write usage log (streaming)")
+
+    # ---- 12. Emit message_complete ---------------------------------------
     yield {
         "event": "message_complete",
         "data": json.dumps({
@@ -755,6 +799,7 @@ async def _run_agent_stream(
     agent_name: str,
     session_id: str,
     message_id: str,
+    token_counts: dict | None = None,
 ) -> AsyncIterator[dict]:
     """Run a MAF Agent in streaming mode, yielding SSE event dicts."""
     from agent_framework import Agent
@@ -830,7 +875,11 @@ async def _run_agent_stream(
     # After stream is exhausted, get final response for token counts
     try:
         final = await response_stream.get_final_response()
-        # total_tokens handled by caller from final response
+        if token_counts is not None:
+            usage = getattr(final, "usage", None)
+            if usage:
+                token_counts["in"] = getattr(usage, "input_tokens", 0) or 0
+                token_counts["out"] = getattr(usage, "output_tokens", 0) or 0
     except Exception:
         pass  # Token count is best-effort for Phase 7
 
@@ -845,6 +894,7 @@ async def _run_workflow_stream(
     agent_name: str,
     session_id: str,
     message_id: str,
+    token_counts: dict | None = None,
 ) -> AsyncIterator[dict]:
     """Run a MAF Workflow in streaming mode.
 
@@ -887,6 +937,7 @@ async def _run_workflow_stream(
         agent_name=agent_name,
         session_id=session_id,
         message_id=message_id,
+        token_counts=token_counts,
     ):
         yield event_dict
 
@@ -1097,7 +1148,7 @@ async def run_agent_assistant_only(
 
     try:
         if execution_type == "workflow":
-            raw_response = await _run_workflow(
+            raw_response, tokens_in, tokens_out = await _run_workflow(
                 model=model,
                 skill=skill,
                 model_client=model_client,
@@ -1107,7 +1158,7 @@ async def run_agent_assistant_only(
                 agent_name=agent_name,
             )
         else:
-            raw_response = await _run_agent(
+            raw_response, tokens_in, tokens_out = await _run_agent(
                 model=model,
                 model_client=model_client,
                 system_prompt=system_prompt,
@@ -1156,4 +1207,39 @@ async def run_agent_assistant_only(
         db.add(assistant_msg)
         await db.commit()
 
+    # ---- 10. Write usage log --------------------------------------------
+    try:
+        await write_usage_log(
+            db,
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            model_id=model.id,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
+    except Exception:
+        logger.exception("Failed to write usage log (assistant-only)")
+
     return raw_response, assistant_msg_id
+
+
+# ---------------------------------------------------------------------------
+# Phase 9 — Token extraction helper
+# ---------------------------------------------------------------------------
+
+
+def _extract_token_counts(result: Any) -> tuple[int, int]:
+    """Best-effort extraction of token counts from a MAF agent response.
+
+    Returns:
+        A tuple of (tokens_in, tokens_out), defaulting to (0, 0).
+    """
+    try:
+        usage = getattr(result, "usage", None)
+        if usage:
+            tokens_in = getattr(usage, "input_tokens", 0) or 0
+            tokens_out = getattr(usage, "output_tokens", 0) or 0
+            return tokens_in, tokens_out
+    except Exception:
+        pass
+    return 0, 0
