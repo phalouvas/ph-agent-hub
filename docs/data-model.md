@@ -200,6 +200,8 @@ A session belongs to a user and a tenant.
 - tenant_id (UUID, FK → tenants.id)
 - user_id (UUID, FK → users.id)
 - title (string)
+- is_temporary (boolean, default false) — temporary sessions are not persisted to MariaDB; they are stored in Redis with a TTL and purged on logout or expiry
+- is_pinned (boolean, default false) — pinned sessions appear at the top of the session list
 - selected_template_id (UUID, FK → templates.id, nullable)
 - selected_prompt_id (UUID, FK → prompts.id, nullable)
 - selected_skill_id (UUID, FK → skills.id, nullable)
@@ -217,16 +219,38 @@ Active tools for a session are tracked via a join table. A user can only activat
 
 ## 3.2 Messages
 
-Messages belong to a session.
+Messages belong to a session and support branching. Editing a message or regenerating a response creates a new branch rather than overwriting the original. The active branch is tracked per session.
+
+Message content is a structured JSON array of parts to support multi-modal messages (text, images, tool output). This allows mixed content and rich rendering without a schema migration later.
 
 **Table: messages**
 - id (UUID, PK)
 - session_id (UUID, FK → sessions.id)
+- parent_message_id (UUID, FK → messages.id, nullable) — null for the root message of each branch
+- branch_index (int, default 0) — position within sibling branches sharing the same parent
 - sender (enum: user, assistant, system)
-- content (text)
+- content (JSON array of parts) — each part has a `type` (text | image | tool_output) and corresponding payload
 - model_id (UUID, FK → models.id, nullable)
 - tool_calls (JSON)
+- is_deleted (boolean, default false) — soft delete; message is hidden but branch integrity is preserved
 - created_at (timestamp)
+- updated_at (timestamp)
+
+**Table: message_feedback**
+- id (UUID, PK)
+- message_id (UUID, FK → messages.id)
+- user_id (UUID, FK → users.id)
+- rating (enum: up, down)
+- comment (text, nullable)
+- created_at (timestamp)
+
+Feedback is recorded for assistant messages only and is used for model quality analytics.
+
+---
+
+## 3.3 Search
+
+Full-text search across a user's sessions and messages is supported via MariaDB full-text indexes on `sessions.title` and the text parts within `messages.content`. Search is scoped to the authenticated user's own data within their tenant.
 
 ---
 
@@ -293,8 +317,9 @@ Tenant
  ├── Prompts
  ├── Skills (tenant-shared or user-owned)
  │     └── Skill Allowed Tools
- ├── Sessions
- │     ├── Messages
+ ├── Sessions (permanent or temporary)
+ │     ├── Messages (branching tree)
+ │     │     └── Message Feedback
  │     └── Session Active Tools
  ├── Memory (per user, optionally per session)
  └── RAG Documents
@@ -310,6 +335,12 @@ Tenant
 - Support curated templates, personal prompts, and reusable skills (tenant-shared and user-owned)
 - Enable session-level tool activation by end users within tenant-approved boundaries
 - Enable user-managed memory (view, delete, manually add)
+- Support temporary sessions via Redis with TTL alongside permanent MariaDB sessions
+- Support session pinning and title editing
+- Support message branching for edits and regeneration without data loss
+- Support multi-modal message content via structured JSON parts
+- Support message feedback (thumbs up/down) for analytics
+- Enable full-text search across sessions and messages
 - Enable DeepSeek‑compatible agent workflows
 - Provide clean storage for sessions, messages, and memory
 - Allow future expansion (billing, quotas, analytics)

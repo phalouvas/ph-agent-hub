@@ -44,7 +44,9 @@ The backend provides the following core capabilities:
 - Users, roles, tenants
 - Models and tool configurations
 - Templates, user prompts, and skills (tenant-shared and user-owned)
-- Chat sessions and messages
+- Permanent chat sessions and messages (MariaDB)
+- Temporary chat sessions (Redis with TTL; purged on logout or expiry)
+- Message branches, soft-deleted messages, and message feedback
 - Session-level active tool associations
 - Memory items (per user, optionally per session; supports manual user entries)
 - RAG documents
@@ -120,12 +122,18 @@ GET  /auth/me
 
 ### **3.2 Chat**
 ```
-POST /chat/session
-GET  /chat/session/:id
-POST /chat/session/:id/message
-GET  /chat/session/:id/messages
-GET  /chat/session/:id/stream
+POST   /chat/session
+GET    /chat/session/:id
+PUT    /chat/session/:id
+POST   /chat/session/:id/message
+GET    /chat/session/:id/messages
+PUT    /chat/session/:id/message/:msgId
+DELETE /chat/session/:id/message/:msgId
+POST   /chat/session/:id/message/:msgId/regenerate
+POST   /chat/session/:id/message/:msgId/feedback
+GET    /chat/session/:id/stream
 DELETE /chat/session/:id
+GET    /chat/sessions/search
 ```
 
 ### **3.3 User-Facing Configuration**
@@ -325,3 +333,6 @@ It is designed for both single‑server and multi‑server deployments.
 - Provide clean APIs for both frontend areas
 - Allow safe monkey‑patching and customization
 - Maintain strict separation of concerns
+- Support dual-mode session persistence (permanent via MariaDB, temporary via Redis)
+- Support non-destructive message branching for edits and regeneration
+- Expose message feedback for model quality analytics

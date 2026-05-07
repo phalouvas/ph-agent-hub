@@ -18,6 +18,10 @@ The chat area is designed for end users who interact with AI agents. It focuses 
 - file uploads
 - memory management (view, delete, manually add entries)
 - session-level tool activation from tenant-approved tools
+- temporary and permanent chat sessions
+- message editing, deletion, branching, and regeneration
+- message feedback
+- full-text search across sessions and messages
 - multi-session chat history
 - authentication via backend-issued JWT
 
@@ -87,6 +91,7 @@ The chat area is a thin client. It renders state returned by the backend but doe
 - Retry last message
 - Stop generation button
 - Rendering of tool activity and other agent-side progress states when exposed by the backend
+- Branch navigation controls when multiple branches exist at a message node (e.g. "2 / 3 ▶")
 
 ### **4.3 Model Selection**
 - Dropdown listing models available to the tenant
@@ -111,11 +116,37 @@ The chat area is a thin client. It renders state returned by the backend but doe
 - Backend handles extraction, embedding, and tool-based processing
 
 ### **4.7 Session Management**
-- Create new session
-- Rename session
+- Create new session (permanent or temporary mode)
+- Rename / edit session title
 - Delete session
+- Pin / unpin a session (pinned sessions appear at top of list)
 - View session history
 - Load previous messages
+- Clear visual indicator when a session is in temporary mode
+
+### **4.8 Temporary Sessions**
+- Users can start a session in temporary mode at creation time
+- Temporary sessions are held in Redis with a TTL; they are not written to MariaDB
+- Temporary sessions are automatically deleted on logout or TTL expiry
+- Memory writes are disabled for temporary sessions
+- File uploads and RAG embedding are disabled for temporary sessions
+- The UI prominently marks temporary sessions so the user always knows the session will not be saved
+
+### **4.9 Message Management**
+- Edit any user or assistant message
+  - Editing creates a new branch from the edited message's parent; the original branch is preserved
+  - After editing a user message, the agent automatically regenerates a response in the new branch
+- Delete a message (soft delete; hidden from view but branch integrity preserved)
+- Regenerate the last assistant response
+  - Creates a new branch sibling; previous response remains accessible
+- Navigate between branches at any message node using inline branch controls
+- Thumbs up / thumbs down feedback on any assistant message
+  - Feedback is stored and surfaced in admin analytics
+
+### **4.10 Search**
+- Full-text search across the user's own sessions and messages
+- Results scoped to the authenticated user's data within their tenant
+- Search UI accessible from the session sidebar
 
 ### **4.8 Memory Management**
 - View all memory items associated with the current user
@@ -145,6 +176,8 @@ The chat area is a thin client. It renders state returned by the backend but doe
         /components
           ChatWindow.tsx
           MessageBubble.tsx
+          MessageBranchNav.tsx
+          MessageFeedback.tsx
           ModelSelector.tsx
           TemplateSelector.tsx
           PromptLibrary.tsx
@@ -152,8 +185,10 @@ The chat area is a thin client. It renders state returned by the backend but doe
           PersonalSkillEditor.tsx
           FileUpload.tsx
           SessionSidebar.tsx
+          SessionSearch.tsx
           MemoryManager.tsx
           SessionToolActivation.tsx
+          TemporaryChatBadge.tsx
         /hooks
         /services
           chat.ts
@@ -167,8 +202,9 @@ Shared app-level providers, auth logic, and theme configuration live outside the
 ## 6. Navigation Structure
 
 ### **Sidebar**
-- New Chat
-- Sessions list
+- New Chat (with temporary / permanent mode toggle)
+- Sessions list (pinned first, then recents)
+- Search sessions
 - Memory manager
 - User settings
 - Logout
@@ -197,13 +233,19 @@ GET  /auth/me
 ```
 POST   /chat/session
 GET    /chat/session/:id
+PUT    /chat/session/:id
 DELETE /chat/session/:id
+GET    /chat/sessions/search
 ```
 
 ### **Messages**
 ```
-POST /chat/session/:id/message
-GET  /chat/session/:id/messages
+POST   /chat/session/:id/message
+GET    /chat/session/:id/messages
+PUT    /chat/session/:id/message/:msgId
+DELETE /chat/session/:id/message/:msgId
+POST   /chat/session/:id/message/:msgId/regenerate
+POST   /chat/session/:id/message/:msgId/feedback
 ```
 
 ### **Streaming**
@@ -273,5 +315,9 @@ POST /files/upload
 - allow users to create and manage personal skills without admin involvement
 - allow users to activate tenant-approved tools per session
 - give users full control over their own memory entries
+- support temporary sessions for privacy-sensitive conversations
+- support non-destructive message editing and regeneration via branching
+- enable users to search their own conversation history
+- capture message feedback for model quality improvement
 - keep all admin logic out of the user experience
 - integrate cleanly with the backend and Microsoft Agent Framework runtime

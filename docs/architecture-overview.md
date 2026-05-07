@@ -51,13 +51,17 @@ The frontend does **not** run agents directly. It acts as a thin client over the
 
 The chat area is the end-user experience inside the frontend web app. It provides:
 
-- chat sessions and history
+- chat sessions and history (permanent or temporary mode)
+- session pinning and title editing
 - model selection
 - template, prompt, and skill selection
 - personal skill creation and management
 - file uploads
 - memory management (view, delete, manually add entries)
 - session-level tool activation from tenant-approved tools
+- message editing, deletion, and regeneration via non-destructive branching
+- message feedback (thumbs up / down)
+- full-text search across sessions and messages
 - authentication via backend-issued JWT
 - real-time streaming responses and agent events
 
