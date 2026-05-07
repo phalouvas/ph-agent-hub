@@ -7,12 +7,14 @@ Because MariaDB is the primary store, relationships that require joins or refere
 
 The data model supports:
 - multi‑tenant architecture
-- user/role management
+- user/role management (admin, manager, user)
 - model and tool configuration
 - ERPNext instance routing
 - curated templates, user prompts, and reusable skills
+- personal user-owned skills
 - chat sessions and messages
 - memory and RAG documents
+- session-level tool activation per user
 
 ---
 
@@ -21,14 +23,17 @@ The data model supports:
 ## 1.1 Users
 
 Users belong to a single tenant and authenticate via JWT.
-
+Roles:
+- **admin** — platform-wide superuser; manages all tenants, platform settings, and global configuration
+- **manager** — tenant-scoped operator; can create and manage tools, models, templates, skills, and users within their own tenant only
+- **user** — end user; accesses the chat area within their tenant
 **Table: users**
 - id (UUID, PK)
 - tenant_id (UUID, FK → tenants.id)
 - email (string, unique)
 - password_hash (string)
 - display_name (string)
-- role (enum: admin, user)
+- role (enum: admin, manager, user)
 - is_active (boolean)
 - created_at (timestamp)
 - updated_at (timestamp)
@@ -201,6 +206,13 @@ A session belongs to a user and a tenant.
 - created_at (timestamp)
 - updated_at (timestamp)
 
+Active tools for a session are tracked via a join table. A user can only activate tools that are enabled for their tenant.
+
+**Table: session_active_tools**
+- session_id (UUID, FK → sessions.id)
+- tool_id (UUID, FK → tools.id)
+- created_at (timestamp)
+
 ---
 
 ## 3.2 Messages
@@ -222,14 +234,16 @@ Messages belong to a session.
 
 ## 4.1 Memory Items
 
-Memory is stored per session or per tenant.
+Memory is stored per user and optionally scoped to a session. Users can view, delete, and manually add memory entries via the chat area.
 
 **Table: memory**
 - id (UUID, PK)
 - tenant_id (UUID, FK → tenants.id)
+- user_id (UUID, FK → users.id)
 - session_id (UUID, FK → sessions.id, nullable)
 - key (string)
 - value (text)
+- source (enum: automatic, manual) — whether the entry was created by the agent or manually by the user
 - created_at (timestamp)
 
 ---
@@ -270,18 +284,19 @@ Tracks model usage for analytics and quotas.
 
 ```
 Tenant
- ├── Users
+ ├── Users (admin | manager | user)
  ├── Models
  ├── Tools
  │     └── ERPNext Instances
  ├── Templates
  │     └── Template Allowed Tools
  ├── Prompts
- ├── Skills
+ ├── Skills (tenant-shared or user-owned)
  │     └── Skill Allowed Tools
  ├── Sessions
- │     └── Messages
- ├── Memory
+ │     ├── Messages
+ │     └── Session Active Tools
+ ├── Memory (per user, optionally per session)
  └── RAG Documents
 ```
 
@@ -290,8 +305,11 @@ Tenant
 # 7. Goals of the Data Model
 
 - Support multi‑tenant isolation
+- Support three-tier role model (admin, manager, user)
 - Support flexible model and tool configuration
-- Support curated templates, personal prompts, and reusable skills
+- Support curated templates, personal prompts, and reusable skills (tenant-shared and user-owned)
+- Enable session-level tool activation by end users within tenant-approved boundaries
+- Enable user-managed memory (view, delete, manually add)
 - Enable DeepSeek‑compatible agent workflows
 - Provide clean storage for sessions, messages, and memory
 - Allow future expansion (billing, quotas, analytics)

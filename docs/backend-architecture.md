@@ -27,19 +27,27 @@ The backend provides the following core capabilities:
 - Membrane tools
 - Custom tools (Python modules)
 - Tool permission enforcement based on user roles and tenant settings
+- Session-level tool activation: users may activate tenant-approved tools per session; the active tool list is enforced at execution time
+- Managers may create, edit, and delete tools within their tenant
 
 ### **1.4 Authentication & Authorization**
 - JWT‑based authentication
-- User roles (admin, user)
-- Tenant isolation
+- Three user roles:
+  - **admin** — platform-wide access; manages all tenants and platform configuration
+  - **manager** — tenant-scoped operator; can manage tools, models, templates, skills, and users within their own tenant
+  - **user** — end user; chat area access only
+- Tenant isolation enforced on every request
 - Per‑tenant model and tool access rules
+- Role claims in JWT used for endpoint-level permission enforcement
 
 ### **1.5 Data Storage**
 - Users, roles, tenants
 - Models and tool configurations
-- Templates, user prompts, and skills
+- Templates, user prompts, and skills (tenant-shared and user-owned)
 - Chat sessions and messages
-- Memory and RAG documents
+- Session-level active tool associations
+- Memory items (per user, optionally per session; supports manual user entries)
+- RAG documents
 - ERPNext instance configurations
 
 ### **1.6 Multi‑Tenant Routing**
@@ -134,7 +142,21 @@ PUT  /skills/:id
 DELETE /skills/:id
 ```
 
-### **3.4 Admin Users**
+### **3.4 Memory**
+```
+GET    /memory
+POST   /memory
+DELETE /memory/:id
+```
+
+### **3.5 Session Tools**
+```
+GET    /chat/session/:id/tools
+POST   /chat/session/:id/tools/:toolId
+DELETE /chat/session/:id/tools/:toolId
+```
+
+### **3.6 Admin Users** *(admin only)*
 ```
 GET    /admin/users
 POST   /admin/users
@@ -142,7 +164,7 @@ PUT    /admin/users/:id
 DELETE /admin/users/:id
 ```
 
-### **3.5 Admin Tenants**
+### **3.7 Admin Tenants** *(admin only)*
 ```
 GET    /admin/tenants
 POST   /admin/tenants
@@ -150,7 +172,7 @@ PUT    /admin/tenants/:id
 DELETE /admin/tenants/:id
 ```
 
-### **3.6 Admin Models**
+### **3.8 Admin / Manager Models**
 ```
 GET    /admin/models
 POST   /admin/models
@@ -158,7 +180,7 @@ PUT    /admin/models/:id
 DELETE /admin/models/:id
 ```
 
-### **3.7 Admin Tools**
+### **3.9 Admin / Manager Tools**
 ```
 GET    /admin/tools
 POST   /admin/tools
@@ -166,7 +188,7 @@ PUT    /admin/tools/:id
 DELETE /admin/tools/:id
 ```
 
-### **3.8 Admin Templates**
+### **3.10 Admin / Manager Templates**
 ```
 GET    /admin/templates
 POST   /admin/templates
@@ -174,7 +196,7 @@ PUT    /admin/templates/:id
 DELETE /admin/templates/:id
 ```
 
-### **3.9 Admin Skills**
+### **3.11 Admin / Manager Skills**
 ```
 GET    /admin/skills
 POST   /admin/skills
@@ -182,7 +204,15 @@ PUT    /admin/skills/:id
 DELETE /admin/skills/:id
 ```
 
-### **3.10 Admin Analytics**
+### **3.12 Admin / Manager Users (tenant-scoped)**
+```
+GET    /admin/users
+POST   /admin/users
+PUT    /admin/users/:id
+DELETE /admin/users/:id
+```
+
+### **3.13 Analytics**
 ```
 GET /admin/usage
 GET /admin/logs
@@ -257,7 +287,7 @@ Each request includes a JWT with:
 
 - `user_id`
 - `tenant_id`
-- `roles`
+- `role` (admin | manager | user)
 - `permissions`
 
 The backend enforces:
@@ -267,6 +297,8 @@ The backend enforces:
 - tenant‑specific ERPNext instance
 - tenant‑specific templates and shared skills
 - user‑scoped prompts and personal skills
+- manager‑scoped write access to tools, models, templates, and skills within their tenant only
+- session‑level active tool list applied to each agent request
 
 No data is shared across tenants.
 

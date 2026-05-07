@@ -14,8 +14,10 @@ The chat area is designed for end users who interact with AI agents. It focuses 
 - real-time streaming responses and agent events
 - model selection based on tenant permissions
 - template, prompt, and skill selection
+- personal skill creation and management
 - file uploads
-- optional memory display
+- memory management (view, delete, manually add entries)
+- session-level tool activation from tenant-approved tools
 - multi-session chat history
 - authentication via backend-issued JWT
 
@@ -100,6 +102,9 @@ The chat area is a thin client. It renders state returned by the backend but doe
 - Dropdown or launcher for skills available to the user
 - A skill can map to a predefined Microsoft Agent Framework agent or workflow
 - A selected skill can set defaults such as model, template, prompt, and allowed tools
+- Users can create, edit, and delete their own personal (private) skills
+- Personal skills are scoped to the user and not visible to other users
+- Personal skills follow the same structure as tenant skills: execution type, model, template, prompt, allowed tools
 
 ### **4.6 File Uploads**
 - Upload files to backend
@@ -112,9 +117,20 @@ The chat area is a thin client. It renders state returned by the backend but doe
 - View session history
 - Load previous messages
 
-### **4.8 Memory Display (Optional)**
-- Show memory items associated with the session
-- Allow user actions only when supported by the backend API
+### **4.8 Memory Management**
+- View all memory items associated with the current user
+- Filter memory by session or view all
+- Delete individual memory entries
+- Manually add a memory entry (pin a fact or context note)
+- Entries created by the agent are marked as automatic; user-added entries are marked as manual
+- All memory actions are proxied through the backend; no direct DB access from the frontend
+
+### **4.9 Session Tool Activation**
+- Users can view tools enabled for their tenant
+- Users can activate or deactivate individual tools for the current session
+- Only tools enabled by the tenant admin or manager are available for activation
+- Tool activation state is stored per session in the backend
+- The active tool list is sent to the agent on each request
 
 ---
 
@@ -133,8 +149,11 @@ The chat area is a thin client. It renders state returned by the backend but doe
           TemplateSelector.tsx
           PromptLibrary.tsx
           SkillSelector.tsx
+          PersonalSkillEditor.tsx
           FileUpload.tsx
           SessionSidebar.tsx
+          MemoryManager.tsx
+          SessionToolActivation.tsx
         /hooks
         /services
           chat.ts
@@ -150,6 +169,7 @@ Shared app-level providers, auth logic, and theme configuration live outside the
 ### **Sidebar**
 - New Chat
 - Sessions list
+- Memory manager
 - User settings
 - Logout
 
@@ -159,7 +179,8 @@ Shared app-level providers, auth logic, and theme configuration live outside the
 - Model selector
 - Template selector
 - Prompt library / quick prompt actions
-- Skill selector
+- Skill selector (tenant skills + personal skills)
+- Tool activation panel
 - File upload button
 
 ---
@@ -212,6 +233,20 @@ PUT    /skills/:id
 DELETE /skills/:id
 ```
 
+### **Session Tools**
+```
+GET    /chat/session/:id/tools
+POST   /chat/session/:id/tools/:toolId
+DELETE /chat/session/:id/tools/:toolId
+```
+
+### **Memory**
+```
+GET    /memory
+POST   /memory
+DELETE /memory/:id
+```
+
 ### **Files**
 ```
 POST /files/upload
@@ -235,5 +270,8 @@ POST /files/upload
 - provide a clean, intuitive chat experience
 - support real-time agent interactions
 - allow users to select models, templates, prompts, and skills easily
+- allow users to create and manage personal skills without admin involvement
+- allow users to activate tenant-approved tools per session
+- give users full control over their own memory entries
 - keep all admin logic out of the user experience
 - integrate cleanly with the backend and Microsoft Agent Framework runtime

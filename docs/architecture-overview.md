@@ -54,8 +54,10 @@ The chat area is the end-user experience inside the frontend web app. It provide
 - chat sessions and history
 - model selection
 - template, prompt, and skill selection
+- personal skill creation and management
 - file uploads
-- memory display
+- memory management (view, delete, manually add entries)
+- session-level tool activation from tenant-approved tools
 - authentication via backend-issued JWT
 - real-time streaming responses and agent events
 
@@ -65,17 +67,24 @@ The chat area contains no administrative logic.
 
 ## 3. Admin Area
 
-The admin area is the operational control surface inside the same frontend web app. It provides:
+The admin area is the operational control surface inside the same frontend web app. It is role-aware and serves two roles:
 
-- user management
-- tenant management
+**Administrators (admin)** have full platform-wide access:
+- user and tenant management
 - model configuration
 - tool configuration
 - template and skill management
 - usage analytics and logs
 - system configuration
 
-This area is role-protected and communicates exclusively with the backend API.
+**Managers (manager)** have tenant-scoped access:
+- manage users within their tenant
+- create, edit, and delete tools within their tenant
+- enable/disable models for their tenant
+- manage templates and skills within their tenant
+- view tenant-level analytics
+
+This area is role-protected and communicates exclusively with the backend API. The backend enforces all scope boundaries.
 
 ---
 
@@ -113,14 +122,14 @@ This structure supports both single-server and multi-server deployments.
 
 The backend supports multiple tenants, each with:
 
-- isolated users
+- isolated users (with roles: admin, manager, user)
 - isolated models
 - isolated tools
 - isolated ERPNext instances (optional)
 - isolated templates, prompts, and skills
 - isolated sessions and memory
 
-Tenants are enforced at the backend level using JWT claims and backend authorization rules.
+Tenants are enforced at the backend level using JWT claims and backend authorization rules. Managers operate within a single tenant boundary and cannot access or affect other tenants.
 
 ---
 

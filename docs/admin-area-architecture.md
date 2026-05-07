@@ -1,6 +1,6 @@
 # Admin Area Architecture — PH Agent Hub
 
-The admin area is the operational control surface inside the single React frontend of PH Agent Hub. It provides administrators with visibility and control over tenants, users, models, tools, templates, skills, and system configuration.
+The admin area is the operational control surface inside the single React frontend of PH Agent Hub. It provides administrators and tenant managers with visibility and control over tenants, users, models, tools, templates, skills, and system configuration.
 
 This document defines the structure, responsibilities, and integration points of the admin area.
 
@@ -8,19 +8,26 @@ This document defines the structure, responsibilities, and integration points of
 
 ## 1. Purpose of the Admin Area
 
-The admin area enables platform administrators to:
+The admin area serves two roles:
 
-- manage users and roles
-- configure models and API keys
-- enable and disable tools
-- manage tenants and tenant defaults
-- create and manage curated templates
-- create and manage shared skills
-- view usage analytics and logs
+**Platform administrators (role: admin)** can:
+- manage all tenants and platform-level settings
+- manage users across any tenant
+- configure models, tools, templates, and skills globally
+- view platform-wide analytics and logs
 - configure system-level settings
 - monitor agent activity and operational errors
 
-It is designed for clarity, security, and operational efficiency.
+**Tenant managers (role: manager)** can:
+- manage users within their own tenant only
+- create, edit, and delete tools within their tenant
+- enable and disable models for their tenant
+- manage templates and skills within their tenant
+- view analytics scoped to their tenant
+
+Managers cannot create or delete tenants, access other tenants, or modify platform-level configuration.
+
+The area is designed for clarity, security, and operational efficiency.
 
 ---
 
@@ -74,55 +81,71 @@ Refine should be used where it accelerates resource management. It should not be
 ### **4.1 Authentication**
 - Login page shared with the main frontend
 - JWT-based session
-- Role-based access for administrators only
+- Role-based access: `admin` sees the full admin area; `manager` sees a tenant-scoped restricted view
+- The backend enforces role boundaries on every endpoint; the frontend adapts navigation accordingly
 
-### **4.2 User Management**
+### **4.2 Role Capabilities Summary**
+
+| Capability | admin | manager |
+|---|:---:|:---:|
+| Create / delete tenants | ✓ | ✗ |
+| Manage users across all tenants | ✓ | ✗ |
+| Manage users within own tenant | ✓ | ✓ |
+| Create / edit / delete tools (own tenant) | ✓ | ✓ |
+| Enable / disable models (own tenant) | ✓ | ✓ |
+| Manage templates and skills (own tenant) | ✓ | ✓ |
+| View analytics (own tenant) | ✓ | ✓ |
+| View platform-wide analytics | ✓ | ✗ |
+| System settings | ✓ | ✗ |
+
+### **4.3 User Management**
 - Create and delete users
-- Assign roles
+- Assign roles (admin can assign any role; manager can assign `user` role only within their tenant)
 - Reset passwords
 - Activate and deactivate accounts
-- Assign users to tenants
+- Assign users to tenants (admin only)
 
-### **4.3 Tenant Management**
+### **4.4 Tenant Management** *(admin only)*
 - Create tenants
 - Configure tenant defaults
 - Assign models and tools to tenants
 - Manage tenant-specific settings
 
-### **4.4 Model Management**
-- Add and remove models
+### **4.5 Model Management**
+- Add and remove models (admin only across all tenants; manager within own tenant)
 - Configure API keys and base URLs
 - Enable and disable models per tenant
 - Set routing priority
 - Set default model per tenant
 
-### **4.5 Tool Management**
-- Add and remove tools
+### **4.6 Tool Management**
+- Create, edit, and delete tools within the tenant (available to both admin and manager)
 - Configure ERPNext instances
 - Configure Membrane tools
 - Upload custom tool definitions
 - Enable and disable tools per tenant
 
-### **4.6 Template Management**
+### **4.7 Template Management**
 - Create, edit, and delete curated templates
 - Assign templates to tenants, roles, or specific users
 - Mark templates available for chat sessions and skill composition
 - Set default templates
 
-### **4.7 Skill Management**
+### **4.8 Skill Management**
 - Create, edit, and delete skills
 - Map skills to Microsoft Agent Framework agents or workflows
 - Configure default template, prompt, model, and allowed tools for a skill
 - Publish skills tenant-wide or restrict them to specific users later
 
-### **4.8 Usage Analytics**
+### **4.9 Usage Analytics**
 - Tokens per user
 - Tokens per tenant
 - Model usage breakdown
 - Tool usage statistics
 - Error logs
+- Managers see only their own tenant's data
 
-### **4.9 System Settings**
+### **4.10 System Settings** *(admin only)*
 - Global configuration
 - Logging level
 - Vector DB settings (optional)
@@ -162,18 +185,19 @@ Refine resources should be defined inside the admin feature module, while shared
 ### **Sidebar**
 - Dashboard
 - Users
-- Tenants
+- Tenants *(admin only)*
 - Models
 - Tools
 - Templates
 - Skills
 - Analytics
-- Settings
+- Settings *(admin only)*
 - Logout
 
 ### **Top Bar**
-- Tenant selector when relevant
+- Tenant selector when relevant *(admin only)*
 - User profile
+- Role badge (admin / manager)
 - Notifications (optional)
 
 ---
@@ -246,8 +270,10 @@ GET /admin/logs
 
 ## 8. Security Considerations
 
-- Admin routes are visible only to authorized users
-- Backend role enforcement remains authoritative
+- Admin routes are visible only to users with `admin` or `manager` roles
+- Manager routes show only tenant-scoped data; cross-tenant access is blocked at the backend
+- Backend role enforcement remains authoritative; frontend visibility adjustments are UX only
+- Managers cannot escalate their own role or assign `admin` or `manager` roles to other users
 - JWT is stored in memory, not localStorage
 - Sensitive fields such as API keys and secrets are masked by default
 - Audit logs are recorded for administrative actions

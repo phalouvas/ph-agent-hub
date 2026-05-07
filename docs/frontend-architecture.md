@@ -80,11 +80,14 @@ The frontend should remain framework-light and avoid duplicating backend behavio
 │             Frontend React Web App                  │
 │                                                      │
 │  ┌────────────────────┐  ┌────────────────────────┐  │
-│  │   Chat Area        │  │      Admin Area        │  │
+│  │   Chat Area        │  │      Admin Area         │  │
 │  │ - chat sessions    │  │ - users/tenants        │  │
 │  │ - streaming UI     │  │ - models/tools         │  │
 │  │ - files/templates  │  │ - templates/skills     │  │
 │  │ - prompts/skills   │  │ - analytics/settings   │  │
+│  │ - memory manager   │  │ role-aware: admin sees │  │
+│  │ - tool activation  │  │ all; manager sees only │  │
+│  │ - personal skills  │  │ their tenant scope     │  │
 │  └────────────────────┘  └────────────────────────┘  │
 │                                                      │
 │  Shared: auth, API client, tenant context, routing   │
@@ -118,7 +121,7 @@ Suggested route domains:
 /admin/settings
 ```
 
-These route domains should use distinct layouts and navigation shells, even though they live in one application.
+Admin routes under `/admin/tenants` and `/admin/settings` are visible to `admin` only. All other `/admin` routes are accessible to both `admin` and `manager`, with the backend enforcing tenant scope for managers.
 
 ---
 
@@ -156,8 +159,12 @@ The chat and admin areas should share foundations, but not implementation detail
 ## 7. Authentication and Access Control
 
 - JWT is stored in memory, not localStorage
-- Initial app bootstrap loads authenticated user and tenant context
-- Route guards determine whether chat or admin routes are visible
+- Initial app bootstrap loads authenticated user, role, and tenant context
+- Three roles carried in JWT: `admin`, `manager`, `user`
+- Route guards:
+  - `user` role → chat area only
+  - `manager` role → chat area + admin area (tenant-scoped)
+  - `admin` role → full access to chat and admin areas
 - Backend enforces all authorization rules on every protected endpoint
 
 This keeps the frontend simple while preserving a strong security model.
