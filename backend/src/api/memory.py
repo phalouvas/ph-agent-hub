@@ -46,7 +46,7 @@ class MemoryResponse(BaseModel):
 # =============================================================================
 
 
-@router.get("/memory", response_model=list[MemoryResponse])
+@router.get("", response_model=list[MemoryResponse])
 async def list_memory(
     session_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -65,7 +65,7 @@ async def list_memory(
     return [MemoryResponse.model_validate(e) for e in entries]
 
 
-@router.post("/memory", response_model=MemoryResponse, status_code=201)
+@router.post("", response_model=MemoryResponse, status_code=201)
 async def create_memory(
     body: MemoryCreate,
     db: AsyncSession = Depends(get_db),
@@ -84,7 +84,7 @@ async def create_memory(
     return MemoryResponse.model_validate(entry)
 
 
-@router.delete("/memory/{memory_id}", status_code=204)
+@router.delete("/{memory_id}", status_code=204)
 async def delete_memory(
     memory_id: str,
     db: AsyncSession = Depends(get_db),

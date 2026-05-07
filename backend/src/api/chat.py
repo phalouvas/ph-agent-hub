@@ -817,7 +817,7 @@ async def search_sessions(
     search_term = f"%{q.strip()}%"
 
     # Search sessions by title (FULLTEXT) and by message content (LIKE)
-    from sqlalchemy import or_, text
+    from sqlalchemy import text, type_coerce, String as SAString
 
     # FULLTEXT on sessions.title
     title_stmt = (
@@ -843,6 +843,8 @@ async def search_sessions(
     )
 
     # Search sessions via message content (LIKE on JSON column)
+    from sqlalchemy import func as sa_func, type_coerce, String as SAString
+
     msg_stmt = (
         select(Session)
         .join(Message, Message.session_id == Session.id)
@@ -851,7 +853,7 @@ async def search_sessions(
             Session.tenant_id == current_user.tenant_id,
             Session.is_temporary == False,  # noqa: E712
             Message.is_deleted == False,  # noqa: E712
-            Message.content.cast(str).ilike(search_term),
+            type_coerce(Message.content, SAString).ilike(search_term),
         )
     )
 
