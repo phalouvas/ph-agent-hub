@@ -171,7 +171,11 @@ UPLOAD_ALLOWED_TYPES=text/plain,text/csv,text/markdown,application/pdf,applicati
 JWT_SECRET=your-secret-key
 JWT_EXPIRES_IN=3600
 
-# Model provider keys
+# Application-level encryption key for sensitive DB fields (models.api_key, erpnext credentials)
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+ENCRYPTION_KEY=
+
+# Model provider keys (stored in DB encrypted; these are only needed for initial seed or CLI use)
 DEEPSEEK_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=

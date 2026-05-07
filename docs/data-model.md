@@ -71,7 +71,7 @@ Administrators configure models per tenant.
 - tenant_id (UUID, FK → tenants.id)
 - name (string) — e.g., "deepseek-r1"
 - provider (string) — e.g., "deepseek", "openai", "anthropic"
-- api_key (string, encrypted)
+- api_key (string) — stored encrypted using Fernet symmetric encryption; decrypted in memory at runtime by `/backend/src/core/encryption.py`
 - base_url (string, nullable)
 - enabled (boolean)
 - max_tokens (int)
@@ -106,8 +106,8 @@ Stored as a tool config, but also available as a dedicated table for convenience
 - id (UUID, PK)
 - tenant_id (UUID, FK → tenants.id)
 - base_url (string)
-- api_key (string, encrypted)
-- api_secret (string, encrypted)
+- api_key (string) — stored encrypted using Fernet symmetric encryption
+- api_secret (string) — stored encrypted using Fernet symmetric encryption
 - version (string)
 - created_at (timestamp)
 - updated_at (timestamp)
@@ -349,6 +349,26 @@ Tenant
  ├── Memory (per user, optionally per session)
  └── RAG Documents
 ```
+
+---
+
+---
+
+# 9. Encryption of Sensitive Fields
+
+Fields marked as encrypted in this schema use **application-level Fernet symmetric encryption** (AES-128-CBC with HMAC-SHA256) provided by the Python [`cryptography`](https://cryptography.io) library.
+
+- The encryption key is derived from the `ENCRYPTION_KEY` environment variable using `base64.urlsafe_b64encode`
+- Encryption and decryption are performed exclusively in `/backend/src/core/encryption.py`
+- No other module in the codebase calls the `cryptography` library directly
+- Encrypted values are stored as base64-encoded ciphertext strings in the database
+- The encryption key must be 32 bytes, base64url-encoded; generate with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- If the `ENCRYPTION_KEY` is rotated, all encrypted fields must be re-encrypted; a migration utility must be provided
+
+**Encrypted fields:**
+- `models.api_key`
+- `erpnext_instances.api_key`
+- `erpnext_instances.api_secret`
 
 ---
 

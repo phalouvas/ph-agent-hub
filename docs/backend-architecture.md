@@ -290,6 +290,7 @@ GET /admin/logs
     /core
       config.py
       security.py
+      encryption.py     — Fernet encrypt/decrypt; the only module that imports cryptography
       jwt.py
       exceptions.py
   Dockerfile
@@ -360,12 +361,39 @@ No data is shared across tenants.
 
 ---
 
-## 8. Deployment
+## 8. Encryption
+
+Sensitive fields (`models.api_key`, `erpnext_instances.api_key`, `erpnext_instances.api_secret`) are encrypted at the application layer using **Fernet symmetric encryption** (AES-128-CBC + HMAC-SHA256) from the Python `cryptography` library.
+
+### How it works
+- The encryption key is loaded from the `ENCRYPTION_KEY` environment variable at startup
+- All encrypt/decrypt operations go through `/backend/src/core/encryption.py` — the only file that imports `cryptography`
+- Values are encrypted before being written to MariaDB and decrypted after being read
+- The SQLAlchemy ORM models for `models` and `erpnext_instances` use a custom `EncryptedString` column type that transparently handles encrypt/decrypt at the ORM layer, so service code never handles raw ciphertext
+
+### Key generation
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+The output is a 32-byte base64url-encoded key. Store it in `.env` as `ENCRYPTION_KEY`.
+
+### Key rotation
+If the encryption key must be rotated:
+1. Generate a new key
+2. Run the provided key-rotation migration utility: `python -m backend.src.core.encryption rotate --old-key OLD --new-key NEW`
+3. Replace `ENCRYPTION_KEY` in `.env` and redeploy
+
+The key and the encrypted data live on the same server — this is acceptable for a self-hosted platform where physical server access already implies full compromise. For stricter requirements, the `encryption.py` module can be replaced with a Vault or Azure Key Vault adapter without changing any other code.
+
+---
+
+## 9. Deployment
 
 The backend runs as a Docker container and depends on:
 
 - MariaDB
 - Redis
+- MinIO
 - Optional vector DB
 - Nginx reverse proxy
 
