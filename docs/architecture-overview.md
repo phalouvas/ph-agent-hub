@@ -21,7 +21,7 @@ PH Agent Hub is built around a clean separation of responsibilities:
 ### **1.1 Backend (Agent Framework Server)**
 The backend is the core of the platform. It provides:
 
-- Agent execution using the Microsoft Agent Framework
+- Agent execution using the [Microsoft Agent Framework (MAF)](agent-framework-integration.md) — Python, `pip install agent-framework`
 - Multi-model orchestration (DeepSeek, OpenAI, Anthropic, etc.)
 - Tool calling and workflow coordination
 - DeepSeek-compatible stabilization layer (JSON repair, retry logic, output filtering)
@@ -43,7 +43,7 @@ The frontend is a single deployable React application that shares:
 - design system and shared components
 - route guards and role-based navigation
 
-The frontend does **not** run agents directly. It acts as a thin client over the backend and the Microsoft Agent Framework runtime.
+The frontend does **not** run agents directly. It acts as a thin client over the backend and the MAF runtime.
 
 ---
 
@@ -174,5 +174,6 @@ Additional documentation is provided in:
 - [data-model.md](data-model.md)
 - [deployment.md](deployment.md)
 - [deepseek-stabilizer.md](deepseek-stabilizer.md)
+- [agent-framework-integration.md](agent-framework-integration.md)
 
 These documents define the detailed implementation plan for PH Agent Hub.

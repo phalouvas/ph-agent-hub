@@ -11,10 +11,11 @@ This document defines the backend's responsibilities, internal structure, and in
 The backend provides the following core capabilities:
 
 ### **1.1 Agent Execution**
-- Runs agent loops using the Microsoft Agent Framework
-- Supports multi‑step reasoning and tool calling
-- Provides a DeepSeek‑compatible stabilization layer (JSON repair, retries, output filtering)
-- Supports streaming responses and agent events to the chat area
+- Runs agent loops using the [Microsoft Agent Framework (MAF)](agent-framework-integration.md) — Python package `agent-framework`
+- Agents are assembled per request from tenant and session state (model, template, skill, active tools)
+- Supports multi‑step reasoning and tool calling via MAF's `Agent` and `Workflow` primitives
+- Provides a DeepSeek‑compatible stabilization layer implemented as MAF middleware (JSON repair, retries, output filtering)
+- Supports streaming responses and agent events to the chat area via SSE
 
 ### **1.2 Model Orchestration**
 - Supports multiple model providers (DeepSeek, OpenAI, Anthropic, local models, etc.)
@@ -68,7 +69,7 @@ The backend is designed to be fully patchable:
 - DeepSeek monkey‑patching
 - Custom tool runners
 - Custom agent behaviors
-- Skill definitions mapped to Microsoft Agent Framework agents and workflows
+- Skill definitions mapped to MAF agents and workflows via `maf_target_key` (see [agent-framework-integration.md](agent-framework-integration.md))
 - Middleware for request/response processing
 
 ---
