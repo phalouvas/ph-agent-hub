@@ -74,9 +74,9 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 2 — Authentication
+## ✅ Phase 2 — Authentication (Completed)
 
-**What gets built:**
+**What was built:**
 - `POST /auth/login` — validate credentials, issue access token + refresh token (`httpOnly` cookie)
 - `POST /auth/refresh` — validate refresh token cookie, issue new access token
 - `GET /auth/me` — return authenticated user's profile
@@ -88,12 +88,12 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 1 complete — all tables exist, encryption and JWT modules working.
 
-**Exit condition (done when):**
-- Login returns a valid JWT and sets `httpOnly` refresh cookie
-- Expired or tampered JWT is rejected with `401`
-- `/auth/refresh` issues a new access token without re-entering credentials
-- Logout invalidates the refresh token; subsequent refresh attempts return `401`
-- Seed script creates `admin` user and default tenant; subsequent runs are idempotent
+**Exit condition verified:**
+- ✅ Login returns a valid JWT and sets `httpOnly` refresh cookie
+- ✅ Expired or tampered JWT is rejected with `401`
+- ✅ `/auth/refresh` issues a new access token without re-entering credentials
+- ✅ Logout invalidates the refresh token; subsequent refresh attempts return `401`
+- ✅ Seed script creates `admin` user and default tenant; subsequent runs are idempotent
 
 **References:** [backend-architecture.md](../backend-architecture.md) §1.4, §7, [data-model.md](../data-model.md) §1.1
 

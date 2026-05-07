@@ -15,10 +15,11 @@ alembic
 # Encryption & Auth
 cryptography
 passlib[bcrypt]
+bcrypt<4.1
 python-jose[cryptography]
 
 # Cache & Storage
-redis
+redis>=4.2
 boto3
 
 # SSE
