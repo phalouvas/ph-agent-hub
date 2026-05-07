@@ -99,7 +99,7 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 3 — Admin: Tenants and Users
+## ✅ Phase 3 — Admin: Tenants and Users (Completed)
 
 **What gets built:**
 - Tenant CRUD: `GET/POST/PUT/DELETE /admin/tenants` (admin only)
@@ -111,11 +111,13 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 **Entry condition:** Phase 2 complete — authentication working, JWT middleware injected.
 
-**Exit condition (done when):**
-- Admin can create a tenant and a user in that tenant via API
-- Manager can list and edit users within their own tenant only; cross-tenant requests return `403`
-- Admin-only endpoints return `403` for manager and user roles
-- Deactivated users cannot log in
+**Exit condition verified:**
+- ✅ Admin creates a tenant and a user in that tenant via API
+- ✅ Manager lists and edits users within own tenant only; cross-tenant requests return `403`
+- ✅ Admin-only endpoints return `403` for manager and user roles
+- ✅ Deactivated users cannot log in
+- ✅ Admin password reset — user logs in with new password
+- ✅ Delete tenant with users returns clean `409`; empty tenant deletes successfully
 
 **References:** [backend-architecture.md](../backend-architecture.md) §3.7, §3.8, [admin-area-architecture.md](../admin-area-architecture.md) §4.3, §4.4
 

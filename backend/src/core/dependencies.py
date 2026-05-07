@@ -10,8 +10,9 @@ from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.base import get_db as _get_db
+from ..db.orm.users import User
 from ..services.user_service import get_user_by_id
-from .exceptions import UnauthorizedError
+from .exceptions import ForbiddenError, UnauthorizedError
 from .jwt import decode_token
 
 # ---------------------------------------------------------------------------
@@ -50,3 +51,26 @@ async def get_current_user(
         raise UnauthorizedError("User account is inactive")
 
     return user
+
+
+# ---------------------------------------------------------------------------
+# Role-based access control dependencies
+# ---------------------------------------------------------------------------
+
+
+async def require_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Allow only users with the 'admin' role."""
+    if current_user.role != "admin":
+        raise ForbiddenError("Admin access required")
+    return current_user
+
+
+async def require_admin_or_manager(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Allow users with 'admin' or 'manager' role."""
+    if current_user.role not in ("admin", "manager"):
+        raise ForbiddenError("Admin or manager access required")
+    return current_user
