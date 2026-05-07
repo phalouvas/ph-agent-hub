@@ -101,8 +101,8 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
           <Input placeholder="Display name (e.g., Production DeepSeek)" />
         </Form.Item>
-        <Form.Item name="model_id" label="Model ID">
-          <Input placeholder="API model name (e.g., deepseek-v4-flash). Falls back to Name if empty." />
+        <Form.Item name="model_id" label="Model ID" rules={[{ required: true }]}>
+          <Input placeholder="API model name (e.g., deepseek-v4-flash)" />
         </Form.Item>
         <Form.Item
           name="provider"

@@ -26,7 +26,7 @@
 | 2.2 | **READ** — Model appears in the list after creation | ✅ | |
 | 2.3 | **UPDATE** — Edit model fields (name, URL, API key) | ✅ | Max Tokens 4096→8192 |
 | 2.4 | **DELETE** — Remove a model | ✅ | Confirmation popover works |
-| 2.5 | Model form validation (required fields) | ⚠️ | No client-side error shown, but empty submit was rejected |
+| 2.5 | Model form validation (required fields) | ✅ | "Please enter Model ID" shown when model_id left empty |
 
 ---
 
@@ -34,11 +34,11 @@
 
 | # | Test | Status | Notes |
 |---|------|--------|-------|
-| 3.1 | **CREATE** — Add a new user | ⬜ | |
-| 3.2 | **READ** — User appears in list | ⬜ | |
-| 3.3 | **UPDATE** — Edit user role/display name | ⬜ | |
-| 3.4 | **DELETE** — Remove a user | ⬜ | |
-| 3.5 | User form validation | ⬜ | |
+| 3.1 | **CREATE** — Add a new user | ✅ | testuser2@phagent.local created |
+| 3.2 | **READ** — User appears in list | ✅ | |
+| 3.3 | **UPDATE** — Edit user role/display name | ✅ | Display name changed successfully |
+| 3.4 | **DELETE** — Remove a user | ✅ | Confirmation popover works |
+| 3.5 | User form validation | ⬜ | Skipped — same pattern as models |
 
 ---
 
@@ -127,8 +127,8 @@
 | Area | Passed | Failed | Not Tested |
 |------|--------|--------|------------|
 | Authentication | 0 | 0 | 6 |
-| Models CRUD | 4 | 0 | 1 |
-| Users CRUD | 0 | 0 | 5 |
+| Models CRUD | 5 | 0 | 0 |
+| Users CRUD | 4 | 0 | 1 |
 | Tenants CRUD | 0 | 0 | 4 |
 | Tools CRUD | 0 | 0 | 4 |
 | Templates CRUD | 0 | 0 | 4 |
@@ -136,7 +136,7 @@
 | Analytics & Settings | 0 | 0 | 2 |
 | Session Management | 0 | 0 | 6 |
 | Chat Messaging | 0 | 0 | 7 |
-| **TOTAL** | **4** | **0** | **43** |
+| **TOTAL** | **9** | **0** | **38** |
 
 ---
 

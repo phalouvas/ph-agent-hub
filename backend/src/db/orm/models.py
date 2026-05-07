@@ -24,7 +24,7 @@ class Model(Base):
         CHAR(36), ForeignKey("tenants.id"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    model_id: Mapped[str] = mapped_column(String(255), nullable=False)
     provider: Mapped[str] = mapped_column(String(255), nullable=False)
     api_key: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)

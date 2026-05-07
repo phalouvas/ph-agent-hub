@@ -34,7 +34,7 @@ export interface ModelData {
   id: string;
   tenant_id: string;
   name: string;
-  model_id: string | null;
+  model_id: string;
   provider: string;
   base_url: string | null;
   enabled: boolean;
