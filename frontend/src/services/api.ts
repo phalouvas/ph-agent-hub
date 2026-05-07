@@ -70,8 +70,8 @@ export async function api<T = unknown>(
     ...(extraHeaders as Record<string, string>),
   };
 
-  if (!(body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
+  if (!(body instanceof FormData) && !(body instanceof URLSearchParams)) {
+    headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
 
   if (!skipAuth && _token) {
@@ -84,8 +84,10 @@ export async function api<T = unknown>(
     credentials: "include",
   };
 
-  if (body !== undefined && !(body instanceof FormData)) {
+  if (body !== undefined && !(body instanceof FormData) && !(body instanceof URLSearchParams)) {
     fetchOptions.body = JSON.stringify(body);
+  } else if (body instanceof URLSearchParams) {
+    fetchOptions.body = body.toString();
   } else if (body instanceof FormData) {
     fetchOptions.body = body;
   }

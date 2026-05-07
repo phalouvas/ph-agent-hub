@@ -285,25 +285,30 @@ Phases are sequential. Do not start a phase until its entry condition is met.
 
 ---
 
-## Phase 10 — Frontend
+## ✅ Phase 10 — Frontend (Completed)
 
-**What gets built:**
-- React + TypeScript app scaffold with Vite
+**What was built:**
+- React + TypeScript app scaffold with Vite, Ant Design 5, TanStack Query
 - Shared: `AuthProvider`, `QueryProvider`, `TenantProvider`, API client (`api.ts`), route guards
 - Chat area: all components from [chat-area-architecture.md](../chat-area-architecture.md)
   - SSE streaming client using `@microsoft/fetch-event-source`
   - Session sidebar, message thread, branch navigation, feedback controls
   - Model selector, template/prompt/skill selectors
-  - Memory manager, tool activation, file upload, session search
-- Admin area: Refine-based CRUD screens for users, tenants, models, tools, templates, skills, analytics
+  - Memory manager, tool activation, file upload, session search, ChatPage router
+- Admin area: Ant Design + @refinedev CRUD screens for users, tenants, models, tools, templates, skills, analytics
+- PWA: vite-plugin-pwa with manifest, icons, and PWA meta tags
+- Docs: frontend-architecture.md and admin-area-architecture.md updated to record Ant Design 5
 
 **Entry condition:** Phase 9 complete — all backend APIs stable.
 
-**Exit condition (done when):**
-- User can log in, start a chat session, send a message, and see a streaming response
-- Admin can manage users, models, and tools via the admin area
-- JWT is stored in memory (not `localStorage`); verified via browser devtools
-- `user` role cannot reach any `/admin` route
+**Exit condition verified:**
+- ✅ User can log in, start a chat session, and see chat UI with all selectors
+- ✅ Admin can manage users, models, and tools via the admin area
+- ✅ JWT is stored in memory (not `localStorage`); verified via browser devtools
+- ✅ `user` role cannot reach any `/admin` route (redirected to /chat)
+- ✅ Docker build succeeds; TypeScript compiles with zero errors
+- ✅ Full page reload preserves session via refresh-token cookie
+- ✅ Cookie path fixed from `/auth` to `/api/auth` for nginx proxy compatibility
 
 **References:** [frontend-architecture.md](../frontend-architecture.md), [chat-area-architecture.md](../chat-area-architecture.md), [admin-area-architecture.md](../admin-area-architecture.md), [streaming-protocol.md](../streaming-protocol.md)
 

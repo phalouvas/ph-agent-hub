@@ -20,6 +20,7 @@ import {
   setToken,
   UserProfile,
 } from "../services/auth";
+import { api as rawApi } from "../services/api";
 
 interface AuthState {
   user: UserProfile | null;
@@ -37,16 +38,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Try to restore session on mount
   useEffect(() => {
     const token = getToken();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-    getMe()
-      .then(setUser)
-      .catch(() => {
-        setToken(null);
+    if (token) {
+      // Verify existing token
+      getMe()
+        .then(setUser)
+        .catch(() => {
+          setToken(null);
+          setLoading(false);
+        })
+        .finally(() => setLoading(false));
+    } else {
+      // No in-memory token — try refresh cookie
+      rawApi<{ access_token: string }>("/auth/refresh", {
+        method: "POST",
+        skipAuth: true,
       })
-      .finally(() => setLoading(false));
+        .then((data) => {
+          setToken(data.access_token);
+          return getMe();
+        })
+        .then(setUser)
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
