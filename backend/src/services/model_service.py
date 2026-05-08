@@ -65,6 +65,7 @@ async def create_model(
     temperature: float = 0.7,
     routing_priority: int = 0,
     thinking_enabled: bool = False,
+    follow_up_questions_enabled: bool = False,
     model_id: str | None = None,
     context_length: int | None = None,
 ) -> Model:
@@ -82,6 +83,7 @@ async def create_model(
         temperature=temperature,
         routing_priority=routing_priority,
         thinking_enabled=thinking_enabled,
+        follow_up_questions_enabled=follow_up_questions_enabled,
         context_length=context_length,
     )
     db.add(model)

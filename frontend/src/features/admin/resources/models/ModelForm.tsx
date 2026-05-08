@@ -92,6 +92,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           temperature: model.temperature,
           routing_priority: model.routing_priority,
           thinking_enabled: model.thinking_enabled,
+          follow_up_questions_enabled: model.follow_up_questions_enabled,
           context_length: model.context_length,
         });
         setIsPublic(model.is_public);
@@ -104,6 +105,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           temperature: 0.7,
           routing_priority: 0,
           thinking_enabled: false,
+          follow_up_questions_enabled: false,
           context_length: undefined,
         });
         setIsPublic(false);
@@ -223,6 +225,14 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
               </Form.Item>
             ) : null
           }
+        </Form.Item>
+        <Form.Item
+          name="follow_up_questions_enabled"
+          label="Follow-up Questions"
+          valuePropName="checked"
+          tooltip="When enabled, the model will suggest 3 follow-up questions after each response, displayed as clickable chips in the chat"
+        >
+          <Switch />
         </Form.Item>
         <Form.Item name="enabled" label="Enabled" valuePropName="checked">
           <Switch />

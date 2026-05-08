@@ -90,6 +90,15 @@ export interface ErrorEvent {
   };
 }
 
+export interface FollowUpQuestionsEvent {
+  event: "follow_up_questions";
+  data: {
+    session_id: string;
+    message_id: string;
+    questions: string[];
+  };
+}
+
 export interface HeartbeatEvent {
   event: "heartbeat";
   data: Record<string, never>;
@@ -102,6 +111,7 @@ export type StreamEvent =
   | StepCompleteEvent
   | MessageCompleteEvent
   | ReasoningTokenEvent
+  | FollowUpQuestionsEvent
   | ErrorEvent
   | HeartbeatEvent;
 
@@ -128,6 +138,7 @@ export function useStream() {
         onStepComplete?: (data: StepCompleteEvent["data"]) => void;
         onMessageComplete?: (data: MessageCompleteEvent["data"]) => void;
         onReasoningToken?: (delta: string, messageId: string) => void;
+        onFollowUpQuestions?: (questions: string[]) => void;
         onError?: (error: string, messageId: string) => void;
         onClose?: () => void;
       },
@@ -188,6 +199,9 @@ export function useStream() {
                     break;
                   case "reasoning_token":
                     handlers.onReasoningToken?.(parsed.delta, parsed.message_id);
+                    break;
+                  case "follow_up_questions":
+                    handlers.onFollowUpQuestions?.(parsed.questions || []);
                     break;
                   case "error":
                     handlers.onError?.(parsed.message || parsed.error || "Unknown error", parsed.message_id);

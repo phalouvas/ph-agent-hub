@@ -43,6 +43,7 @@ export interface ModelData {
   temperature: number;
   routing_priority: number;
   thinking_enabled: boolean;
+  follow_up_questions_enabled: boolean;
   context_length: number | null;
   created_at: string;
   updated_at: string;

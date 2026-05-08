@@ -885,6 +885,30 @@ async def run_agent_stream(
         }),
     }
 
+    # ---- 12. Generate follow-up questions (if enabled) --------------------
+    if getattr(cfg.model, "follow_up_questions_enabled", False):
+        try:
+            questions = await _generate_follow_up_questions(
+                model=cfg.model,
+                system_prompt=cfg.system_prompt,
+                user_message=user_message,
+                assistant_response=accumulated_text,
+            )
+            if questions:
+                yield {
+                    "event": "follow_up_questions",
+                    "data": json.dumps({
+                        "session_id": session_id,
+                        "message_id": message_id,
+                        "questions": questions,
+                    }),
+                }
+        except Exception:
+            logger.exception(
+                "Failed to generate follow-up questions for session %s",
+                session_id,
+            )
+
 
 # ---------------------------------------------------------------------------
 # Streaming agent / workflow execution helpers
@@ -1106,6 +1130,81 @@ def _exc_to_error_code(exc: Exception) -> str:
     if "invalid" in name or "output" in name or "parse" in name:
         return "invalid_output"
     return "internal_error"
+
+
+# ---------------------------------------------------------------------------
+# Follow-up questions generation (Phase 10+)
+# ---------------------------------------------------------------------------
+
+
+async def _generate_follow_up_questions(
+    model: Model,
+    system_prompt: str,
+    user_message: str,
+    assistant_response: str,
+) -> list[str]:
+    """Generate 3 follow-up questions based on the conversation context.
+
+    Creates a fresh non-thinking model client and makes a quick
+    non-streaming call. Returns an empty list on failure.
+    """
+    prompt = (
+        "Based on the conversation above, generate exactly 3 concise follow-up "
+        "questions that the user might want to ask next. The questions should be "
+        "relevant to the topic discussed and help the user explore further.\n\n"
+        "Rules:\n"
+        "- Return ONLY a JSON array of 3 strings, nothing else.\n"
+        "- Each question should be a single sentence, no more than 100 characters.\n"
+        "- Do not number the questions.\n"
+        '- Example format: ["Question one?", "Question two?", "Question three?"]'
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+        {"role": "assistant", "content": assistant_response},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        # Create a fresh client (non-thinking mode for simpler output)
+        from ..models.base import get_chat_client
+
+        fresh_client = get_chat_client(model, thinking_enabled=False)
+
+        # Access the underlying OpenAI client via .client property
+        raw_client = getattr(fresh_client, "client", None)
+        if raw_client is None:
+            logger.warning("No client attribute on fresh model_client, skipping follow-up questions")
+            return []
+
+        model_name = getattr(fresh_client, "model", model.model_id)
+        response = await raw_client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            max_tokens=200,
+            temperature=0.7,
+        )
+        text = response.choices[0].message.content if response.choices else ""
+
+        # Parse the JSON array from the response
+        text = (text or "").strip()
+        # Remove markdown code fences if present
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:]) if len(lines) > 1 else text
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+        questions = json.loads(text)
+        if isinstance(questions, list) and all(isinstance(q, str) for q in questions):
+            return questions[:3]
+
+    except (json.JSONDecodeError, Exception) as exc:
+        logger.warning("Failed to parse follow-up questions: %s", exc)
+
+    return []
 
 
 # =============================================================================
