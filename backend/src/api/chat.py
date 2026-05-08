@@ -909,6 +909,14 @@ async def regenerate_assistant_message(
         assistant_branch_index=next_branch,
     )
 
+    # Soft-delete the old assistant message so only the regenerated
+    # response is visible in the message list.  The object may be
+    # expired after run_agent_assistant_only's internal commit, so
+    # refresh it first.
+    await db.refresh(assistant_msg)
+    assistant_msg.is_deleted = True
+    await db.commit()
+
     model_id = data.get("selected_model_id")
     return SendMessageResponse(
         message_id=new_assistant_msg_id,
