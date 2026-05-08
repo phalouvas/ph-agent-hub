@@ -229,9 +229,10 @@ async def _inject_file_content(
     """Build file content injection string and return (modified_message, valid_file_ids).
 
     - Validates DeepSeek + image → 422
-    - Extracts text from document uploads
-    - Truncates to char budget based on model context_length
-    - Returns modified user_message with injected content
+    - Injects a concise metadata block (filename, type, size, 200-char preview)
+      for document uploads — full text is accessible to tools via the
+      file_ids → MinIO pipeline
+    - Returns modified user_message with injected metadata
     """
     if not file_ids:
         return user_message, []
@@ -262,13 +263,6 @@ async def _inject_file_content(
         model_orm = model_result.scalar_one_or_none()
 
     provider = getattr(model_orm, "provider", "") if model_orm else ""
-    context_length = getattr(model_orm, "context_length", None) if model_orm else None
-
-    # Calculate char budget
-    if context_length:
-        max_file_chars = min(int(context_length * 3 * 0.4), 100_000)
-    else:
-        max_file_chars = 20_000
 
     # Image MIME types
     IMAGE_TYPES = frozenset({
@@ -276,7 +270,6 @@ async def _inject_file_content(
     })
 
     parts: list[str] = []
-    total_chars = 0
     valid_ids: list[str] = []
 
     for upload in uploads:
@@ -293,15 +286,19 @@ async def _inject_file_content(
             parts.append(f"[Image attached: {upload.original_filename}]")
             valid_ids.append(upload.id)
         elif upload.extracted_text:
-            # Document: inject extracted text
-            header = f"--- Attached File: {upload.original_filename} ---"
-            remaining = max_file_chars - total_chars
-            if remaining <= 0:
-                break
-            # Truncate text to remaining budget
-            text = upload.extracted_text[:remaining]
-            parts.append(f"{header}\n{text}")
-            total_chars += len(header) + len(text) + 2  # +2 for newlines
+            # Document: inject a concise metadata block (filename, type,
+            # size, short text preview) instead of dumping the entire
+            # extracted text into the user message.  Full text is
+            # accessible to tools via the file_ids → MinIO pipeline.
+            kb_size = upload.size_bytes / 1024
+            preview = upload.extracted_text[:200]
+            if len(upload.extracted_text) > 200:
+                preview += "..."
+            parts.append(
+                f"[File attached: {upload.original_filename} "
+                f"({upload.content_type}, {kb_size:.1f} KB)]\n"
+                f"Preview: {preview}"
+            )
             valid_ids.append(upload.id)
         else:
             # Document with no extracted text (e.g., unsupported PDF) —
