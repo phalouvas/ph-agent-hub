@@ -9,7 +9,7 @@ from ..core.exceptions import NotFoundError, ValidationError
 from ..db.orm.groups import ToolGroup, UserGroupMember
 from ..db.orm.tools import Tool
 
-VALID_TOOL_TYPES = {"erpnext", "membrane", "custom", "datetime"}
+VALID_TOOL_TYPES = {"erpnext", "membrane", "custom", "datetime", "web_search"}
 
 
 async def list_tools(

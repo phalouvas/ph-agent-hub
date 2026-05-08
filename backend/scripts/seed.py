@@ -113,6 +113,36 @@ async def main() -> None:
         else:
             print(f"[seed] Datetime tool already exists: Current Time (id={datetime_tool.id})")
 
+        # 4. Ensure default web search tool exists
+        result = await db.execute(
+            select(Tool).where(
+                Tool.tenant_id == tenant.id,
+                Tool.type == "web_search",
+                Tool.name == "Web Search",
+            )
+        )
+        web_search_tool = result.scalar_one_or_none()
+
+        if web_search_tool is None:
+            web_search_tool = Tool(
+                tenant_id=tenant.id,
+                name="Web Search",
+                type="web_search",
+                config={
+                    "max_results": 10,
+                    "region": "us-en",
+                    "safesearch": "moderate",
+                    "backend": "auto",
+                },
+                enabled=True,
+                is_public=True,
+            )
+            db.add(web_search_tool)
+            await db.flush()
+            print(f"[seed] Created web_search tool: Web Search (id={web_search_tool.id})")
+        else:
+            print(f"[seed] Web Search tool already exists: Web Search (id={web_search_tool.id})")
+
         await db.commit()
 
     print("[seed] Done.")

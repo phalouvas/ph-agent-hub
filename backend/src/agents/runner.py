@@ -414,6 +414,9 @@ async def _build_tool_callables(
     elif tool.type == "datetime":
         from ..tools.datetime import build_datetime_tools
         return build_datetime_tools(tool.config or {})
+    elif tool.type == "web_search":
+        from ..tools.web_search import build_web_search_tools
+        return build_web_search_tools(tool.config or {})
     else:
         logger.warning("Unknown tool type '%s' for tool %s", tool.type, tool.id)
         return []
