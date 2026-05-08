@@ -34,6 +34,7 @@ class Model(Base):
     temperature: Mapped[float] = mapped_column(Float, nullable=False)
     routing_priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     thinking_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    context_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

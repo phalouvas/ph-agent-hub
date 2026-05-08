@@ -7,11 +7,12 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { Button, Input, Space, Spin, Empty, Alert, Switch } from "antd";
+import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Upload, message } from "antd";
 import {
   SendOutlined,
   StopOutlined,
   DownOutlined,
+  PaperClipOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "./MessageBubble";
@@ -27,12 +28,20 @@ import {
   TemplateSelector,
   SkillSelector,
   PromptLibrary,
-  FileUpload,
   TemporaryChatBadge,
   SessionToolActivation,
 } from "./";
 
 const { TextArea } = Input;
+
+// ---------------------------------------------------------------------------
+// Pending file info (stored after upload completes)
+// ---------------------------------------------------------------------------
+
+interface PendingFile {
+  file_id: string;
+  original_filename: string;
+}
 
 interface ChatWindowProps {
   sessionId: string;
@@ -63,6 +72,8 @@ export function ChatWindow({
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   // Track whether the user has manually scrolled up (to disable auto-scroll)
   const userScrolledUpRef = useRef(false);
@@ -153,7 +164,10 @@ export function ChatWindow({
       content,
     });
 
-    startStream(sessionId, content, undefined, {
+    const fileIds = pendingFiles.map((f) => f.file_id);
+    setPendingFiles([]);
+
+    startStream(sessionId, content, fileIds.length > 0 ? fileIds : undefined, {
       onToken(token, msgId) {
         setStreamingMessageId(msgId);
         setStreamingContent((prev) => prev + token);
@@ -224,6 +238,42 @@ export function ChatWindow({
     queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
   };
 
+  // File upload handlers
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await api<{
+          file_id: string;
+          original_filename: string;
+        }>(`/chat/session/${sessionId}/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        setPendingFiles((prev) => [
+          ...prev,
+          {
+            file_id: res.file_id,
+            original_filename: res.original_filename,
+          },
+        ]);
+        message.success(`${file.name} attached`);
+      } catch {
+        message.error(`Failed to upload ${file.name}`);
+      } finally {
+        setUploading(false);
+      }
+      return false; // Prevent default Upload behavior
+    },
+    [sessionId],
+  );
+
+  const handleRemoveFile = useCallback((fileId: string) => {
+    setPendingFiles((prev) => prev.filter((f) => f.file_id !== fileId));
+  }, []);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -289,6 +339,18 @@ export function ChatWindow({
         height: "100%",
         background: "#fff",
       }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const files = Array.from(e.dataTransfer.files);
+        for (const file of files) {
+          await handleFileUpload(file);
+        }
+      }}
     >
       {/* Top bar */}
       <div
@@ -319,10 +381,6 @@ export function ChatWindow({
         <PromptLibrary
           selectedPromptId={selectedPromptId}
           onSelect={(id) => onSessionUpdate?.({ selected_prompt_id: id })}
-        />
-        <FileUpload
-          sessionId={sessionId}
-          disabled={isTemporary}
         />
         <Button
           size="small"
@@ -424,12 +482,53 @@ export function ChatWindow({
           borderTop: "1px solid #f0f0f0",
         }}
       >
+        {/* Pending file chips */}
+        {pendingFiles.length > 0 && (
+          <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {pendingFiles.map((f) => (
+              <Tag
+                key={f.file_id}
+                closable
+                onClose={() => handleRemoveFile(f.file_id)}
+                color="blue"
+              >
+                {f.original_filename}
+              </Tag>
+            ))}
+          </div>
+        )}
+
         <Space.Compact style={{ width: "100%" }}>
+          <Upload
+            multiple
+            showUploadList={false}
+            beforeUpload={async (file) => {
+              await handleFileUpload(file);
+              return false;
+            }}
+            disabled={streaming || isTemporary}
+            accept={
+              ".pdf,.csv,.txt,.md,.json,.png,.jpg,.jpeg,.gif,.webp," +
+              "application/pdf,text/csv,text/plain,text/markdown," +
+              "application/json,image/png,image/jpeg,image/gif,image/webp"
+            }
+          >
+            <Button
+              icon={<PaperClipOutlined />}
+              disabled={streaming || isTemporary}
+              loading={uploading}
+              title="Attach files"
+            />
+          </Upload>
           <TextArea
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
+            placeholder={
+              isTemporary
+                ? "Type a message... (temporary session)"
+                : "Type a message... (Enter to send, Shift+Enter for new line)"
+            }
             autoSize={{ minRows: 1, maxRows: 6 }}
             disabled={streaming}
             style={{ resize: "none" }}

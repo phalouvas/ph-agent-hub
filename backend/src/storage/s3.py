@@ -54,10 +54,49 @@ async def delete_object(bucket: str, key: str) -> None:
     await asyncio.to_thread(_delete)
 
 
+async def download_object(bucket: str, key: str) -> bytes:
+    """Download an object's bytes from MinIO."""
+    client = get_client()
+
+    def _download():
+        response = client.get_object(Bucket=bucket, Key=key)
+        return response["Body"].read()
+
+    return await asyncio.to_thread(_download)
+
+
 async def generate_presigned_url(
     bucket: str, key: str, expires_in: int = 900
 ) -> str:
-    """Generate a presigned URL for downloading an object (default 15 min TTL)."""
+    """Generate a presigned URL for downloading an object (default 15 min TTL).
+
+    If ``MINIO_PUBLIC_ENDPOINT`` is set, a separate boto3 client
+    configured with the public endpoint is used so the signature
+    matches the ``Host`` header the browser sends.
+    """
+    public = settings.MINIO_PUBLIC_ENDPOINT
+    internal = settings.MINIO_ENDPOINT
+
+    if public and public != internal:
+        # Use a client configured with the public endpoint for correct signing
+        public_client = boto3.client(
+            "s3",
+            endpoint_url=public,
+            aws_access_key_id=settings.MINIO_ACCESS_KEY,
+            aws_secret_access_key=settings.MINIO_SECRET_KEY,
+            config=Config(signature_version="s3v4"),
+        )
+
+        def _generate():
+            return public_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=expires_in,
+            )
+
+        return await asyncio.to_thread(_generate)
+
+    # No public endpoint — sign for MinIO's internal address directly
     client = get_client()
 
     def _generate():

@@ -266,6 +266,15 @@ export function deleteUpload(
   });
 }
 
+export function listMessageUploads(
+  sessionId: string,
+  messageId: string,
+): Promise<FileUploadData[]> {
+  return api<FileUploadData[]>(
+    `/chat/session/${sessionId}/message/${messageId}/uploads`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------

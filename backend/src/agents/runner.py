@@ -132,6 +132,7 @@ async def run_agent(
     current_user: User,
     parent_message_id: str | None = None,
     user_branch_index: int = 0,
+    file_ids: list[str] | None = None,
 ) -> tuple[str, str]:
     """Assemble and run a MAF agent for a single user message.
 
@@ -144,6 +145,7 @@ async def run_agent(
             for the branch point.
         user_branch_index: Branch index for this user message (default 0
             for the root of the conversation).
+        file_ids: Optional list of FileUpload IDs to link to the user message.
 
     Returns:
         A tuple of (assistant response text, assistant message ID).
@@ -195,6 +197,17 @@ async def run_agent(
         parent_message_id=parent_message_id,
         user_branch_index=user_branch_index,
     )
+
+    # ---- 9. Link file uploads to the user message ------------------------
+    if file_ids:
+        from ..services import upload_service as _upload_svc
+
+        await _upload_svc.link_uploads_to_message(
+            db=db,
+            file_ids=file_ids,
+            message_id=_user_msg_id,
+            user_id=current_user.id,
+        )
 
     # ---- 10. Write usage log --------------------------------------------
     try:
@@ -718,6 +731,7 @@ async def run_agent_stream(
     db: AsyncSession,
     current_user: User,
     message_id: str,
+    file_ids: list[str] | None = None,
 ) -> AsyncIterator[dict]:
     """Assemble and run a MAF agent, yielding typed SSE event dicts.
 
@@ -732,6 +746,7 @@ async def run_agent_stream(
         current_user: The authenticated user.
         message_id: Pre-generated UUID for the assistant message (used
             for client-side correlation across all events).
+        file_ids: Optional list of FileUpload IDs to link to the user message.
 
     Yields:
         Dicts with ``event`` and ``data`` keys suitable for
@@ -755,6 +770,17 @@ async def run_agent_stream(
         is_temporary=is_temporary,
         user_message=user_message,
     )
+
+    # Link file uploads to the user message
+    if file_ids:
+        from ..services import upload_service as _upload_svc
+
+        await _upload_svc.link_uploads_to_message(
+            db=db,
+            file_ids=file_ids,
+            message_id=user_msg_id,
+            user_id=current_user.id,
+        )
 
     try:
         # ---- 1-6. Resolve session config --------------------------------
