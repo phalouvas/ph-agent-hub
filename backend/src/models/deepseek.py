@@ -86,14 +86,23 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
         self,
         message: Message,
     ) -> list[dict[str, Any]]:
-        """Convert ``reasoning_details`` (protected_data) back to ``reasoning_content``."""
+        """Convert ``reasoning_details`` back to ``reasoning_content``.
+
+        The base class may already decode ``reasoning_details`` from JSON
+        (e.g. when it came from Content items).  We handle both cases.
+        """
         prepared = super()._prepare_message_for_openai(message)
         for msg in prepared:
             if "reasoning_details" in msg:
-                try:
-                    msg["reasoning_content"] = json.loads(msg.pop("reasoning_details"))
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning("Failed to decode reasoning_details for message")
+                value = msg.pop("reasoning_details")
+                if isinstance(value, str):
+                    try:
+                        msg["reasoning_content"] = json.loads(value)
+                    except (json.JSONDecodeError, TypeError):
+                        # Already a plain string from the base class decode
+                        msg["reasoning_content"] = value
+                else:
+                    msg["reasoning_content"] = value
         return prepared
 
 

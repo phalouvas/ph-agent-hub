@@ -45,6 +45,7 @@ from ..core.redis import (
 from ..db.orm.messages import Message, MessageFeedback
 from ..db.orm.sessions import Session
 from ..db.orm.tools import Tool
+from ..db.orm.user_tool_preferences import UserToolPreference
 from ..db.orm.users import User as UserORM
 from ..services import session_service, upload_service
 from ..storage import s3
@@ -327,7 +328,23 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Create a permanent (DB) or temporary (Redis) session."""
+    """Create a permanent (DB) or temporary (Redis) session.
+
+    If ``active_tool_ids`` is not provided, auto-activates tools that the
+    user has marked as "always on" in their preferences.
+    """
+    # Resolve active tool IDs: explicit list > always-on preferences > empty
+    active_tool_ids = body.active_tool_ids
+    if active_tool_ids is None:
+        pref_result = await db.execute(
+            select(UserToolPreference.tool_id).where(
+                UserToolPreference.user_id == current_user.id,
+                UserToolPreference.always_on == True,  # noqa: E712
+            )
+        )
+        always_on_ids = [row[0] for row in pref_result.all()]
+        active_tool_ids = always_on_ids
+
     if body.is_temporary:
         # Create in Redis
         session_id = str(uuid.uuid4())
@@ -343,7 +360,7 @@ async def create_session(
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
             "thinking_enabled": body.thinking_enabled,
-            "active_tool_ids": body.active_tool_ids or [],
+            "active_tool_ids": active_tool_ids,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -380,6 +397,23 @@ async def create_session(
             selected_model_id=body.selected_model_id,
             thinking_enabled=body.thinking_enabled,
         )
+
+        # Auto-activate always-on tools for permanent session
+        for tool_id in active_tool_ids:
+            try:
+                await session_service.add_session_tool(
+                    db=db,
+                    session_id=session.id,
+                    tool_id=tool_id,
+                    tenant_id=current_user.tenant_id,
+                )
+            except Exception:
+                logger.debug(
+                    "Could not auto-activate always-on tool %s for session %s",
+                    tool_id,
+                    session.id,
+                )
+
         return SessionResponse.model_validate(session)
 
 
@@ -1217,6 +1251,58 @@ async def list_available_tools(
     )
     enabled = [t for t in tools if t.enabled]
     return [ToolResponse.model_validate(t) for t in enabled]
+
+
+@router.put("/session/tools/{tool_id}/always-on", status_code=204)
+async def set_tool_always_on(
+    tool_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Toggle a tool as always-on for the current user.
+
+    Body: {"always_on": true|false}
+    When always_on, the tool is automatically activated for new sessions.
+    """
+    body = await request.json()
+    always_on = bool(body.get("always_on", False))
+
+    # Upsert the preference
+    existing = await db.execute(
+        select(UserToolPreference).where(
+            UserToolPreference.user_id == current_user.id,
+            UserToolPreference.tool_id == tool_id,
+        )
+    )
+    pref = existing.scalar_one_or_none()
+
+    if pref is None:
+        pref = UserToolPreference(
+            user_id=current_user.id,
+            tool_id=tool_id,
+            always_on=always_on,
+        )
+        db.add(pref)
+    else:
+        pref.always_on = always_on
+
+    await db.commit()
+
+
+@router.get("/session/tools/always-on", response_model=list[str])
+async def list_always_on_tools(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Return the list of tool IDs the user has marked as always-on."""
+    result = await db.execute(
+        select(UserToolPreference.tool_id).where(
+            UserToolPreference.user_id == current_user.id,
+            UserToolPreference.always_on == True,  # noqa: E712
+        )
+    )
+    return [row[0] for row in result.all()]
 
 
 @router.get(
