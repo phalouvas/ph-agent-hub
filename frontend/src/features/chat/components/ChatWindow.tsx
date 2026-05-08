@@ -231,10 +231,10 @@ export function ChatWindow({
     }
   };
 
-  // Build a flat display list: optimistic user message + real messages + streaming bubble
-  const displayMessages: Array<any> = [];
+  // Build a flat display list: real messages + optimistic user message + streaming bubble
+  const displayMessages: Array<any> = [...(messages || [])];
 
-  // 1. Show the user's message immediately (optimistic UI)
+  // Show the user's message immediately at the bottom (optimistic UI)
   if (pendingUserMessage) {
     displayMessages.push({
       id: pendingUserMessage.id,
@@ -250,9 +250,6 @@ export function ChatWindow({
       updated_at: new Date().toISOString(),
     });
   }
-
-  // 2. Real persisted messages from the backend
-  displayMessages.push(...(messages || []));
   if (streamingContent && streamingMessageId) {
     displayMessages.push({
       id: streamingMessageId,
