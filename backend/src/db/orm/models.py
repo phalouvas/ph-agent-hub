@@ -29,6 +29,7 @@ class Model(Base):
     api_key: Mapped[str] = mapped_column(EncryptedString(512), nullable=False)
     base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     temperature: Mapped[float] = mapped_column(Float, nullable=False)
     routing_priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

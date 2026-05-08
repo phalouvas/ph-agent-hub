@@ -23,7 +23,7 @@ from ..core.dependencies import (
     require_admin,
     require_admin_or_manager,
 )
-from ..core.exceptions import ForbiddenError
+from ..core.exceptions import ForbiddenError, NotFoundError
 from ..db.orm.users import User as UserORM
 from ..services.audit_service import list_audit_logs, write_audit_log
 from ..services.tenant_service import (
@@ -76,6 +76,21 @@ from ..services.skill_service import (
     list_skill_tools as _svc_list_skill_tools,
     list_skills as _svc_list_skills,
     update_skill as _svc_update_skill,
+)
+from ..services.group_service import (
+    add_member as _svc_add_member,
+    assign_model_to_group as _svc_assign_model_to_group,
+    create_group as _svc_create_group,
+    delete_group as _svc_delete_group,
+    get_group_by_id,
+    list_group_members as _svc_list_group_members,
+    list_group_models as _svc_list_group_models,
+    list_groups as _svc_list_groups,
+    list_model_groups as _svc_list_model_groups,
+    list_user_groups as _svc_list_user_groups,
+    remove_member as _svc_remove_member,
+    remove_model_from_group as _svc_remove_model_from_group,
+    update_group as _svc_update_group,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -171,6 +186,7 @@ class ModelCreate(BaseModel):
     api_key: str
     base_url: str | None = None
     enabled: bool = True
+    is_public: bool = False
     max_tokens: int = 4096
     temperature: float = 0.7
     routing_priority: int = 0
@@ -183,6 +199,7 @@ class ModelUpdate(BaseModel):
     api_key: str | None = None
     base_url: str | None = None
     enabled: bool | None = None
+    is_public: bool | None = None
     max_tokens: int | None = None
     temperature: float | None = None
     routing_priority: int | None = None
@@ -196,6 +213,7 @@ class ModelResponse(BaseModel):
     provider: str
     base_url: str | None
     enabled: bool
+    is_public: bool
     max_tokens: int
     temperature: float
     routing_priority: int
@@ -255,6 +273,55 @@ class ERPNextResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# =============================================================================
+# Pydantic Schemas — Groups
+# =============================================================================
+
+
+class GroupCreate(BaseModel):
+    name: str
+
+
+class GroupUpdate(BaseModel):
+    name: str
+
+
+class GroupResponse(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GroupMemberResponse(BaseModel):
+    id: str
+    email: str
+    display_name: str
+    role: str
+
+    model_config = {"from_attributes": True}
+
+
+class GroupModelResponse(BaseModel):
+    id: str
+    name: str
+    provider: str
+    enabled: bool
+
+    model_config = {"from_attributes": True}
+
+
+class MemberAdd(BaseModel):
+    user_id: str
+
+
+class ModelAssign(BaseModel):
+    model_id: str
 
 
 # =============================================================================
@@ -515,6 +582,7 @@ async def create_model(
         api_key=body.api_key,
         base_url=body.base_url,
         enabled=body.enabled,
+        is_public=body.is_public,
         max_tokens=body.max_tokens,
         temperature=body.temperature,
         routing_priority=body.routing_priority,
@@ -558,6 +626,8 @@ async def update_model(
         update_kwargs["base_url"] = body.base_url
     if body.enabled is not None:
         update_kwargs["enabled"] = body.enabled
+    if body.is_public is not None:
+        update_kwargs["is_public"] = body.is_public
     if body.max_tokens is not None:
         update_kwargs["max_tokens"] = body.max_tokens
     if body.temperature is not None:
@@ -1255,3 +1325,301 @@ async def get_logs(
     table exists in the data model.
     """
     return []
+
+
+# =============================================================================
+# Group Endpoints (admin or manager)
+# =============================================================================
+
+
+@router.get("/groups", response_model=list[GroupResponse])
+async def list_groups(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List groups. Admin sees all, manager sees own tenant only."""
+    if current_user.role == "admin":
+        groups = await _svc_list_groups(db)
+    else:
+        groups = await _svc_list_groups(db, tenant_id=current_user.tenant_id)
+    return [GroupResponse.model_validate(g) for g in groups]
+
+
+@router.post("/groups", response_model=GroupResponse, status_code=201)
+async def create_group(
+    body: GroupCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Create a user group. Manager always scoped to own tenant."""
+    group = await _svc_create_group(
+        db, tenant_id=current_user.tenant_id, name=body.name
+    )
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.created",
+        target_type="group",
+        target_id=group.id,
+        payload={"name": body.name},
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+    return GroupResponse.model_validate(group)
+
+
+@router.get("/groups/{group_id}", response_model=GroupResponse)
+async def get_group(
+    group_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Get a group by ID."""
+    group = await get_group_by_id(db, group_id)
+    if group is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and group.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only view groups in their own tenant")
+    return GroupResponse.model_validate(group)
+
+
+@router.put("/groups/{group_id}", response_model=GroupResponse)
+async def update_group(
+    group_id: str,
+    body: GroupUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Update a group's name."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only modify groups in their own tenant")
+
+    group = await _svc_update_group(db, group_id, body.name)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.updated",
+        target_type="group",
+        target_id=group_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+    return GroupResponse.model_validate(group)
+
+
+@router.delete("/groups/{group_id}", status_code=204)
+async def delete_group(
+    group_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Delete a group (cascades to members and model assignments)."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only delete groups in their own tenant")
+
+    await _svc_delete_group(db, group_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.deleted",
+        target_type="group",
+        target_id=group_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+
+
+# =============================================================================
+# Group Membership Endpoints (admin or manager)
+# =============================================================================
+
+
+@router.get("/groups/{group_id}/members", response_model=list[GroupMemberResponse])
+async def list_group_members(
+    group_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List members of a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only view groups in their own tenant")
+
+    members = await _svc_list_group_members(db, group_id)
+    return [GroupMemberResponse.model_validate(m) for m in members]
+
+
+@router.post("/groups/{group_id}/members", status_code=201)
+async def add_member(
+    group_id: str,
+    body: MemberAdd,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Add a user to a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only modify groups in their own tenant")
+
+    await _svc_add_member(db, group_id, body.user_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.member_added",
+        target_type="group",
+        target_id=group_id,
+        payload={"user_id": body.user_id},
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+
+
+@router.delete("/groups/{group_id}/members/{user_id}", status_code=204)
+async def remove_member(
+    group_id: str,
+    user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Remove a user from a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only modify groups in their own tenant")
+
+    await _svc_remove_member(db, group_id, user_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.member_removed",
+        target_type="group",
+        target_id=group_id,
+        payload={"user_id": user_id},
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+
+
+# =============================================================================
+# Group-Model Assignment Endpoints (admin or manager)
+# =============================================================================
+
+
+@router.get("/groups/{group_id}/models", response_model=list[GroupModelResponse])
+async def list_group_models(
+    group_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List models assigned to a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only view groups in their own tenant")
+
+    models = await _svc_list_group_models(db, group_id)
+    return [GroupModelResponse.model_validate(m) for m in models]
+
+
+@router.post("/groups/{group_id}/models", status_code=201)
+async def assign_model_to_group(
+    group_id: str,
+    body: ModelAssign,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Assign a model to a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only modify groups in their own tenant")
+
+    await _svc_assign_model_to_group(db, group_id, body.model_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.model_assigned",
+        target_type="group",
+        target_id=group_id,
+        payload={"model_id": body.model_id},
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+
+
+@router.delete("/groups/{group_id}/models/{model_id}", status_code=204)
+async def remove_model_from_group(
+    group_id: str,
+    model_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Remove a model from a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only modify groups in their own tenant")
+
+    await _svc_remove_model_from_group(db, group_id, model_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.model_removed",
+        target_type="group",
+        target_id=group_id,
+        payload={"model_id": model_id},
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+
+
+# =============================================================================
+# Helper Endpoints — user groups & model groups
+# =============================================================================
+
+
+@router.get("/users/{user_id}/groups", response_model=list[GroupResponse])
+async def list_user_groups(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List groups a user belongs to."""
+    groups = await _svc_list_user_groups(db, user_id)
+    if current_user.role == "manager":
+        groups = [g for g in groups if g.tenant_id == current_user.tenant_id]
+    return [GroupResponse.model_validate(g) for g in groups]
+
+
+@router.get("/models/{model_id}/groups", response_model=list[GroupResponse])
+async def list_model_groups(
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List groups a model is assigned to."""
+    groups = await _svc_list_model_groups(db, model_id)
+    if current_user.role == "manager":
+        groups = [g for g in groups if g.tenant_id == current_user.tenant_id]
+    return [GroupResponse.model_validate(g) for g in groups]

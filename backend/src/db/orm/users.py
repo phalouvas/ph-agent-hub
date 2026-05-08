@@ -29,6 +29,9 @@ class User(Base):
         Enum("admin", "manager", "user", name="user_role_enum"), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    default_model_id: Mapped[str | None] = mapped_column(
+        CHAR(36), ForeignKey("models.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -6,10 +6,19 @@
 // =============================================================================
 
 import React from "react";
-import { Modal, Form, Input, Select, Switch, message } from "antd";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Modal, Form, Input, Select, Switch, message, Spin } from "antd";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { useAuth } from "../../../../providers/AuthProvider";
-import { createUser, updateUser, UserData } from "../../services/admin";
+import {
+  createUser,
+  updateUser,
+  listUserGroups,
+  addGroupMember,
+  removeGroupMember,
+  listGroups,
+  UserData,
+  GroupData,
+} from "../../services/admin";
 
 interface UserFormProps {
   open: boolean;
@@ -23,6 +32,43 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
   const queryClient = useQueryClient();
   const isEdit = !!user;
   const isAdmin = currentUser?.role === "admin";
+
+  // Groups state
+  const [initialGroupIds, setInitialGroupIds] = React.useState<string[]>([]);
+  const [hasGroupChanges, setHasGroupChanges] = React.useState(false);
+
+  const { data: allGroups } = useQuery({
+    queryKey: ["admin-groups"],
+    queryFn: listGroups,
+    enabled: open,
+  });
+
+  const { data: userGroups, isLoading: groupsLoading } = useQuery({
+    queryKey: ["admin-user-groups", user?.id],
+    queryFn: () => listUserGroups(user!.id),
+    enabled: open && isEdit,
+  });
+
+  React.useEffect(() => {
+    if (userGroups) {
+      const ids = userGroups.map((g: GroupData) => g.id);
+      setInitialGroupIds(ids);
+      form.setFieldsValue({ groups: ids });
+    }
+  }, [userGroups, form]);
+
+  const syncGroups = async (userId: string) => {
+    const currentGroupIds: string[] = form.getFieldValue("groups") || [];
+    const toAdd = currentGroupIds.filter((id) => !initialGroupIds.includes(id));
+    const toRemove = initialGroupIds.filter((id) => !currentGroupIds.includes(id));
+
+    for (const gid of toAdd) {
+      await addGroupMember(gid, userId);
+    }
+    for (const gid of toRemove) {
+      await removeGroupMember(gid, userId);
+    }
+  };
 
   React.useEffect(() => {
     if (open) {
@@ -74,13 +120,25 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
       if (values.is_active !== user!.is_active) data.is_active = values.is_active;
       if (values.password) data.password = values.password;
       if (isAdmin && values.tenant_id !== user!.tenant_id) data.tenant_id = values.tenant_id;
-      if (Object.keys(data).length === 0) {
+      if (Object.keys(data).length === 0 && !hasGroupChanges) {
         onClose();
         return;
       }
       await updateMutation.mutateAsync({ id: user!.id, data });
+
+      // Sync groups if changed
+      if (hasGroupChanges) {
+        await syncGroups(user!.id);
+      }
     } else {
-      await createMutation.mutateAsync(values);
+      const created = await createMutation.mutateAsync(values);
+      // Sync groups for new user
+      const selectedGroupIds: string[] = values.groups || [];
+      if (selectedGroupIds.length > 0 && created) {
+        for (const gid of selectedGroupIds) {
+          await addGroupMember(gid, created.id);
+        }
+      }
     }
   };
 
@@ -131,6 +189,23 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
         <Form.Item name="is_active" label="Active" valuePropName="checked">
           <Switch />
         </Form.Item>
+        {isEdit && (
+          <Form.Item name="groups" label="Groups">
+            {groupsLoading ? (
+              <Spin size="small" />
+            ) : (
+              <Select
+                mode="multiple"
+                placeholder="Select groups..."
+                onChange={() => setHasGroupChanges(true)}
+                options={(allGroups || []).map((g: GroupData) => ({
+                  label: g.name,
+                  value: g.id,
+                }))}
+              />
+            )}
+          </Form.Item>
+        )}
         {isAdmin && (
           <Form.Item name="tenant_id" label="Tenant ID">
             <Input placeholder="Tenant ID (admin only)" />

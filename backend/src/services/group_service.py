@@ -1,0 +1,229 @@
+# =============================================================================
+# PH Agent Hub — Group Service (CRUD for User Groups, Members, Model Assignments)
+# =============================================================================
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..core.exceptions import NotFoundError, ConflictError
+from ..db.orm.groups import UserGroup, UserGroupMember, ModelGroup
+from ..db.orm.models import Model
+from ..db.orm.users import User
+
+
+# ---------------------------------------------------------------------------
+# Group CRUD
+# ---------------------------------------------------------------------------
+
+
+async def list_groups(
+    db: AsyncSession, tenant_id: str | None = None
+) -> list[UserGroup]:
+    """Return all groups, optionally filtered by tenant_id."""
+    stmt = select(UserGroup)
+    if tenant_id is not None:
+        stmt = stmt.where(UserGroup.tenant_id == tenant_id)
+    stmt = stmt.order_by(UserGroup.name)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_group_by_id(db: AsyncSession, group_id: str) -> UserGroup | None:
+    """Look up a group by primary key."""
+    result = await db.execute(select(UserGroup).where(UserGroup.id == group_id))
+    return result.scalar_one_or_none()
+
+
+async def create_group(
+    db: AsyncSession,
+    tenant_id: str,
+    name: str,
+) -> UserGroup:
+    """Create a new user group."""
+    group = UserGroup(tenant_id=tenant_id, name=name)
+    db.add(group)
+    await db.commit()
+    await db.refresh(group)
+    return group
+
+
+async def update_group(
+    db: AsyncSession, group_id: str, name: str
+) -> UserGroup:
+    """Update a group's name. Raises NotFoundError if missing."""
+    group = await get_group_by_id(db, group_id)
+    if group is None:
+        raise NotFoundError("Group not found")
+    group.name = name
+    await db.commit()
+    await db.refresh(group)
+    return group
+
+
+async def delete_group(db: AsyncSession, group_id: str) -> None:
+    """Delete a group by ID. Cascades to members and model assignments."""
+    group = await get_group_by_id(db, group_id)
+    if group is None:
+        raise NotFoundError("Group not found")
+
+    # Delete members and model assignments first
+    await db.execute(
+        delete(UserGroupMember).where(UserGroupMember.group_id == group_id)
+    )
+    await db.execute(
+        delete(ModelGroup).where(ModelGroup.group_id == group_id)
+    )
+
+    await db.delete(group)
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Member Management
+# ---------------------------------------------------------------------------
+
+
+async def add_member(
+    db: AsyncSession, group_id: str, user_id: str
+) -> UserGroupMember:
+    """Add a user to a group. No-op if already a member."""
+    # Check group exists
+    group = await get_group_by_id(db, group_id)
+    if group is None:
+        raise NotFoundError("Group not found")
+
+    # Check user exists
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    if user_result.scalar_one_or_none() is None:
+        raise NotFoundError("User not found")
+
+    # Check if already a member
+    existing = await db.execute(
+        select(UserGroupMember).where(
+            UserGroupMember.group_id == group_id,
+            UserGroupMember.user_id == user_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        # Already a member — return existing
+        return existing.scalar_one()
+
+    member = UserGroupMember(user_id=user_id, group_id=group_id)
+    db.add(member)
+    await db.commit()
+    await db.refresh(member)
+    return member
+
+
+async def remove_member(
+    db: AsyncSession, group_id: str, user_id: str
+) -> None:
+    """Remove a user from a group. No-op if not a member."""
+    await db.execute(
+        delete(UserGroupMember).where(
+            UserGroupMember.group_id == group_id,
+            UserGroupMember.user_id == user_id,
+        )
+    )
+    await db.commit()
+
+
+async def list_group_members(
+    db: AsyncSession, group_id: str
+) -> list[User]:
+    """Return all users in a group."""
+    result = await db.execute(
+        select(User)
+        .join(UserGroupMember, UserGroupMember.user_id == User.id)
+        .where(UserGroupMember.group_id == group_id)
+        .order_by(User.display_name)
+    )
+    return list(result.scalars().all())
+
+
+async def list_user_groups(
+    db: AsyncSession, user_id: str
+) -> list[UserGroup]:
+    """Return all groups a user belongs to."""
+    result = await db.execute(
+        select(UserGroup)
+        .join(UserGroupMember, UserGroupMember.group_id == UserGroup.id)
+        .where(UserGroupMember.user_id == user_id)
+        .order_by(UserGroup.name)
+    )
+    return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Model-Group Assignment
+# ---------------------------------------------------------------------------
+
+
+async def assign_model_to_group(
+    db: AsyncSession, group_id: str, model_id: str
+) -> ModelGroup:
+    """Assign a model to a group. No-op if already assigned."""
+    # Check group exists
+    group = await get_group_by_id(db, group_id)
+    if group is None:
+        raise NotFoundError("Group not found")
+
+    # Check model exists
+    model_result = await db.execute(select(Model).where(Model.id == model_id))
+    if model_result.scalar_one_or_none() is None:
+        raise NotFoundError("Model not found")
+
+    # Check if already assigned
+    existing = await db.execute(
+        select(ModelGroup).where(
+            ModelGroup.group_id == group_id,
+            ModelGroup.model_id == model_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return existing.scalar_one()
+
+    mg = ModelGroup(model_id=model_id, group_id=group_id)
+    db.add(mg)
+    await db.commit()
+    await db.refresh(mg)
+    return mg
+
+
+async def remove_model_from_group(
+    db: AsyncSession, group_id: str, model_id: str
+) -> None:
+    """Remove a model from a group. No-op if not assigned."""
+    await db.execute(
+        delete(ModelGroup).where(
+            ModelGroup.group_id == group_id,
+            ModelGroup.model_id == model_id,
+        )
+    )
+    await db.commit()
+
+
+async def list_group_models(
+    db: AsyncSession, group_id: str
+) -> list[Model]:
+    """Return all models assigned to a group."""
+    result = await db.execute(
+        select(Model)
+        .join(ModelGroup, ModelGroup.model_id == Model.id)
+        .where(ModelGroup.group_id == group_id)
+        .order_by(Model.name)
+    )
+    return list(result.scalars().all())
+
+
+async def list_model_groups(
+    db: AsyncSession, model_id: str
+) -> list[UserGroup]:
+    """Return all groups a model is assigned to."""
+    result = await db.execute(
+        select(UserGroup)
+        .join(ModelGroup, ModelGroup.group_id == UserGroup.id)
+        .where(ModelGroup.model_id == model_id)
+        .order_by(UserGroup.name)
+    )
+    return list(result.scalars().all())

@@ -18,6 +18,7 @@ from .api.models import router as models_router
 from .api.prompts import router as prompts_router
 from .api.skills import router as skills_router
 from .api.templates import router as templates_router
+from .api.users import router as users_router
 from .core.config import settings
 from .core.exceptions import AppException, app_exception_handler
 from .core.limiter import limiter, RateLimitExceeded
@@ -72,6 +73,7 @@ app.add_exception_handler(RateLimitExceeded, lambda req, exc: __import__("starle
 # ---------------------------------------------------------------------------
 app.include_router(auth_router)
 app.include_router(chat_router)
+app.include_router(users_router)
 app.include_router(memory_router)
 app.include_router(models_router)
 app.include_router(admin_router)

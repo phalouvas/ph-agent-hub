@@ -13,9 +13,19 @@ import {
   Select,
   Switch,
   message,
+  Spin,
 } from "antd";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createModel, updateModel, ModelData } from "../../services/admin";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import {
+  createModel,
+  updateModel,
+  listModelGroups,
+  assignModelToGroup,
+  removeModelFromGroup,
+  listGroups,
+  ModelData,
+  GroupData,
+} from "../../services/admin";
 
 interface ModelFormProps {
   open: boolean;
@@ -28,6 +38,46 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
   const queryClient = useQueryClient();
   const isEdit = !!model;
 
+  // Groups state
+  const [initialGroupIds, setInitialGroupIds] = React.useState<string[]>([]);
+  const [isPublic, setIsPublic] = React.useState(model?.is_public ?? false);
+
+  const { data: allGroups } = useQuery({
+    queryKey: ["admin-groups"],
+    queryFn: listGroups,
+    enabled: open,
+  });
+
+  const { data: modelGroups, isLoading: groupsLoading } = useQuery({
+    queryKey: ["admin-model-groups", model?.id],
+    queryFn: () => listModelGroups(model!.id),
+    enabled: open && isEdit,
+  });
+
+  React.useEffect(() => {
+    if (open && isEdit && modelGroups) {
+      const ids = modelGroups.map((g: GroupData) => g.id);
+      setInitialGroupIds(ids);
+      form.setFieldsValue({
+        groups: ids,
+        is_public: model?.is_public ?? false,
+      });
+    }
+  }, [open, isEdit, modelGroups, model, form]);
+
+  const syncGroups = async (modelId: string) => {
+    const currentGroupIds: string[] = form.getFieldValue("groups") || [];
+    const toAdd = currentGroupIds.filter((id) => !initialGroupIds.includes(id));
+    const toRemove = initialGroupIds.filter((id) => !currentGroupIds.includes(id));
+
+    for (const gid of toAdd) {
+      await assignModelToGroup(gid, modelId);
+    }
+    for (const gid of toRemove) {
+      await removeModelFromGroup(gid, modelId);
+    }
+  };
+
   React.useEffect(() => {
     if (open) {
       if (model) {
@@ -37,18 +87,23 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           provider: model.provider,
           base_url: model.base_url,
           enabled: model.enabled,
+          is_public: model.is_public,
           max_tokens: model.max_tokens,
           temperature: model.temperature,
           routing_priority: model.routing_priority,
         });
+        setIsPublic(model.is_public);
       } else {
         form.resetFields();
         form.setFieldsValue({
           enabled: true,
+          is_public: false,
           max_tokens: 4096,
           temperature: 0.7,
           routing_priority: 0,
         });
+        setIsPublic(false);
+        setInitialGroupIds([]);
       }
     }
   }, [open, model, form]);
@@ -89,8 +144,16 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
             id: model!.id,
             data: values,
           });
+          await syncGroups(model!.id);
         } else {
-          await createMutation.mutateAsync(values);
+          const created = await createMutation.mutateAsync(values);
+          // Sync groups for new model
+          const selectedGroupIds: string[] = values.groups || [];
+          if (selectedGroupIds.length > 0 && created) {
+            for (const gid of selectedGroupIds) {
+              await assignModelToGroup(gid, created.id);
+            }
+          }
         }
       }}
       onCancel={onClose}
@@ -139,6 +202,30 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         <Form.Item name="enabled" label="Enabled" valuePropName="checked">
           <Switch />
         </Form.Item>
+        <Form.Item
+          name="is_public"
+          label="Public"
+          valuePropName="checked"
+          tooltip="When enabled, all tenant users can use this model regardless of group membership"
+        >
+          <Switch onChange={(checked) => setIsPublic(checked)} />
+        </Form.Item>
+        {!isPublic && (
+          <Form.Item name="groups" label="Assigned Groups">
+            {groupsLoading ? (
+              <Spin size="small" />
+            ) : (
+              <Select
+                mode="multiple"
+                placeholder="Select groups that can access this model..."
+                options={(allGroups || []).map((g: GroupData) => ({
+                  label: g.name,
+                  value: g.id,
+                }))}
+              />
+            )}
+          </Form.Item>
+        )}
       </Form>
     </Modal>
   );

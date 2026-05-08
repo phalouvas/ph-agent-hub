@@ -19,6 +19,7 @@ import {
   SettingOutlined,
   LogoutOutlined,
   MenuOutlined,
+  GroupOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../../../providers/AuthProvider";
@@ -54,6 +55,11 @@ export function AdminLayout() {
       key: "/admin/skills",
       icon: <ThunderboltOutlined />,
       label: "Skills",
+    },
+    {
+      key: "/admin/groups",
+      icon: <GroupOutlined />,
+      label: "Groups",
     },
     {
       key: "/admin/analytics",

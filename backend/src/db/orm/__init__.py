@@ -10,6 +10,7 @@
 from .tenants import Tenant
 from .users import User
 from .models import Model
+from .groups import UserGroup, UserGroupMember, ModelGroup
 from .tools import Tool
 from .erpnext_instances import ERPNextInstance
 from .templates import Template, TemplateAllowedTool
@@ -27,6 +28,9 @@ __all__ = [
     "Tenant",
     "User",
     "Model",
+    "UserGroup",
+    "UserGroupMember",
+    "ModelGroup",
     "Tool",
     "ERPNextInstance",
     "Template",

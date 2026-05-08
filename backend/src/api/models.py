@@ -37,7 +37,13 @@ async def list_models(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Return all enabled models for the current user's tenant."""
-    models = await _svc_list_models(db, tenant_id=current_user.tenant_id)
+    """Return all accessible enabled models for the current user's tenant.
+
+    Models are filtered by group access control:
+    is_public=True OR model assigned to a group the user belongs to.
+    """
+    models = await _svc_list_models(
+        db, tenant_id=current_user.tenant_id, user_id=current_user.id
+    )
     enabled = [m for m in models if m.enabled]
     return [ModelResponse.model_validate(m) for m in enabled]

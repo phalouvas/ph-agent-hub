@@ -38,6 +38,7 @@ export interface ModelData {
   provider: string;
   base_url: string | null;
   enabled: boolean;
+  is_public: boolean;
   max_tokens: number;
   temperature: number;
   routing_priority: number;
@@ -262,4 +263,92 @@ export function listUsage(params?: { tenant_id?: string }): Promise<UsageData[]>
 
 export function listAuditLogs(): Promise<AuditData[]> {
   return api<AuditData[]>("/admin/logs");
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+// ---------------------------------------------------------------------------
+
+export interface GroupData {
+  id: string;
+  tenant_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupMemberData {
+  id: string;
+  email: string;
+  display_name: string;
+  role: string;
+}
+
+export interface GroupModelData {
+  id: string;
+  name: string;
+  provider: string;
+  enabled: boolean;
+}
+
+export function listGroups(): Promise<GroupData[]> {
+  return api<GroupData[]>("/admin/groups");
+}
+
+export function getGroup(id: string): Promise<GroupData> {
+  return api<GroupData>(`/admin/groups/${id}`);
+}
+
+export function createGroup(data: { name: string }): Promise<GroupData> {
+  return api<GroupData>("/admin/groups", { method: "POST", body: data });
+}
+
+export function updateGroup(id: string, data: { name: string }): Promise<GroupData> {
+  return api<GroupData>(`/admin/groups/${id}`, { method: "PUT", body: data });
+}
+
+export function deleteGroup(id: string): Promise<void> {
+  return api<void>(`/admin/groups/${id}`, { method: "DELETE" });
+}
+
+export function listGroupMembers(groupId: string): Promise<GroupMemberData[]> {
+  return api<GroupMemberData[]>(`/admin/groups/${groupId}/members`);
+}
+
+export function addGroupMember(groupId: string, userId: string): Promise<void> {
+  return api<void>(`/admin/groups/${groupId}/members`, {
+    method: "POST",
+    body: { user_id: userId },
+  });
+}
+
+export function removeGroupMember(groupId: string, userId: string): Promise<void> {
+  return api<void>(`/admin/groups/${groupId}/members/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+export function listGroupModels(groupId: string): Promise<GroupModelData[]> {
+  return api<GroupModelData[]>(`/admin/groups/${groupId}/models`);
+}
+
+export function assignModelToGroup(groupId: string, modelId: string): Promise<void> {
+  return api<void>(`/admin/groups/${groupId}/models`, {
+    method: "POST",
+    body: { model_id: modelId },
+  });
+}
+
+export function removeModelFromGroup(groupId: string, modelId: string): Promise<void> {
+  return api<void>(`/admin/groups/${groupId}/models/${modelId}`, {
+    method: "DELETE",
+  });
+}
+
+export function listUserGroups(userId: string): Promise<GroupData[]> {
+  return api<GroupData[]>(`/admin/users/${userId}/groups`);
+}
+
+export function listModelGroups(modelId: string): Promise<GroupData[]> {
+  return api<GroupData[]>(`/admin/models/${modelId}/groups`);
 }
