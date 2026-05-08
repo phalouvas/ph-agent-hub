@@ -63,6 +63,14 @@ export function ChatWindow({
   const queryClient = useQueryClient();
   const [toolsOpen, setToolsOpen] = useState(false);
 
+  // Optimistic user message — shown immediately on send, replaced by
+  // the real persisted message when the response completes or the
+  // stream is stopped / errors out.
+  const [pendingUserMessage, setPendingUserMessage] = useState<{
+    id: string;
+    content: string;
+  } | null>(null);
+
   const { streaming, startStream, stopStream } = useStream();
 
   const { data: messages, isLoading: loadingMessages } = useQuery({
@@ -103,6 +111,12 @@ export function ChatWindow({
     setStreamError(null);
     setToolEvents([]);
 
+    // Optimistic: show the user message immediately
+    setPendingUserMessage({
+      id: `pending-user-${Date.now()}`,
+      content,
+    });
+
     startStream(sessionId, content, undefined, {
       onToken(token, msgId) {
         setStreamingMessageId(msgId);
@@ -124,6 +138,7 @@ export function ChatWindow({
         ]);
       },
       onMessageComplete() {
+        setPendingUserMessage(null);
         setStreamingContent("");
         setStreamingReasoningContent("");
         setStreamingMessageId(null);
@@ -133,10 +148,12 @@ export function ChatWindow({
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
       onError(err) {
+        setPendingUserMessage(null);
         setStreamError(err);
         console.error("Stream error:", err);
       },
       onClose() {
+        setPendingUserMessage(null);
         setStreamingContent("");
         setStreamingReasoningContent("");
         setStreamingMessageId(null);
@@ -178,8 +195,28 @@ export function ChatWindow({
     }
   };
 
-  // Build a flat display list: real messages + streaming bubble
-  const displayMessages = [...(messages || [])];
+  // Build a flat display list: optimistic user message + real messages + streaming bubble
+  const displayMessages: Array<any> = [];
+
+  // 1. Show the user's message immediately (optimistic UI)
+  if (pendingUserMessage) {
+    displayMessages.push({
+      id: pendingUserMessage.id,
+      session_id: sessionId,
+      parent_message_id: null,
+      branch_index: 0,
+      sender: "user" as const,
+      content: [{ type: "text", text: pendingUserMessage.content }],
+      model_id: null,
+      tool_calls: null,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  // 2. Real persisted messages from the backend
+  displayMessages.push(...(messages || []));
   if (streamingContent && streamingMessageId) {
     displayMessages.push({
       id: streamingMessageId,
