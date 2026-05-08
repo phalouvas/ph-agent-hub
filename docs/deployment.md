@@ -99,10 +99,25 @@ See the actual file at `infrastructure/docker-compose.yml`. Key characteristics:
 - Volumes are auto-created by Docker Compose
 - Network `phagent-network` is auto-created
 
+### Hot-reload (bind mounts)
+
+Both backend and frontend source directories are bind-mounted into their containers:
+
+- **Backend**: `../backend:/app` overlay + `uvicorn --reload` watches for `.py` changes and auto-restarts the server.
+- **Frontend**: `../frontend:/app` overlay with an anonymous volume at `/app/node_modules` to preserve container-installed dependencies. Vite HMR handles live updates in the browser.
+
+Code edits take effect immediately — no rebuild or restart needed.
+
 ```bash
 cd infrastructure
+# First run or after dependency changes:
 docker compose up --build
+
+# Subsequent runs (code-only changes):
+docker compose up
 ```
+
+> **When `--build` is needed:** After changes to `backend/requirements.txt` or `frontend/package.json`. Code-only changes don't require a rebuild.
 
 ## 4.2 Production (`docker-compose.prod.yml`)
 
@@ -188,7 +203,8 @@ Production uses Traefik (external stack) with Let's Encrypt auto-SSL. Each servi
 ## **7.1 Local Development**
 ```bash
 cd infrastructure
-docker compose up --build
+docker compose up --build   # first run or after dependency changes
+docker compose up           # subsequent runs (code changes only)
 ```
 
 Access:
@@ -198,6 +214,11 @@ Access:
 - MinIO Console: `http://localhost:9001`
 
 Alembic migrations run automatically inside the backend container on startup before the application server starts.
+
+### Hot-reload behavior
+- **Backend**: Edit any `.py` file → uvicorn logs `WatchFiles detected changes… Reloading…` and restarts the server in ~2 seconds.
+- **Frontend**: Edit any `.tsx`/`.ts` file → Vite HMR updates the browser instantly without a full page reload.
+- **Dependencies**: After changing `requirements.txt` or `package.json`, restart with `--build` to rebuild the image layer.
 
 ## **7.2 Production Deployment**
 
