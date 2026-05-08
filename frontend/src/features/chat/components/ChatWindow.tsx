@@ -441,7 +441,7 @@ export function ChatWindow({
               sessionId={sessionId}
               onEdit={msg.sender === "user" ? handleEdit : undefined}
               onDelete={
-                msg.sender === "user" && !isTemporary
+                !isTemporary
                   ? handleDelete
                   : undefined
               }

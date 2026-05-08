@@ -388,6 +388,20 @@ export function MessageBubble({
               disabled={disabled}
             />
           )}
+          {onDelete && (
+            <Popconfirm
+              title="Delete this message?"
+              onConfirm={() => onDelete(message.id)}
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<DeleteOutlined />}
+                danger
+                disabled={disabled}
+              />
+            </Popconfirm>
+          )}
           <MessageBranchNav
             branches={branchInfo}
             onNavigate={(idx) => onNavigateBranch?.(idx)}
