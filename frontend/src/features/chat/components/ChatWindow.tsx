@@ -69,6 +69,7 @@ export function ChatWindow({
   const [streamingReasoningContent, setStreamingReasoningContent] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamingTokens, setStreamingTokens] = useState<{ tokens_in: number; tokens_out: number } | null>(null);
   const [thinkingEnabled, setThinkingEnabled] = useState<boolean | null>(null);
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
@@ -157,6 +158,7 @@ export function ChatWindow({
     setStreamError(null);
     setToolEvents([]);
     setFollowUpQuestions([]);
+    setStreamingTokens(null);
 
     // Re-enable auto-scroll when user sends a new message
     userScrolledUpRef.current = false;
@@ -191,12 +193,15 @@ export function ChatWindow({
           { type: "function_result", data },
         ]);
       },
-      onMessageComplete() {
+      onMessageComplete(data) {
         setPendingUserMessage(null);
         setStreamingContent("");
         setStreamingReasoningContent("");
         setStreamingMessageId(null);
         setToolEvents([]);
+        if (data.tokens_in || data.tokens_out) {
+          setStreamingTokens({ tokens_in: data.tokens_in || 0, tokens_out: data.tokens_out || 0 });
+        }
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -214,6 +219,7 @@ export function ChatWindow({
       },
       onError(err) {
         setPendingUserMessage(null);
+        setStreamingTokens(null);
         setStreamError(err);
         console.error("Stream error:", err);
       },
@@ -223,6 +229,7 @@ export function ChatWindow({
         setStreamingReasoningContent("");
         setStreamingMessageId(null);
         setToolEvents([]);
+        setStreamingTokens(null);
         // Don't clear followUpQuestions here — they are set after
         // message_complete and should persist until the next message.
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
@@ -354,6 +361,8 @@ export function ChatWindow({
       ],
       model_id: selectedModelId || null,
       tool_calls: null,
+      tokens_in: streamingTokens?.tokens_in ?? null,
+      tokens_out: streamingTokens?.tokens_out ?? null,
       is_deleted: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

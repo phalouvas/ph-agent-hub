@@ -35,6 +35,8 @@ export interface MessageData {
   content: unknown[] | null;
   model_id: string | null;
   tool_calls: unknown[] | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
   is_deleted: boolean;
   summarized?: boolean;
   created_at: string;

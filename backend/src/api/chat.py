@@ -113,6 +113,8 @@ class MessageResponse(BaseModel):
     content: list | None
     model_id: str | None
     tool_calls: list | None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
     is_deleted: bool
     summarized: bool = False
     created_at: datetime
@@ -519,6 +521,8 @@ async def list_messages(
                 content=m.get("content"),
                 model_id=m.get("model_id"),
                 tool_calls=m.get("tool_calls"),
+                tokens_in=m.get("tokens_in"),
+                tokens_out=m.get("tokens_out"),
                 is_deleted=m.get("is_deleted", False),
                 summarized=m.get("summarized", False),
                 created_at=_parse_datetime(m.get("created_at")),

@@ -7,7 +7,7 @@
 // =============================================================================
 
 import React from "react";
-import { Typography, Space, Collapse, Tag, Button, Popconfirm, App, Spin } from "antd";
+import { Typography, Space, Collapse, Tag, Button, Popconfirm, App, Spin, Tooltip } from "antd";
 import {
   UserOutlined,
   RobotOutlined,
@@ -20,6 +20,7 @@ import {
   DownloadOutlined,
   CopyOutlined,
   CompressOutlined,
+  DollarOutlined,
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
@@ -394,6 +395,35 @@ export function MessageBubble({
             }}
             disabled={disabled}
           />
+          {(message.tokens_in != null || message.tokens_out != null) && (
+            <Tooltip
+              title={
+                <span>
+                  Input: ~{message.tokens_in ?? "?"} tokens<br />
+                  Output: ~{message.tokens_out ?? "?"} tokens
+                  {(message.tokens_in != null && message.tokens_out != null) && (
+                    <>
+                      <br />Total: ~{(message.tokens_in ?? 0) + (message.tokens_out ?? 0)} tokens
+                    </>
+                  )}
+                </span>
+              }
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<DollarOutlined />}
+                style={{ color: "#8c8c8c" }}
+                disabled={disabled}
+              >
+                <Text style={{ fontSize: 11, color: "#8c8c8c" }}>
+                  {message.tokens_out != null
+                    ? message.tokens_out
+                    : (message.tokens_in ?? 0) + (message.tokens_out ?? 0)}
+                </Text>
+              </Button>
+            </Tooltip>
+          )}
           {onRegenerate && (
             <Button
               type="text"

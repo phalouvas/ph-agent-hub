@@ -680,6 +680,8 @@ async def run_agent(
         model_id=cfg.model.id,
         parent_message_id=parent_message_id,
         user_branch_index=user_branch_index,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
     )
 
     # ---- 9. Link file uploads to the user message ------------------------
@@ -1121,6 +1123,8 @@ async def _persist_assistant_message(
     model_id: str,
     parent_message_id: str,
     tool_events: list[dict] | None = None,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
 ) -> str:
     """Persist just the assistant message, returning its ID."""
     content: list[dict] = []
@@ -1147,6 +1151,8 @@ async def _persist_assistant_message(
                 "model_id": model_id,
                 "parent_message_id": parent_message_id,
                 "branch_index": 0,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
                 "created_at": now.isoformat(),
             },
         )
@@ -1159,6 +1165,8 @@ async def _persist_assistant_message(
             model_id=model_id,
             parent_message_id=parent_message_id,
             branch_index=0,
+            tokens_in=tokens_in if tokens_in > 0 else None,
+            tokens_out=tokens_out if tokens_out > 0 else None,
             created_at=now,
         )
         db.add(msg)
@@ -1176,6 +1184,8 @@ async def _persist_messages(
     model_id: str,
     parent_message_id: str | None = None,
     user_branch_index: int = 0,
+    tokens_in: int = 0,
+    tokens_out: int = 0,
 ) -> tuple[str, str]:
     """Persist the user message and assistant response.
 
@@ -1210,6 +1220,8 @@ async def _persist_messages(
                 "model_id": model_id,
                 "parent_message_id": user_msg_id,
                 "branch_index": 0,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -1239,6 +1251,8 @@ async def _persist_messages(
             model_id=model_id,
             parent_message_id=user_msg_id,
             branch_index=0,
+            tokens_in=tokens_in if tokens_in > 0 else None,
+            tokens_out=tokens_out if tokens_out > 0 else None,
             created_at=datetime.now(timezone.utc),
         )
         db.add(assistant_msg)
@@ -1412,6 +1426,8 @@ async def run_agent_stream(
         model_id=cfg.model.id,
         parent_message_id=user_msg_id,
         tool_events=accumulated_tool_events,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
     )
 
     # ---- 10. Write usage log ---------------------------------------------
@@ -1435,6 +1451,8 @@ async def run_agent_stream(
             "message_id": message_id,
             "branch_index": 0,
             "total_tokens": total_tokens,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
             "model_id": cfg.model.id,
         }),
     }
@@ -1566,10 +1584,10 @@ async def _run_agent_stream(
     try:
         final = await response_stream.get_final_response()
         if token_counts is not None:
-            usage = getattr(final, "usage", None)
-            if usage:
-                token_counts["in"] = getattr(usage, "input_tokens", 0) or 0
-                token_counts["out"] = getattr(usage, "output_tokens", 0) or 0
+            usage = getattr(final, "usage_details", None)
+            if usage and isinstance(usage, dict):
+                token_counts["in"] = usage.get("input_token_count", 0) or 0
+                token_counts["out"] = usage.get("output_token_count", 0) or 0
     except Exception:
         pass  # Token count is best-effort for Phase 7
 
@@ -2015,6 +2033,8 @@ async def run_agent_assistant_only(
                 "model_id": cfg.model.id,
                 "parent_message_id": assistant_parent_message_id,
                 "branch_index": assistant_branch_index,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -2027,6 +2047,8 @@ async def run_agent_assistant_only(
             model_id=cfg.model.id,
             parent_message_id=assistant_parent_message_id,
             branch_index=assistant_branch_index,
+            tokens_in=tokens_in if tokens_in > 0 else None,
+            tokens_out=tokens_out if tokens_out > 0 else None,
         )
         db.add(assistant_msg)
         await db.commit()
@@ -2059,10 +2081,10 @@ def _extract_token_counts(result: Any) -> tuple[int, int]:
         A tuple of (tokens_in, tokens_out), defaulting to (0, 0).
     """
     try:
-        usage = getattr(result, "usage", None)
-        if usage:
-            tokens_in = getattr(usage, "input_tokens", 0) or 0
-            tokens_out = getattr(usage, "output_tokens", 0) or 0
+        usage = getattr(result, "usage_details", None)
+        if usage and isinstance(usage, dict):
+            tokens_in = usage.get("input_token_count", 0) or 0
+            tokens_out = usage.get("output_token_count", 0) or 0
             return tokens_in, tokens_out
     except Exception:
         pass
