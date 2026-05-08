@@ -25,6 +25,9 @@ boto3
 # SSE
 sse-starlette
 
+# Web Search
+ddgs>=9.0
+
 # Config
 pydantic-settings
 

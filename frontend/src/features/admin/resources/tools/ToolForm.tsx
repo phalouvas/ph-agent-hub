@@ -136,6 +136,7 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
               { label: "Membrane", value: "membrane" },
               { label: "Custom", value: "custom" },
               { label: "Datetime", value: "datetime" },
+              { label: "Web Search", value: "web_search" },
             ]}
           />
         </Form.Item>

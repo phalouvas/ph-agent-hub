@@ -414,6 +414,9 @@ async def _build_tool_callables(
     elif tool.type == "datetime":
         from ..tools.datetime import build_datetime_tools
         return build_datetime_tools(tool.config or {})
+    elif tool.type == "web_search":
+        from ..tools.web_search import build_web_search_tools
+        return build_web_search_tools(tool.config or {})
     else:
         logger.warning("Unknown tool type '%s' for tool %s", tool.type, tool.id)
         return []
@@ -608,9 +611,18 @@ async def _persist_assistant_message(
     assistant_response: str,
     model_id: str,
     parent_message_id: str,
+    tool_events: list[dict] | None = None,
 ) -> str:
     """Persist just the assistant message, returning its ID."""
-    content = [{"type": "text", "text": assistant_response}]
+    content: list[dict] = []
+
+    # Build content array: tool events interleaved before the final text
+    for evt in (tool_events or []):
+        content.append(evt)
+
+    # Always append the final text response
+    if assistant_response.strip():
+        content.append({"type": "text", "text": assistant_response})
     assistant_msg_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
 
@@ -760,6 +772,7 @@ async def run_agent_stream(
     is_temporary = session_data.get("is_temporary", False)
 
     accumulated_text: str = ""
+    accumulated_tool_events: list[dict] = []
     step_index: int = 0
     total_tokens: int = 0
     _stream_token_info: dict = {}  # mutated by _run_agent_stream to propagate token counts
@@ -834,6 +847,10 @@ async def run_agent_stream(
             accumulated_text = _maybe_accumulate_text(
                 event_dict, accumulated_text
             )
+            # Accumulate tool events for persistence
+            accumulated_tool_events = _maybe_accumulate_tool_events(
+                event_dict, accumulated_tool_events
+            )
 
             yield event_dict
 
@@ -861,6 +878,7 @@ async def run_agent_stream(
         assistant_response=accumulated_text,
         model_id=cfg.model.id,
         parent_message_id=user_msg_id,
+        tool_events=accumulated_tool_events,
     )
 
     # ---- 10. Write usage log ---------------------------------------------
@@ -929,7 +947,15 @@ async def _run_agent_stream(
     message_id: str,
     token_counts: dict | None = None,
 ) -> AsyncIterator[dict]:
-    """Run a MAF Agent in streaming mode, yielding SSE event dicts."""
+    """Run a MAF Agent in streaming mode, yielding SSE event dicts.
+
+    .. note::
+
+        MAF streams tool-call arguments incrementally (character by
+        character).  We aggregate partial *function_call* updates by
+        ``call_id`` and only emit a single ``tool_start`` SSE event
+        once the call is complete (when *function_result* arrives).
+    """
     from agent_framework import Agent
 
     agent = Agent(
@@ -942,6 +968,9 @@ async def _run_agent_stream(
     response_stream = agent.run(user_message, stream=True)
 
     step_index = 0
+    # Aggregate streaming tool calls: call_id -> {name, args_str}
+    pending_calls: dict[str, dict] = {}
+
     async for update in response_stream:
         # Check each content item in the update
         for content in update.contents:
@@ -960,20 +989,7 @@ async def _run_agent_stream(
                         "delta": delta,
                     }, session_id=session_id, message_id=message_id)
             elif content_type in ("function_call", "tool_call"):
-                tool_call_id = getattr(content, "call_id", None) or str(uuid.uuid4())
-                tool_name = getattr(content, "name", "unknown")
-                arguments = getattr(content, "arguments", None)
-                if arguments is not None:
-                    try:
-                        arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
-                    except (json.JSONDecodeError, TypeError):
-                        arguments = str(arguments)
-
-                yield _sse_event("tool_start", {
-                    "tool_call_id": tool_call_id,
-                    "tool_name": tool_name,
-                    "arguments": arguments,
-                }, session_id=session_id, message_id=message_id)
+                _handle_streaming_function_call(content, pending_calls)
             elif content_type in ("function_result", "tool_result"):
                 tool_call_id = getattr(content, "call_id", None) or ""
                 tool_name = getattr(content, "name", "unknown")
@@ -981,11 +997,30 @@ async def _run_agent_stream(
                 success = True  # MAF surfaces errors via separate content types
                 result_summary = _summarise_tool_result(output)
 
+                # Resolve the final tool name and arguments from pending calls
+                resolved_args = None
+                if tool_call_id and tool_call_id in pending_calls:
+                    pending = pending_calls.pop(tool_call_id)
+                    if pending.get("name"):
+                        tool_name = pending["name"]
+                    resolved_args = _resolve_tool_arguments(
+                        pending.get("args_str", ""), output
+                    )
+
+                # Yield a single consolidated tool_start event
+                yield _sse_event("tool_start", {
+                    "tool_call_id": tool_call_id,
+                    "tool_name": tool_name,
+                    "arguments": resolved_args,
+                }, session_id=session_id, message_id=message_id)
+
+                # Yield the tool_result event
                 yield _sse_event("tool_result", {
                     "tool_call_id": tool_call_id,
                     "tool_name": tool_name,
                     "success": success,
                     "result_summary": result_summary,
+                    "output": output,
                 }, session_id=session_id, message_id=message_id)
 
                 step_index += 1
@@ -1099,9 +1134,114 @@ def _maybe_accumulate_text(event_dict: dict, current: str) -> str:
         return current
 
 
+def _maybe_accumulate_tool_events(
+    event_dict: dict, current: list[dict]
+) -> list[dict]:
+    """If *event_dict* is a tool_start or tool_result event,
+    append it to *current* for later persistence."""
+    event_name = event_dict.get("event", "")
+    if event_name not in ("tool_start", "tool_result"):
+        return current
+    try:
+        payload = json.loads(event_dict["data"])
+    except (json.JSONDecodeError, KeyError):
+        return current
+
+    if event_name == "tool_start":
+        return current + [{
+            "type": "function_call",
+            "name": payload.get("tool_name", "unknown"),
+            "arguments": payload.get("arguments", {}),
+            "id": payload.get("tool_call_id", ""),
+        }]
+    else:
+        # tool_result
+        return current + [{
+            "type": "function_result",
+            "name": payload.get("tool_name", "unknown"),
+            "output": _format_tool_output_for_storage(payload.get("output")),
+            "is_error": not payload.get("success", True),
+        }]
+
+
+def _format_tool_output_for_storage(output: Any) -> str | None:
+    """Format a tool output value for JSON storage in message content.
+
+    Returns a string representation suitable for display.  Limits the
+    size of very large outputs to avoid bloated message content.
+    """
+    if output is None:
+        return None
+    if isinstance(output, str):
+        if len(output) > 4000:
+            return output[:4000] + "\n...(truncated)"
+        return output
+    try:
+        serialized = json.dumps(output, default=str)
+    except (TypeError, ValueError):
+        serialized = str(output)
+    if len(serialized) > 4000:
+        serialized = serialized[:4000] + "\n...(truncated)"
+    return serialized
+
+
 # ---------------------------------------------------------------------------
 # Streaming-specific: think-filter wrapper
 # ---------------------------------------------------------------------------
+
+
+def _handle_streaming_function_call(
+    content: Any,
+    pending_calls: dict[str, dict],
+) -> None:
+    """Accumulate a streaming *function_call* content into *pending_calls*.
+
+    MAF may yield multiple partial function_call updates for the same
+    call_id — the first carries the tool name, subsequent ones carry
+    fragments of the JSON arguments string.
+    """
+    call_id = getattr(content, "call_id", None) or str(uuid.uuid4())
+    tool_name = getattr(content, "name", None) or ""
+    arguments = getattr(content, "arguments", None)
+
+    if call_id not in pending_calls:
+        pending_calls[call_id] = {"name": "", "args_str": ""}
+
+    pending = pending_calls[call_id]
+
+    # Update name if we got a real one
+    if tool_name and tool_name != "unknown":
+        pending["name"] = tool_name
+
+    # Accumulate argument fragments
+    if arguments is not None:
+        if isinstance(arguments, str):
+            pending["args_str"] = (pending["args_str"] or "") + arguments
+        else:
+            # Already a dict/list — store directly
+            pending["args_str"] = arguments
+
+
+def _resolve_tool_arguments(
+    args_str: Any,
+    output: Any,
+) -> dict | None:
+    """Try to parse accumulated streaming arguments into a dict.
+
+    Returns the parsed arguments dict, or None if parsing fails.
+    """
+    if args_str is None:
+        return None
+    if isinstance(args_str, dict):
+        return args_str
+    if isinstance(args_str, str) and args_str.strip():
+        try:
+            parsed = json.loads(args_str)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return None
 
 
 def _summarise_tool_result(output: Any) -> str:
