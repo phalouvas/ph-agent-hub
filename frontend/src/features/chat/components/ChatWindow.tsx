@@ -7,7 +7,7 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Button, Input, Space, Spin, Empty } from "antd";
+import { Button, Input, Space, Spin, Empty, Alert } from "antd";
 import {
   SendOutlined,
   StopOutlined,
@@ -54,6 +54,7 @@ export function ChatWindow({
   const [inputValue, setInputValue] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -79,6 +80,7 @@ export function ChatWindow({
     const content = inputValue.trim();
     setInputValue("");
     setStreamingContent("");
+    setStreamError(null);
     setToolEvents([]);
 
     startStream(sessionId, content, undefined, {
@@ -103,9 +105,11 @@ export function ChatWindow({
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
       onError(err) {
-        // Error handling — keep partial content
+        setStreamError(err);
         console.error("Stream error:", err);
       },
       onClose() {
@@ -113,6 +117,8 @@ export function ChatWindow({
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
     });
   }, [inputValue, streaming, sessionId, startStream, queryClient]);
@@ -161,8 +167,12 @@ export function ChatWindow({
           ? [{ type: "text", text: streamingContent }]
           : []),
         ...toolEvents.map((ev) => ({
-          ...ev,
-          type: ev.type === "function_call" ? "function_call" : "function_result",
+          type: ev.type,
+          name: (ev.data as Record<string, unknown>).tool_name,
+          arguments: (ev.data as Record<string, unknown>).arguments,
+          output: (ev.data as Record<string, unknown>).result_summary,
+          is_error: !(ev.data as Record<string, unknown>).success,
+          call_id: (ev.data as Record<string, unknown>).tool_call_id,
         })),
       ],
       model_id: selectedModelId || null,
@@ -233,6 +243,16 @@ export function ChatWindow({
           padding: "16px",
         }}
       >
+        {streamError && (
+          <Alert
+            message="Error"
+            description={streamError}
+            type="error"
+            closable
+            onClose={() => setStreamError(null)}
+            style={{ marginBottom: 12 }}
+          />
+        )}
         {loadingMessages ? (
           <div style={{ textAlign: "center", padding: 48 }}>
             <Spin />
