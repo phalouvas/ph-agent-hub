@@ -119,12 +119,13 @@ async def update_session(
 async def delete_session(db: AsyncSession, session_id: str) -> None:
     """Delete a session by ID.
 
-    Clears all FK references (message feedback, messages, active tools),
-    then deletes the session. Raises NotFoundError if missing.
+    Clears all FK references (message feedback, file uploads, messages,
+    active tools), then deletes the session. Raises NotFoundError if missing.
     """
     from sqlalchemy import delete as sa_delete, update as sa_update
     from ..db.orm.messages import Message, MessageFeedback
     from ..db.orm.sessions import SessionActiveTool
+    from ..db.orm.file_uploads import FileUpload
 
     session = await get_session_by_id(db, session_id)
     if session is None:
@@ -135,6 +136,11 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
         select(Message.id).where(Message.session_id == session_id)
     )
     message_ids = [row[0] for row in result.all()]
+
+    # 0. Delete file uploads BEFORE messages (otherwise FK constraint fails)
+    from ..services import upload_service
+
+    await upload_service.delete_uploads_for_session(db, session_id)
 
     # 1. Delete message feedbacks for these messages
     if message_ids:
@@ -167,12 +173,7 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 5. Delete file uploads (MinIO objects + DB rows)
-    from ..services import upload_service
-
-    await upload_service.delete_uploads_for_session(db, session_id)
-
-    # 6. Null out session_id references in memory
+    # 5. Null out session_id references in memory
     from ..db.orm.memory import Memory
 
     await db.execute(

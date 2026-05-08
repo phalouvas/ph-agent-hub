@@ -59,10 +59,33 @@ async def generate_presigned_url(
 ) -> str:
     """Generate a presigned URL for downloading an object (default 15 min TTL).
 
-    If ``MINIO_PUBLIC_ENDPOINT`` is set, the internal MinIO hostname in the
-    presigned URL is replaced with the public endpoint so browsers can
-    resolve it.
+    If ``MINIO_PUBLIC_ENDPOINT`` is set, a separate boto3 client
+    configured with the public endpoint is used so the signature
+    matches the ``Host`` header the browser sends.
     """
+    public = settings.MINIO_PUBLIC_ENDPOINT
+    internal = settings.MINIO_ENDPOINT
+
+    if public and public != internal:
+        # Use a client configured with the public endpoint for correct signing
+        public_client = boto3.client(
+            "s3",
+            endpoint_url=public,
+            aws_access_key_id=settings.MINIO_ACCESS_KEY,
+            aws_secret_access_key=settings.MINIO_SECRET_KEY,
+            config=Config(signature_version="s3v4"),
+        )
+
+        def _generate():
+            return public_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=expires_in,
+            )
+
+        return await asyncio.to_thread(_generate)
+
+    # No public endpoint — sign for MinIO's internal address directly
     client = get_client()
 
     def _generate():
@@ -72,15 +95,7 @@ async def generate_presigned_url(
             ExpiresIn=expires_in,
         )
 
-    url = await asyncio.to_thread(_generate)
-
-    # Rewrite internal MinIO hostname to public endpoint
-    public = settings.MINIO_PUBLIC_ENDPOINT
-    internal = settings.MINIO_ENDPOINT
-    if public and internal:
-        url = url.replace(internal, public)
-
-    return url
+    return await asyncio.to_thread(_generate)
 
 
 async def ensure_bucket_exists(bucket: str) -> None:
