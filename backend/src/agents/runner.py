@@ -69,6 +69,7 @@ async def _resolve_session_config(
     db: AsyncSession,
     session_data: dict,
     tenant_id: str,
+    user: User | None = None,
 ) -> SessionConfig:
     """Resolve model, system prompt, skill, tools, execution type, and agent name.
 
@@ -76,7 +77,7 @@ async def _resolve_session_config(
     ``run_agent_stream()``, and ``run_agent_assistant_only()``.
     """
     # 1. Resolve model
-    model = await _resolve_model(db, session_data)
+    model = await _resolve_model(db, session_data, user)
     model_client = get_chat_client(model)
 
     # 2. Build system prompt
@@ -148,7 +149,7 @@ async def run_agent(
     is_temporary = session_data.get("is_temporary", False)
 
     # ---- 1-6. Resolve session config ------------------------------------
-    cfg = await _resolve_session_config(db, session_data, tenant_id)
+    cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
 
     # ---- 7. Run agent or workflow ----------------------------------------
     raw_response: str
@@ -218,9 +219,21 @@ async def run_agent(
 
 
 async def _resolve_model(
-    db: AsyncSession, session_data: dict
+    db: AsyncSession, session_data: dict, user: User | None = None
 ) -> Model:
-    """Resolve the model client following the fallback chain."""
+    """Resolve the model client following the fallback chain.
+
+    Resolution order:
+    1. session.selected_model_id
+    2. user.default_model_id
+    3. skill.default_model_id
+    4. template.default_model_id
+    5. first accessible enabled model for the user
+    6. ValidationError
+    """
+    tenant_id = session_data.get("tenant_id", "")
+    user_id = session_data.get("user_id", "")
+
     # 1. session.selected_model_id
     model_id = session_data.get("selected_model_id")
     if model_id:
@@ -229,7 +242,16 @@ async def _resolve_model(
         if model:
             return model
 
-    # 2. skill.default_model_id
+    # 2. user.default_model_id
+    if user and user.default_model_id:
+        result = await db.execute(
+            select(Model).where(Model.id == user.default_model_id)
+        )
+        model = result.scalar_one_or_none()
+        if model:
+            return model
+
+    # 3. skill.default_model_id
     skill_id = session_data.get("selected_skill_id")
     if skill_id:
         result = await db.execute(select(Skill).where(Skill.id == skill_id))
@@ -242,7 +264,7 @@ async def _resolve_model(
             if model:
                 return model
 
-    # 3. template.default_model_id
+    # 4. template.default_model_id
     template_id = session_data.get("selected_template_id")
     if template_id:
         result = await db.execute(
@@ -257,9 +279,18 @@ async def _resolve_model(
             if model:
                 return model
 
+    # 5. first accessible enabled model
+    from ..services.model_service import list_models as _svc_list_models
+    models = await _svc_list_models(
+        db, tenant_id=tenant_id, user_id=user_id
+    )
+    enabled = [m for m in models if m.enabled]
+    if enabled:
+        return enabled[0]
+
     raise ValidationError(
         "No model configured. Please select a model for this session, "
-        "or configure a default model on the skill or template."
+        "or configure a default model on your profile, skill, or template."
     )
 
 
@@ -805,7 +836,7 @@ async def run_agent_stream(
 
     try:
         # ---- 1-6. Resolve session config --------------------------------
-        cfg = await _resolve_session_config(db, session_data, tenant_id)
+        cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
 
         # ---- 7. Run agent or workflow (streaming) ------------------------
         if cfg.execution_type == "workflow":
@@ -1250,7 +1281,7 @@ async def run_agent_assistant_only(
     is_temporary = session_data.get("is_temporary", False)
 
     # ---- 1-6. Resolve session config ------------------------------------
-    cfg = await _resolve_session_config(db, session_data, tenant_id)
+    cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
 
     # ---- 7. Run agent or workflow ----------------------------------------
     raw_response: str

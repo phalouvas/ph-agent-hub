@@ -14,6 +14,7 @@ export interface UserProfile {
   role: string;
   tenant_id: string;
   is_active: boolean;
+  default_model_id: string | null;
   created_at: string;
 }
 
@@ -50,7 +51,14 @@ export async function logout(): Promise<void> {
 }
 
 export async function getMe(): Promise<UserProfile> {
-  return api<UserProfile>("/auth/me");
+  return api<UserProfile>("/users/me");
+}
+
+export async function setDefaultModel(modelId: string | null): Promise<void> {
+  return api<void>("/users/me/default-model", {
+    method: "PUT",
+    body: { model_id: modelId },
+  });
 }
 
 export { setToken, getToken };

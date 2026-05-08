@@ -2,22 +2,45 @@
 # PH Agent Hub — Model Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import NotFoundError
 from ..db.orm.models import Model
+from ..db.orm.groups import ModelGroup, UserGroupMember
 from ..db.orm.sessions import Session
 from ..db.orm.templates import Template
 
 
 async def list_models(
-    db: AsyncSession, tenant_id: str | None = None
+    db: AsyncSession,
+    tenant_id: str | None = None,
+    user_id: str | None = None,
 ) -> list[Model]:
-    """Return all models, optionally filtered by tenant_id."""
+    """Return all models, optionally filtered by tenant_id and user access.
+
+    When user_id is provided, only returns models where:
+    - is_public=True, OR
+    - the model is assigned to a group the user belongs to
+    """
     stmt = select(Model)
     if tenant_id is not None:
         stmt = stmt.where(Model.tenant_id == tenant_id)
+
+    if user_id is not None:
+        # Subquery: group IDs the user belongs to
+        user_group_subq = (
+            select(ModelGroup.model_id)
+            .join(UserGroupMember, UserGroupMember.group_id == ModelGroup.group_id)
+            .where(UserGroupMember.user_id == user_id)
+        )
+        stmt = stmt.where(
+            or_(
+                Model.is_public == True,  # noqa: E712
+                Model.id.in_(user_group_subq),
+            )
+        )
+
     stmt = stmt.order_by(Model.created_at)
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -37,6 +60,7 @@ async def create_model(
     api_key: str,
     base_url: str | None = None,
     enabled: bool = True,
+    is_public: bool = False,
     max_tokens: int = 4096,
     temperature: float = 0.7,
     routing_priority: int = 0,
@@ -51,6 +75,7 @@ async def create_model(
         api_key=api_key,
         base_url=base_url,
         enabled=enabled,
+        is_public=is_public,
         max_tokens=max_tokens,
         temperature=temperature,
         routing_priority=routing_priority,

@@ -102,3 +102,17 @@ async def delete_user(db: AsyncSession, user_id: str) -> None:
 
     await db.delete(user)
     await db.commit()
+
+
+async def update_user_default_model(
+    db: AsyncSession, user_id: str, model_id: str | None
+) -> User:
+    """Set or clear a user's default model. Raises NotFoundError if user missing."""
+    user = await get_user_by_id(db, user_id)
+    if user is None:
+        raise NotFoundError("User not found")
+
+    user.default_model_id = model_id
+    await db.commit()
+    await db.refresh(user)
+    return user

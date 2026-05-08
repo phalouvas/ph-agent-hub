@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.exceptions import NotFoundError, ValidationError
 from ..db.orm.sessions import Session, SessionActiveTool
 from ..db.orm.tools import Tool
+from ..db.orm.users import User
+from ..services.model_service import list_models as _svc_list_models
 
 
 # ---------------------------------------------------------------------------
@@ -27,7 +29,27 @@ async def create_session(
     selected_skill_id: str | None = None,
     selected_model_id: str | None = None,
 ) -> Session:
-    """Create a new permanent session."""
+    """Create a new permanent session.
+
+    If no selected_model_id is provided, auto-assigns:
+    1. user.default_model_id
+    2. First accessible enabled model for the user
+    """
+    # Auto-assign model if none provided
+    if selected_model_id is None:
+        user_result = await db.execute(select(User).where(User.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if user and user.default_model_id:
+            selected_model_id = user.default_model_id
+        else:
+            # First accessible enabled model
+            models = await _svc_list_models(
+                db, tenant_id=tenant_id, user_id=user_id
+            )
+            enabled = [m for m in models if m.enabled]
+            if enabled:
+                selected_model_id = enabled[0].id
+
     session = Session(
         tenant_id=tenant_id,
         user_id=user_id,
