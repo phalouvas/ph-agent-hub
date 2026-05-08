@@ -35,15 +35,28 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
         messages: Sequence[Message],
         options: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Inject ``extra_body`` with explicit thinking mode (always sent).
+        """Inject ``extra_body`` with explicit thinking mode.
 
-        DeepSeek's default thinking behavior varies by model (some have it
-        on by default).  We always send an explicit enabled/disabled to
-        guarantee consistent behavior regardless of model defaults.
+        When thinking is enabled but a tool call has just completed
+        (tool result present in messages), disable thinking for this
+        request to avoid the DeepSeek requirement that reasoning_content
+        must be passed back — which MAF doesn't fully support across
+        tool-call boundaries.
         """
         result = super()._prepare_options(messages, options)
+
+        thinking_type = "disabled"
+        if self._thinking_enabled:
+            # Check if there are tool results in the conversation
+            prepared_msgs = result.get("messages", [])
+            has_tool_result = any(
+                msg.get("role") == "tool" for msg in prepared_msgs
+            )
+            if not has_tool_result:
+                thinking_type = "enabled"
+
         result["extra_body"] = {
-            "thinking": {"type": "enabled" if self._thinking_enabled else "disabled"}
+            "thinking": {"type": thinking_type}
         }
         return result
 
@@ -86,14 +99,23 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
         self,
         message: Message,
     ) -> list[dict[str, Any]]:
-        """Convert ``reasoning_details`` (protected_data) back to ``reasoning_content``."""
+        """Convert ``reasoning_details`` back to ``reasoning_content``.
+
+        The base class may already decode ``reasoning_details`` from JSON
+        (e.g. when it came from Content items).  We handle both cases.
+        """
         prepared = super()._prepare_message_for_openai(message)
         for msg in prepared:
             if "reasoning_details" in msg:
-                try:
-                    msg["reasoning_content"] = json.loads(msg.pop("reasoning_details"))
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning("Failed to decode reasoning_details for message")
+                value = msg.pop("reasoning_details")
+                if isinstance(value, str):
+                    try:
+                        msg["reasoning_content"] = json.loads(value)
+                    except (json.JSONDecodeError, TypeError):
+                        # Already a plain string from the base class decode
+                        msg["reasoning_content"] = value
+                else:
+                    msg["reasoning_content"] = value
         return prepared
 
 

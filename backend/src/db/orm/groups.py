@@ -13,6 +13,7 @@ from ..base import Base
 from .tenants import Tenant
 from .users import User
 from .models import Model
+from .tools import Tool
 
 
 class UserGroup(Base):
@@ -52,6 +53,20 @@ class ModelGroup(Base):
 
     model_id: Mapped[str] = mapped_column(
         CHAR(36), ForeignKey("models.id"), primary_key=True
+    )
+    group_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("user_groups.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ToolGroup(Base):
+    __tablename__ = "tool_groups"
+
+    tool_id: Mapped[str] = mapped_column(
+        CHAR(36), ForeignKey("tools.id"), primary_key=True
     )
     group_id: Mapped[str] = mapped_column(
         CHAR(36), ForeignKey("user_groups.id"), primary_key=True

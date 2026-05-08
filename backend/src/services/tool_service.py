@@ -2,22 +2,45 @@
 # PH Agent Hub — Tool Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import NotFoundError, ValidationError
+from ..db.orm.groups import ToolGroup, UserGroupMember
 from ..db.orm.tools import Tool
 
-VALID_TOOL_TYPES = {"erpnext", "membrane", "custom"}
+VALID_TOOL_TYPES = {"erpnext", "membrane", "custom", "datetime"}
 
 
 async def list_tools(
-    db: AsyncSession, tenant_id: str | None = None
+    db: AsyncSession,
+    tenant_id: str | None = None,
+    user_id: str | None = None,
 ) -> list[Tool]:
-    """Return all tools, optionally filtered by tenant_id."""
+    """Return all tools, optionally filtered by tenant_id and user access.
+
+    When user_id is provided, only returns tools where:
+    - is_public=True, OR
+    - the tool is assigned to a group the user belongs to
+    """
     stmt = select(Tool)
     if tenant_id is not None:
         stmt = stmt.where(Tool.tenant_id == tenant_id)
+
+    if user_id is not None:
+        # Subquery: tool IDs assigned to groups the user belongs to
+        user_group_subq = (
+            select(ToolGroup.tool_id)
+            .join(UserGroupMember, UserGroupMember.group_id == ToolGroup.group_id)
+            .where(UserGroupMember.user_id == user_id)
+        )
+        stmt = stmt.where(
+            or_(
+                Tool.is_public == True,  # noqa: E712
+                Tool.id.in_(user_group_subq),
+            )
+        )
+
     stmt = stmt.order_by(Tool.created_at)
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -36,6 +59,7 @@ async def create_tool(
     type: str,
     config: dict | None = None,
     enabled: bool = True,
+    is_public: bool = False,
 ) -> Tool:
     """Create a new tool. Raises ValidationError if type is invalid."""
     if type not in VALID_TOOL_TYPES:
@@ -50,6 +74,7 @@ async def create_tool(
         type=type,
         config=config,
         enabled=enabled,
+        is_public=is_public,
     )
     db.add(tool)
     await db.commit()

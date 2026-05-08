@@ -218,6 +218,20 @@ export function removeSessionTool(
   });
 }
 
+export function setToolAlwaysOn(
+  toolId: string,
+  alwaysOn: boolean,
+): Promise<void> {
+  return api<void>(`/chat/session/tools/${toolId}/always-on`, {
+    method: "PUT",
+    body: { always_on: alwaysOn },
+  });
+}
+
+export function listAlwaysOnTools(): Promise<string[]> {
+  return api<string[]>("/chat/session/tools/always-on");
+}
+
 // ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------

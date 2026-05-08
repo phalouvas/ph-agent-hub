@@ -56,6 +56,7 @@ export interface ToolData {
   type: string;
   config: Record<string, unknown> | null;
   enabled: boolean;
+  is_public: boolean;
   created_at: string;
   updated_at: string;
 }

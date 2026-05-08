@@ -6,8 +6,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import NotFoundError, ConflictError
-from ..db.orm.groups import UserGroup, UserGroupMember, ModelGroup
+from ..db.orm.groups import UserGroup, UserGroupMember, ModelGroup, ToolGroup
 from ..db.orm.models import Model
+from ..db.orm.tools import Tool
 from ..db.orm.users import User
 
 
@@ -224,6 +225,81 @@ async def list_model_groups(
         select(UserGroup)
         .join(ModelGroup, ModelGroup.group_id == UserGroup.id)
         .where(ModelGroup.model_id == model_id)
+        .order_by(UserGroup.name)
+    )
+    return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Tool-Group Assignment
+# ---------------------------------------------------------------------------
+
+
+async def assign_tool_to_group(
+    db: AsyncSession, group_id: str, tool_id: str
+) -> ToolGroup:
+    """Assign a tool to a group. No-op if already assigned."""
+    # Check group exists
+    group = await get_group_by_id(db, group_id)
+    if group is None:
+        raise NotFoundError("Group not found")
+
+    # Check tool exists
+    tool_result = await db.execute(select(Tool).where(Tool.id == tool_id))
+    if tool_result.scalar_one_or_none() is None:
+        raise NotFoundError("Tool not found")
+
+    # Check if already assigned
+    existing = await db.execute(
+        select(ToolGroup).where(
+            ToolGroup.group_id == group_id,
+            ToolGroup.tool_id == tool_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return existing.scalar_one()
+
+    tg = ToolGroup(tool_id=tool_id, group_id=group_id)
+    db.add(tg)
+    await db.commit()
+    await db.refresh(tg)
+    return tg
+
+
+async def remove_tool_from_group(
+    db: AsyncSession, group_id: str, tool_id: str
+) -> None:
+    """Remove a tool from a group. No-op if not assigned."""
+    await db.execute(
+        delete(ToolGroup).where(
+            ToolGroup.group_id == group_id,
+            ToolGroup.tool_id == tool_id,
+        )
+    )
+    await db.commit()
+
+
+async def list_group_tools(
+    db: AsyncSession, group_id: str
+) -> list[Tool]:
+    """Return all tools assigned to a group."""
+    result = await db.execute(
+        select(Tool)
+        .join(ToolGroup, ToolGroup.tool_id == Tool.id)
+        .where(ToolGroup.group_id == group_id)
+        .order_by(Tool.name)
+    )
+    return list(result.scalars().all())
+
+
+async def list_tool_groups(
+    db: AsyncSession, tool_id: str
+) -> list[UserGroup]:
+    """Return all groups a tool is assigned to."""
+    result = await db.execute(
+        select(UserGroup)
+        .join(ToolGroup, ToolGroup.group_id == UserGroup.id)
+        .where(ToolGroup.tool_id == tool_id)
         .order_by(UserGroup.name)
     )
     return list(result.scalars().all())
