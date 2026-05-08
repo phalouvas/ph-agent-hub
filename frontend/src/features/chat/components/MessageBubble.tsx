@@ -19,6 +19,7 @@ import {
   FileOutlined,
   DownloadOutlined,
   CopyOutlined,
+  CompressOutlined,
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
@@ -87,6 +88,7 @@ export function MessageBubble({
   disabled,
 }: MessageBubbleProps) {
   const isUser = message.sender === "user";
+  const isSystem = message.sender === "system";
   const contentItems = parseContent(message.content);
 
   // Separate text, reasoning, and tool events
@@ -101,7 +103,16 @@ export function MessageBubble({
     padding: "12px 16px",
     borderRadius: 12,
     marginBottom: 8,
-    ...(isUser
+    ...(isSystem
+      ? {
+          background: "#fffbe6",
+          border: "1px solid #ffe58f",
+          marginLeft: "auto",
+          marginRight: "auto",
+          textAlign: "center",
+          maxWidth: "90%",
+        }
+      : isUser
       ? {
           background: "#1677ff",
           color: "#fff",
@@ -131,11 +142,13 @@ export function MessageBubble({
         <Space style={{ marginLeft: isUser ? undefined : 4 }}>
           {isUser ? (
             <UserOutlined style={{ color: "#1677ff" }} />
+          ) : isSystem ? (
+            <CompressOutlined style={{ color: "#faad14" }} />
           ) : (
             <RobotOutlined style={{ color: "#52c41a" }} />
           )}
           <Text type="secondary" style={{ fontSize: 12 }}>
-            {isUser ? "You" : "Assistant"}
+            {isUser ? "You" : isSystem ? "Summary" : "Assistant"}
           </Text>
           {message.model_id && !isUser && (
             <Text type="secondary" style={{ fontSize: 11 }}>

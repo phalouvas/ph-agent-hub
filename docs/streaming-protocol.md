@@ -184,7 +184,28 @@ Emitted after `message_complete` when the model has `follow_up_questions_enabled
 
 ---
 
-### 5.7 `error`
+### 5.7 `summarized`
+Emitted at the start of a streaming response when the conversation history was automatically summarized to fit within the model's context window. This event is emitted before any `token` events.
+
+```json
+{
+  "session_id": "uuid",
+  "message_id": "uuid",
+  "summary": "The conversation covered project planning for a new feature...",
+  "summarized_message_count": 12,
+  "tokens_saved": 3400
+}
+```
+
+- `summary` — the generated summary text that replaces older messages in context.
+- `summarized_message_count` — how many messages were compressed into the summary.
+- `tokens_saved` — estimated tokens freed up by summarization.
+- The frontend can show a brief notification that summarization occurred.
+- Not emitted if no summarization was needed.
+
+---
+
+### 5.8 `error`
 Emitted when a non-recoverable error occurs during agent execution.
 
 ```json
@@ -213,7 +234,7 @@ Emitted when a non-recoverable error occurs during agent execution.
 
 ---
 
-### 5.8 `heartbeat`
+### 5.9 `heartbeat`
 Emitted every 15 seconds if no other event has been sent, to keep the connection alive through proxies.
 
 ```

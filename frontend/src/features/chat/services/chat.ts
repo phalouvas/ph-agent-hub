@@ -31,11 +31,12 @@ export interface MessageData {
   session_id: string;
   parent_message_id: string | null;
   branch_index: number;
-  sender: "user" | "assistant";
+  sender: "user" | "assistant" | "system";
   content: unknown[] | null;
   model_id: string | null;
   tool_calls: unknown[] | null;
   is_deleted: boolean;
+  summarized?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +127,26 @@ export function updateSession(
 
 export function deleteSession(id: string): Promise<void> {
   return api<void>(`/chat/session/${id}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Summarization (Issue #29)
+// ---------------------------------------------------------------------------
+
+export interface SummarizeResponse {
+  summary: string;
+  summarized_message_count: number;
+  tokens_saved: number;
+}
+
+export function summarizeSession(
+  sessionId: string,
+  keepRecentPairs?: number,
+): Promise<SummarizeResponse> {
+  return api<SummarizeResponse>(`/chat/session/${sessionId}/summarize`, {
+    method: "POST",
+    body: { keep_recent_pairs: keepRecentPairs ?? 3 },
+  });
 }
 
 // ---------------------------------------------------------------------------
