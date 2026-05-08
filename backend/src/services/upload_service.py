@@ -212,6 +212,7 @@ async def delete_uploads_for_session(
     """Delete all file uploads (MinIO objects + DB rows) for a session.
 
     Used as cascade cleanup before deleting a session.
+    Does NOT commit — the caller is responsible for committing.
     """
     result = await db.execute(
         select(FileUpload).where(FileUpload.session_id == session_id)
@@ -228,7 +229,7 @@ async def delete_uploads_for_session(
         await db.execute(
             delete(FileUpload).where(FileUpload.session_id == session_id)
         )
-        await db.commit()
+        await db.flush()
 
 
 async def delete_uploads_for_message(
@@ -238,6 +239,7 @@ async def delete_uploads_for_message(
     """Delete all file uploads (MinIO objects + DB rows) linked to a message.
 
     Used as cascade cleanup before deleting a message.
+    Does NOT commit — the caller is responsible for committing.
     """
     result = await db.execute(
         select(FileUpload).where(FileUpload.message_id == message_id)
@@ -254,7 +256,7 @@ async def delete_uploads_for_message(
         await db.execute(
             delete(FileUpload).where(FileUpload.message_id == message_id)
         )
-        await db.commit()
+        await db.flush()
 
 
 async def list_uploads_for_message(

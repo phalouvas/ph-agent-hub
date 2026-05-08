@@ -57,7 +57,12 @@ async def delete_object(bucket: str, key: str) -> None:
 async def generate_presigned_url(
     bucket: str, key: str, expires_in: int = 900
 ) -> str:
-    """Generate a presigned URL for downloading an object (default 15 min TTL)."""
+    """Generate a presigned URL for downloading an object (default 15 min TTL).
+
+    If ``MINIO_PUBLIC_ENDPOINT`` is set, the internal MinIO hostname in the
+    presigned URL is replaced with the public endpoint so browsers can
+    resolve it.
+    """
     client = get_client()
 
     def _generate():
@@ -67,7 +72,15 @@ async def generate_presigned_url(
             ExpiresIn=expires_in,
         )
 
-    return await asyncio.to_thread(_generate)
+    url = await asyncio.to_thread(_generate)
+
+    # Rewrite internal MinIO hostname to public endpoint
+    public = settings.MINIO_PUBLIC_ENDPOINT
+    internal = settings.MINIO_ENDPOINT
+    if public and internal:
+        url = url.replace(internal, public)
+
+    return url
 
 
 async def ensure_bucket_exists(bucket: str) -> None:

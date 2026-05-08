@@ -339,6 +339,18 @@ export function ChatWindow({
         height: "100%",
         background: "#fff",
       }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDrop={async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const files = Array.from(e.dataTransfer.files);
+        for (const file of files) {
+          await handleFileUpload(file);
+        }
+      }}
     >
       {/* Top bar */}
       <div
@@ -468,18 +480,6 @@ export function ChatWindow({
         style={{
           padding: "12px 16px",
           borderTop: "1px solid #f0f0f0",
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onDrop={async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const files = Array.from(e.dataTransfer.files);
-          for (const file of files) {
-            await handleFileUpload(file);
-          }
         }}
       >
         {/* Pending file chips */}

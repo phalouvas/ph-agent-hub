@@ -298,8 +298,13 @@ async def _inject_file_content(
             total_chars += len(header) + len(text) + 2  # +2 for newlines
             valid_ids.append(upload.id)
         else:
-            # No extracted text (e.g., unsupported binary) — skip
-            pass
+            # Document with no extracted text (e.g., unsupported PDF) —
+            # still link it to the message so it shows in the bubble
+            parts.append(
+                f"--- Attached File: {upload.original_filename} ---\n"
+                "[No text could be extracted from this file]"
+            )
+            valid_ids.append(upload.id)
 
     if not parts:
         return user_message, []

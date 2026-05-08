@@ -182,7 +182,9 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 7. Delete the session itself
+    # 7. Delete the session itself and commit all changes
+    await db.delete(session)
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------

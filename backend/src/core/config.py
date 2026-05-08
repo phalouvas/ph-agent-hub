@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     MINIO_ACCESS_KEY: str
     MINIO_SECRET_KEY: str
     MINIO_BUCKET_PREFIX: str
+    MINIO_PUBLIC_ENDPOINT: str = ""
 
     # --- File Upload Limits ---
     UPLOAD_MAX_SIZE_BYTES: int = 20_971_520  # 20 MiB

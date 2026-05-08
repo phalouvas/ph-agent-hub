@@ -31,6 +31,9 @@ pydantic-settings
 # File uploads
 python-multipart
 markitdown
+pdfplumber
+pdfminer-six
+pypdfium2
 
 # AI Agent Framework
 agent-framework
