@@ -27,6 +27,7 @@ import {
   DeleteOutlined,
   UsergroupAddOutlined,
   ApiOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -38,11 +39,16 @@ import {
   listGroupModels,
   assignModelToGroup,
   removeModelFromGroup,
+  listGroupTools,
+  assignToolToGroup,
+  removeToolFromGroup,
   listUsers,
   listModels,
+  listTools,
   GroupData,
   GroupMemberData,
   GroupModelData,
+  GroupToolData,
 } from "../../services/admin";
 import { GroupForm } from "./GroupForm";
 
@@ -71,6 +77,11 @@ export function GroupList() {
   const { data: models } = useQuery({
     queryKey: ["admin-models"],
     queryFn: listModels,
+  });
+
+  const { data: tools } = useQuery({
+    queryKey: ["admin-tools"],
+    queryFn: listTools,
   });
 
   const deleteMutation = useMutation({
@@ -125,6 +136,14 @@ export function GroupList() {
       ),
     },
     {
+      title: "# Tools",
+      key: "tool_count",
+      width: 120,
+      render: (_: unknown, record: GroupData) => (
+        <ToolCount groupId={record.id} />
+      ),
+    },
+    {
       title: "Actions",
       key: "actions",
       width: 160,
@@ -145,7 +164,7 @@ export function GroupList() {
   ];
 
   const expandedRowRender = (record: GroupData) => (
-    <ExpandablePanels groupId={record.id} users={users || []} models={models || []} />
+    <ExpandablePanels groupId={record.id} users={users || []} models={models || []} tools={tools || []} />
   );
 
   return (
@@ -204,12 +223,16 @@ export function GroupList() {
                 <Tag>
                   <ModelCount groupId={group.id} /> models
                 </Tag>
+                <Tag>
+                  <ToolCount groupId={group.id} /> tools
+                </Tag>
               </Space>
               {expandedKey === group.id && (
                 <ExpandablePanels
                   groupId={group.id}
                   users={users || []}
                   models={models || []}
+                  tools={tools || []}
                 />
               )}
             </Card>
@@ -262,6 +285,14 @@ function ModelCount({ groupId }: { groupId: string }) {
   return <>{models?.length ?? 0}</>;
 }
 
+function ToolCount({ groupId }: { groupId: string }) {
+  const { data: tools } = useQuery({
+    queryKey: ["admin-group-tools", groupId],
+    queryFn: () => listGroupTools(groupId),
+  });
+  return <>{tools?.length ?? 0}</>;
+}
+
 // ---------------------------------------------------------------------------
 // Expandable panels: members + models
 // ---------------------------------------------------------------------------
@@ -270,10 +301,12 @@ function ExpandablePanels({
   groupId,
   users,
   models,
+  tools,
 }: {
   groupId: string;
   users: { id: string; email: string; display_name: string }[];
   models: { id: string; name: string; provider: string }[];
+  tools: { id: string; name: string; type: string; enabled: boolean }[];
 }) {
   const queryClient = useQueryClient();
 
@@ -287,8 +320,14 @@ function ExpandablePanels({
     queryFn: () => listGroupModels(groupId),
   });
 
+  const { data: groupTools, isLoading: toolsLoading } = useQuery({
+    queryKey: ["admin-group-tools", groupId],
+    queryFn: () => listGroupTools(groupId),
+  });
+
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
 
   const addMemberMutation = useMutation({
     mutationFn: (userId: string) => addGroupMember(groupId, userId),
@@ -324,15 +363,34 @@ function ExpandablePanels({
     },
   });
 
+  const assignToolMutation = useMutation({
+    mutationFn: (toolId: string) => assignToolToGroup(groupId, toolId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-group-tools", groupId] });
+      setSelectedToolId(null);
+      message.success("Tool assigned");
+    },
+  });
+
+  const removeToolMutation = useMutation({
+    mutationFn: (toolId: string) => removeToolFromGroup(groupId, toolId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-group-tools", groupId] });
+      message.success("Tool removed");
+    },
+  });
+
   const memberIds = new Set((members || []).map((m) => m.id));
   const modelIds = new Set((groupModels || []).map((m) => m.id));
+  const toolIds = new Set((groupTools || []).map((t) => t.id));
 
   const availableUsers = users.filter((u) => !memberIds.has(u.id));
   const availableModels = models.filter((m) => !modelIds.has(m.id));
+  const availableTools = tools.filter((t) => !toolIds.has(t.id));
 
   return (
     <Row gutter={16} style={{ marginTop: 8 }}>
-      <Col xs={24} md={12}>
+      <Col xs={24} md={8}>
         <Card
           size="small"
           title={
@@ -400,7 +458,7 @@ function ExpandablePanels({
         </Card>
       </Col>
 
-      <Col xs={24} md={12}>
+      <Col xs={24} md={8}>
         <Card
           size="small"
           title={
@@ -464,6 +522,82 @@ function ExpandablePanels({
                       description={
                         <Space>
                           <Tag>{item.provider}</Tag>
+                          {!item.enabled && <Tag color="red">Disabled</Tag>}
+                        </Space>
+                      }
+                    />
+                  </List.Item>
+                )}
+              />
+            )}
+          </Space>
+        </Card>
+      </Col>
+
+      <Col xs={24} md={8}>
+        <Card
+          size="small"
+          title={
+            <Space>
+              <ToolOutlined />
+              <span>Tools</span>
+            </Space>
+          }
+        >
+          <Space direction="vertical" style={{ width: "100%" }}>
+            <Space.Compact style={{ width: "100%" }}>
+              <Select
+                placeholder="Assign tool..."
+                value={selectedToolId}
+                onChange={setSelectedToolId}
+                style={{ flex: 1 }}
+                showSearch
+                optionFilterProp="label"
+                options={availableTools.map((t) => ({
+                  label: `${t.name} (${t.type})`,
+                  value: t.id,
+                }))}
+              />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!selectedToolId}
+                loading={assignToolMutation.isPending}
+                onClick={() =>
+                  selectedToolId && assignToolMutation.mutate(selectedToolId)
+                }
+              />
+            </Space.Compact>
+
+            {toolsLoading ? (
+              <Text type="secondary">Loading...</Text>
+            ) : (groupTools?.length ?? 0) === 0 ? (
+              <Empty
+                description="No tools assigned"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              />
+            ) : (
+              <List
+                size="small"
+                dataSource={groupTools}
+                renderItem={(item: GroupToolData) => (
+                  <List.Item
+                    actions={[
+                      <Button
+                        key="remove"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        loading={removeToolMutation.isPending}
+                        onClick={() => removeToolMutation.mutate(item.id)}
+                      />,
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={item.name}
+                      description={
+                        <Space>
+                          <Tag>{item.type}</Tag>
                           {!item.enabled && <Tag color="red">Disabled</Tag>}
                         </Space>
                       }

@@ -54,13 +54,6 @@ from ..services.tool_service import (
     list_tools as _svc_list_tools,
     update_tool as _svc_update_tool,
 )
-from ..services.erpnext_service import (
-    create_erpnext_instance as _svc_create_erpnext_instance,
-    delete_erpnext_instance as _svc_delete_erpnext_instance,
-    get_erpnext_instance_by_id,
-    list_erpnext_instances as _svc_list_erpnext_instances,
-    update_erpnext_instance as _svc_update_erpnext_instance,
-)
 from ..services.template_service import (
     create_template as _svc_create_template,
     delete_template as _svc_delete_template,
@@ -260,31 +253,6 @@ class ToolResponse(BaseModel):
     config: dict | None
     enabled: bool
     is_public: bool
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class ERPNextCreate(BaseModel):
-    base_url: str
-    api_key: str
-    api_secret: str
-    version: str
-
-
-class ERPNextUpdate(BaseModel):
-    base_url: str | None = None
-    api_key: str | None = None
-    api_secret: str | None = None
-    version: str | None = None
-
-
-class ERPNextResponse(BaseModel):
-    id: str
-    tenant_id: str
-    base_url: str
-    version: str
     created_at: datetime
     updated_at: datetime
 
@@ -828,124 +796,6 @@ async def delete_tool(
         action="tool.deleted",
         target_type="tool",
         target_id=tool_id,
-        tenant_id=current_user.tenant_id,
-        ip_address=_get_client_ip(request),
-    )
-
-
-# =============================================================================
-# ERPNext Instance Endpoints (admin or manager)
-# =============================================================================
-
-
-@router.get("/tools/erpnext", response_model=list[ERPNextResponse])
-async def list_erpnext_instances(
-    tenant_id: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(require_admin_or_manager),
-):
-    """List ERPNext instances. Admin sees all (optionally filtered by tenant),
-    manager sees own tenant only."""
-    if current_user.role == "manager":
-        instances = await _svc_list_erpnext_instances(
-            db, tenant_id=current_user.tenant_id
-        )
-    else:
-        instances = await _svc_list_erpnext_instances(db, tenant_id=tenant_id)
-    return [ERPNextResponse.model_validate(i) for i in instances]
-
-
-@router.post("/tools/erpnext", response_model=ERPNextResponse, status_code=201)
-async def create_erpnext_instance(
-    body: ERPNextCreate,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(require_admin_or_manager),
-):
-    """Create an ERPNext instance. Manager always scoped to own tenant."""
-    instance = await _svc_create_erpnext_instance(
-        db,
-        tenant_id=current_user.tenant_id,
-        base_url=body.base_url,
-        api_key=body.api_key,
-        api_secret=body.api_secret,
-        version=body.version,
-    )
-    await write_audit_log(
-        db,
-        actor=current_user,
-        action="erpnext.created",
-        target_type="erpnext_instance",
-        target_id=instance.id,
-        tenant_id=current_user.tenant_id,
-        ip_address=_get_client_ip(request),
-    )
-    return ERPNextResponse.model_validate(instance)
-
-
-@router.put("/tools/erpnext/{instance_id}", response_model=ERPNextResponse)
-async def update_erpnext_instance(
-    instance_id: str,
-    body: ERPNextUpdate,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(require_admin_or_manager),
-):
-    """Update an ERPNext instance. Manager scoped to own tenant."""
-    target = await get_erpnext_instance_by_id(db, instance_id)
-
-    if current_user.role == "manager":
-        if target.tenant_id != current_user.tenant_id:
-            raise ForbiddenError(
-                "Managers can only modify ERPNext instances in their own tenant"
-            )
-
-    update_kwargs: dict = {}
-    if body.base_url is not None:
-        update_kwargs["base_url"] = body.base_url
-    if body.api_key is not None:
-        update_kwargs["api_key"] = body.api_key
-    if body.api_secret is not None:
-        update_kwargs["api_secret"] = body.api_secret
-    if body.version is not None:
-        update_kwargs["version"] = body.version
-
-    instance = await _svc_update_erpnext_instance(db, instance_id, **update_kwargs)
-    await write_audit_log(
-        db,
-        actor=current_user,
-        action="erpnext.updated",
-        target_type="erpnext_instance",
-        target_id=instance_id,
-        tenant_id=current_user.tenant_id,
-        ip_address=_get_client_ip(request),
-    )
-    return ERPNextResponse.model_validate(instance)
-
-
-@router.delete("/tools/erpnext/{instance_id}", status_code=204)
-async def delete_erpnext_instance(
-    instance_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(require_admin_or_manager),
-):
-    """Delete an ERPNext instance. Manager scoped to own tenant."""
-    target = await get_erpnext_instance_by_id(db, instance_id)
-
-    if current_user.role == "manager":
-        if target.tenant_id != current_user.tenant_id:
-            raise ForbiddenError(
-                "Managers can only delete ERPNext instances in their own tenant"
-            )
-
-    await _svc_delete_erpnext_instance(db, instance_id)
-    await write_audit_log(
-        db,
-        actor=current_user,
-        action="erpnext.deleted",
-        target_type="erpnext_instance",
-        target_id=instance_id,
         tenant_id=current_user.tenant_id,
         ip_address=_get_client_ip(request),
     )

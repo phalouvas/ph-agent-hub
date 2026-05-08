@@ -34,7 +34,6 @@ from ..core.redis import (
     get_temp_messages,
     get_temp_session,
 )
-from ..db.orm.erpnext_instances import ERPNextInstance
 from ..db.orm.messages import Message
 from ..db.orm.models import Model
 from ..db.orm.prompts import Prompt
@@ -913,43 +912,25 @@ async def _build_erpnext_callables(
 ) -> list:
     """Build ERPNext tool callables for a given Tool record.
 
-    Looks up the ERPNextInstance via ``tool.config.erpnext_instance_id``.
-    Falls back to the first enabled instance for the tenant.
+    Reads credentials directly from ``tool.config`` JSON.
     """
     from ..tools.erpnext import build_erpnext_tools
 
     config = tool.config or {}
-    instance_id = config.get("erpnext_instance_id")
+    base_url = config.get("base_url")
+    api_key = config.get("api_key")
+    api_secret = config.get("api_secret")
 
-    instance: ERPNextInstance | None = None
-
-    if instance_id:
-        result = await db.execute(
-            select(ERPNextInstance).where(
-                ERPNextInstance.id == instance_id,
-                ERPNextInstance.tenant_id == tenant_id,
-            )
+    if not all([base_url, api_key, api_secret]):
+        raise NotFoundError(
+            f"ERPNext tool '{tool.name}' is missing required config fields. "
+            "Set base_url, api_key, and api_secret in the tool config."
         )
-        instance = result.scalar_one_or_none()
-
-    if instance is None:
-        # Fall back to first enabled instance for the tenant
-        result = await db.execute(
-            select(ERPNextInstance).where(
-                ERPNextInstance.tenant_id == tenant_id,
-            )
-        )
-        instance = result.scalars().first()
-        if instance is None:
-            raise NotFoundError(
-                f"No ERPNext instance found for tenant '{tenant_id}'. "
-                "Create one via POST /admin/erpnext-instances."
-            )
 
     return build_erpnext_tools(
-        base_url=instance.base_url,
-        api_key=instance.api_key,
-        api_secret=instance.api_secret,
+        base_url=base_url,
+        api_key=api_key,
+        api_secret=api_secret,
     )
 
 
