@@ -6,7 +6,7 @@
 // renders MessageBubble list.
 // =============================================================================
 
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { Button, Input, Space, Spin, Empty, Alert, Switch } from "antd";
 import {
   SendOutlined,
@@ -20,6 +20,7 @@ import {
   deleteMessage,
   regenerateMessage,
 } from "../services/chat";
+import api from "../../../services/api";
 import {
   ModelSelector,
   TemplateSelector,
@@ -69,6 +70,22 @@ export function ChatWindow({
     queryFn: () => listMessages(sessionId),
     refetchInterval: false,
   });
+
+  // Fetch models to determine if selected model supports thinking
+  interface ModelInfo {
+    id: string;
+    thinking_enabled: boolean;
+    provider: string;
+  }
+  const { data: modelList } = useQuery({
+    queryKey: ["models"],
+    queryFn: () => api<ModelInfo[]>("/models"),
+  });
+  const selectedModel = useMemo(
+    () => (modelList || []).find((m) => m.id === selectedModelId),
+    [modelList, selectedModelId],
+  );
+  const modelSupportsThinking = selectedModel?.thinking_enabled === true;
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -243,18 +260,19 @@ export function ChatWindow({
         >
           Tools
         </Button>
-        <Switch
-          size="small"
-          checked={thinkingEnabled ?? true}
-          checkedChildren="🧠"
-          unCheckedChildren="🧠"
-          title="Thinking Mode"
-          onChange={(v) => {
-            setThinkingEnabled(v);
-            onSessionUpdate?.({ thinking_enabled: v });
-          }}
-          style={{ opacity: thinkingEnabled != null ? 0.6 : 1 }}
-        />
+        {modelSupportsThinking && (
+          <Switch
+            size="small"
+            checked={thinkingEnabled ?? true}
+            checkedChildren="🧠"
+            unCheckedChildren="🧠"
+            title="Thinking Mode"
+            onChange={(v) => {
+              setThinkingEnabled(v);
+              onSessionUpdate?.({ thinking_enabled: v });
+            }}
+          />
+        )}
       </div>
 
       {/* Messages area */}

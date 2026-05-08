@@ -35,10 +35,16 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
         messages: Sequence[Message],
         options: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Inject ``extra_body`` with thinking mode when enabled."""
+        """Inject ``extra_body`` with explicit thinking mode (always sent).
+
+        DeepSeek's default thinking behavior varies by model (some have it
+        on by default).  We always send an explicit enabled/disabled to
+        guarantee consistent behavior regardless of model defaults.
+        """
         result = super()._prepare_options(messages, options)
-        if self._thinking_enabled:
-            result["extra_body"] = {"thinking": {"type": "enabled"}}
+        result["extra_body"] = {
+            "thinking": {"type": "enabled" if self._thinking_enabled else "disabled"}
+        }
         return result
 
     def _parse_response_from_openai(

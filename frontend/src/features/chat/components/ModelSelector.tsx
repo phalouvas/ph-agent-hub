@@ -21,6 +21,7 @@ interface ModelData {
   provider: string;
   base_url: string | null;
   enabled: boolean;
+  thinking_enabled: boolean;
   max_tokens: number;
   temperature: number;
   routing_priority: number;
