@@ -36,6 +36,8 @@ class Message(Base):
         CHAR(36), ForeignKey("models.id"), nullable=True
     )
     tool_calls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     summarized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
