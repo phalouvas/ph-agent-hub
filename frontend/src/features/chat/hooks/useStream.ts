@@ -176,7 +176,7 @@ export function useStream() {
                     handlers.onMessageComplete?.(parsed);
                     break;
                   case "error":
-                    handlers.onError?.(parsed.error, parsed.message_id);
+                    handlers.onError?.(parsed.message || parsed.error || "Unknown error", parsed.message_id);
                     break;
                   case "heartbeat":
                     // Ignore heartbeats
@@ -198,10 +198,11 @@ export function useStream() {
                 setStreamingSessionId(null);
                 return; // stops the retry
               }
-              handlers.onError?.(String(err), "");
+              // Don't throw — let onclose fire to clean up state and refresh messages
               setStreaming(false);
               setStreamingSessionId(null);
-              throw err; // rethrow to stop
+              handlers.onClose?.();
+              throw err; // rethrow to stop retries but onclose already ran
             },
           },
         );

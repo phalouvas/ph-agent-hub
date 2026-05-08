@@ -511,6 +511,93 @@ async def _run_workflow(
 # ---------------------------------------------------------------------------
 
 
+async def _persist_user_message(
+    db: AsyncSession,
+    session_id: str,
+    is_temporary: bool,
+    user_message: str,
+    parent_message_id: str | None = None,
+    user_branch_index: int = 0,
+) -> str:
+    """Persist just the user message, returning its ID.
+
+    Used by the streaming path so the user message is visible even if
+    the agent run fails."""
+    content = [{"type": "text", "text": user_message}]
+    user_msg_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+
+    if is_temporary:
+        await append_temp_message(
+            session_id,
+            {
+                "id": user_msg_id,
+                "sender": "user",
+                "content": content,
+                "parent_message_id": parent_message_id,
+                "branch_index": user_branch_index,
+                "created_at": now.isoformat(),
+            },
+        )
+    else:
+        msg = Message(
+            id=user_msg_id,
+            session_id=session_id,
+            sender="user",
+            content=content,
+            parent_message_id=parent_message_id,
+            branch_index=user_branch_index,
+            created_at=now,
+        )
+        db.add(msg)
+        await db.commit()
+
+    return user_msg_id
+
+
+async def _persist_assistant_message(
+    db: AsyncSession,
+    session_id: str,
+    is_temporary: bool,
+    assistant_response: str,
+    model_id: str,
+    parent_message_id: str,
+) -> str:
+    """Persist just the assistant message, returning its ID."""
+    content = [{"type": "text", "text": assistant_response}]
+    assistant_msg_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+
+    if is_temporary:
+        await append_temp_message(
+            session_id,
+            {
+                "id": assistant_msg_id,
+                "sender": "assistant",
+                "content": content,
+                "model_id": model_id,
+                "parent_message_id": parent_message_id,
+                "branch_index": 0,
+                "created_at": now.isoformat(),
+            },
+        )
+    else:
+        msg = Message(
+            id=assistant_msg_id,
+            session_id=session_id,
+            sender="assistant",
+            content=content,
+            model_id=model_id,
+            parent_message_id=parent_message_id,
+            branch_index=0,
+            created_at=now,
+        )
+        db.add(msg)
+        await db.commit()
+
+    return assistant_msg_id
+
+
 async def _persist_messages(
     db: AsyncSession,
     session_id: str,
@@ -705,6 +792,16 @@ async def run_agent_stream(
     step_index: int = 0
     total_tokens: int = 0
     _stream_token_info: dict = {}  # mutated by _run_agent_stream to propagate token counts
+    cfg = None
+
+    # Persist the user message immediately so it's always visible,
+    # even if the agent run fails.
+    user_msg_id = await _persist_user_message(
+        db=db,
+        session_id=session_id,
+        is_temporary=is_temporary,
+        user_message=user_message,
+    )
 
     try:
         # ---- 1-6. Resolve session config --------------------------------
@@ -782,14 +879,14 @@ async def run_agent_stream(
     # ---- 9. Extract token counts from stream final response -------------
     tokens_in, tokens_out = _stream_token_info.get("in", 0), _stream_token_info.get("out", 0)
 
-    # ---- 10. Persist messages --------------------------------------------
-    await _persist_messages(
+    # ---- 10. Persist assistant message ------------------------------------
+    await _persist_assistant_message(
         db=db,
         session_id=session_id,
         is_temporary=is_temporary,
-        user_message=user_message,
         assistant_response=accumulated_text,
         model_id=cfg.model.id,
+        parent_message_id=user_msg_id,
     )
 
     # ---- 11. Write usage log ---------------------------------------------

@@ -7,7 +7,7 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Button, Input, Space, Spin, Empty } from "antd";
+import { Button, Input, Space, Spin, Empty, Alert } from "antd";
 import {
   SendOutlined,
   StopOutlined,
@@ -54,6 +54,7 @@ export function ChatWindow({
   const [inputValue, setInputValue] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -79,6 +80,7 @@ export function ChatWindow({
     const content = inputValue.trim();
     setInputValue("");
     setStreamingContent("");
+    setStreamError(null);
     setToolEvents([]);
 
     startStream(sessionId, content, undefined, {
@@ -105,7 +107,7 @@ export function ChatWindow({
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
       },
       onError(err) {
-        // Error handling — keep partial content
+        setStreamError(err);
         console.error("Stream error:", err);
       },
       onClose() {
@@ -237,6 +239,16 @@ export function ChatWindow({
           padding: "16px",
         }}
       >
+        {streamError && (
+          <Alert
+            message="Error"
+            description={streamError}
+            type="error"
+            closable
+            onClose={() => setStreamError(null)}
+            style={{ marginBottom: 12 }}
+          />
+        )}
         {loadingMessages ? (
           <div style={{ textAlign: "center", padding: 48 }}>
             <Spin />
