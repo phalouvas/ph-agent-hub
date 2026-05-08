@@ -25,7 +25,7 @@ export interface TokenEvent {
   data: {
     session_id: string;
     message_id: string;
-    token: string;
+    delta: string;
     step_name?: string;
   };
 }
@@ -37,7 +37,7 @@ export interface ToolStartEvent {
     message_id: string;
     tool_name: string;
     tool_call_id: string;
-    input: Record<string, unknown>;
+    arguments: Record<string, unknown>;
   };
 }
 
@@ -47,8 +47,9 @@ export interface ToolResultEvent {
     session_id: string;
     message_id: string;
     tool_call_id: string;
-    output: unknown;
-    is_error: boolean;
+    tool_name: string;
+    success: boolean;
+    result_summary: unknown;
   };
 }
 
@@ -160,7 +161,7 @@ export function useStream() {
                 const parsed = JSON.parse(ev.data);
                 switch (ev.event) {
                   case "token":
-                    handlers.onToken?.(parsed.token, parsed.message_id);
+                    handlers.onToken?.(parsed.delta, parsed.message_id);
                     break;
                   case "tool_start":
                     handlers.onToolStart?.(parsed);

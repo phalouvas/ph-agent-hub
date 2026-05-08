@@ -161,8 +161,12 @@ export function ChatWindow({
           ? [{ type: "text", text: streamingContent }]
           : []),
         ...toolEvents.map((ev) => ({
-          ...ev,
-          type: ev.type === "function_call" ? "function_call" : "function_result",
+          type: ev.type,
+          name: (ev.data as Record<string, unknown>).tool_name,
+          arguments: (ev.data as Record<string, unknown>).arguments,
+          output: (ev.data as Record<string, unknown>).result_summary,
+          is_error: !(ev.data as Record<string, unknown>).success,
+          call_id: (ev.data as Record<string, unknown>).tool_call_id,
         })),
       ],
       model_id: selectedModelId || null,

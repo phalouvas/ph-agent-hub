@@ -559,6 +559,7 @@ async def _persist_messages(
         return user_msg_id, assistant_msg_id
     else:
         # Store in MariaDB
+        now = datetime.now(timezone.utc)
         user_msg_id = str(uuid.uuid4())
         user_msg = Message(
             id=user_msg_id,
@@ -567,6 +568,7 @@ async def _persist_messages(
             content=user_msg_content,
             parent_message_id=parent_message_id,
             branch_index=user_branch_index,
+            created_at=now,
         )
         db.add(user_msg)
         await db.flush()
@@ -580,6 +582,7 @@ async def _persist_messages(
             model_id=model_id,
             parent_message_id=user_msg_id,
             branch_index=0,
+            created_at=datetime.now(timezone.utc),
         )
         db.add(assistant_msg)
         await db.commit()
