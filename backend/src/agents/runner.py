@@ -917,9 +917,13 @@ async def _build_erpnext_callables(
     """Build ERPNext tool callables for a given Tool record.
 
     Reads credentials directly from ``tool.config`` JSON.
-    If ``file_ids`` are provided, queries FileUpload records and passes
-    them to the ERPNext factory so the ``upload_file`` tool can access
-    file binaries from MinIO.
+    If ``file_ids`` are provided, queries those FileUpload records and
+    passes them to the ERPNext factory so the ``upload_file`` tool can
+    access file binaries from MinIO.
+
+    Only includes ``upload_file`` when the current message has file
+    attachments — this prevents the agent from misusing ERPNext tools
+    for non-upload tasks like document summarization.
     """
     from ..tools.erpnext import build_erpnext_tools
 
@@ -934,13 +938,12 @@ async def _build_erpnext_callables(
             "Set base_url, api_key, and api_secret in the tool config."
         )
 
-    # Resolve file infos if file_ids were provided
+    # Resolve file infos from the current message's file attachments
     file_infos: list[dict] | None = None
     if file_ids:
         from ..db.orm.file_uploads import FileUpload
-        from sqlalchemy import select as sa_select
         result = await db.execute(
-            sa_select(FileUpload).where(
+            select(FileUpload).where(
                 FileUpload.id.in_(file_ids),
                 FileUpload.tenant_id == tenant_id,
             )
@@ -1117,9 +1120,11 @@ async def _persist_assistant_message(
     for evt in (tool_events or []):
         content.append(evt)
 
-    # Always append the final text response
-    if assistant_response.strip():
-        content.append({"type": "text", "text": assistant_response})
+    # Always append the final text response, stripped of any leaked
+    # <function_calls> XML (DeepSeek thinking-mode artifact)
+    clean_text = _strip_raw_tool_xml(assistant_response)
+    if clean_text.strip():
+        content.append({"type": "text", "text": clean_text})
     assistant_msg_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
 
@@ -1169,7 +1174,8 @@ async def _persist_messages(
         A tuple of (user_message_id, assistant_message_id).
     """
     user_msg_content = [{"type": "text", "text": user_message}]
-    assistant_msg_content = [{"type": "text", "text": assistant_response}]
+    clean_response = _strip_raw_tool_xml(assistant_response)
+    assistant_msg_content = [{"type": "text", "text": clean_response}]
 
     if is_temporary:
         # Store in Redis
@@ -1650,6 +1656,22 @@ def _maybe_accumulate_text(event_dict: dict, current: str) -> str:
         return current + delta
     except (json.JSONDecodeError, KeyError):
         return current
+
+
+def _strip_raw_tool_xml(text: str) -> str:
+    """Strip raw ``<function_calls>...</function_calls>`` XML from text.
+
+    DeepSeek thinking mode occasionally leaks tool-call XML into the
+    regular text output when the consecutive-error limit is hit.  This
+    strips it so it doesn't render as visible garbage in the UI.
+    """
+    import re
+    return re.sub(
+        r"<function_calls>.*?</function_calls>",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
 
 
 def _maybe_accumulate_tool_events(
