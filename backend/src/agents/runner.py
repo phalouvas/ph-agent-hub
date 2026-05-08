@@ -876,8 +876,20 @@ async def _resolve_tool_callables(
     # Build callables for each tool
     callables: list = []
     for tool in tools:
-        tool_callables = await _build_tool_callables(db, tool, tenant_id, file_ids=file_ids)
+        tool_callables = await _build_tool_callables(db, tool, tenant_id, session_id=session_id)
         callables.extend(tool_callables)
+
+    # ---- Built-in tool: list_uploaded_files (always available) ----------
+    # This discovery tool lets the agent see what files are attached to
+    # the session without polluting the user message with injected text.
+    try:
+        from ..tools.file_list import build_file_list_tool
+        file_list_tools = build_file_list_tool(db, session_id, tenant_id)
+        callables.extend(file_list_tools)
+    except Exception:
+        logger.warning(
+            "Failed to build file_list tool for session %s", session_id, exc_info=True
+        )
 
     return callables
 
@@ -886,11 +898,11 @@ async def _build_tool_callables(
     db: AsyncSession,
     tool: Tool,
     tenant_id: str,
-    file_ids: list[str] | None = None,
+    session_id: str = "",
 ) -> list:
     """Dispatch on tool.type to the appropriate factory."""
     if tool.type == "erpnext":
-        return await _build_erpnext_callables(db, tool, tenant_id, file_ids=file_ids)
+        return await _build_erpnext_callables(db, tool, tenant_id, session_id=session_id)
     elif tool.type == "membrane":
         from ..tools.membrane import build_membrane_tools
         return build_membrane_tools(tool.config or {})
@@ -912,18 +924,15 @@ async def _build_erpnext_callables(
     db: AsyncSession,
     tool: Tool,
     tenant_id: str,
-    file_ids: list[str] | None = None,
+    session_id: str = "",
 ) -> list:
     """Build ERPNext tool callables for a given Tool record.
 
     Reads credentials directly from ``tool.config`` JSON.
-    If ``file_ids`` are provided, queries those FileUpload records and
-    passes them to the ERPNext factory so the ``upload_file`` tool can
-    access file binaries from MinIO.
-
-    Only includes ``upload_file`` when the current message has file
-    attachments — this prevents the agent from misusing ERPNext tools
-    for non-upload tasks like document summarization.
+    Queries ALL FileUpload records for the session so the
+    ``upload_file`` tool can access files uploaded in any
+    message — the built-in ``list_uploaded_files`` tool
+    acts as the discovery guard against misuse.
     """
     from ..tools.erpnext import build_erpnext_tools
 
@@ -938,13 +947,13 @@ async def _build_erpnext_callables(
             "Set base_url, api_key, and api_secret in the tool config."
         )
 
-    # Resolve file infos from the current message's file attachments
+    # Resolve file infos from ALL session file uploads
     file_infos: list[dict] | None = None
-    if file_ids:
+    if session_id:
         from ..db.orm.file_uploads import FileUpload
         result = await db.execute(
             select(FileUpload).where(
-                FileUpload.id.in_(file_ids),
+                FileUpload.session_id == session_id,
                 FileUpload.tenant_id == tenant_id,
             )
         )

@@ -226,13 +226,12 @@ async def _inject_file_content(
     session_data: dict,
     current_user: UserORM,
 ) -> tuple[str, list[str]]:
-    """Build file content injection string and return (modified_message, valid_file_ids).
+    """Validate file attachments and return (user_message, valid_file_ids).
 
     - Validates DeepSeek + image → 422
-    - Injects a concise metadata block (filename, type, size, 200-char preview)
-      for document uploads — full text is accessible to tools via the
-      file_ids → MinIO pipeline
-    - Returns modified user_message with injected metadata
+    - Returns the user message UNCHANGED (no text injection — file
+      discovery is handled by the built-in ``list_uploaded_files`` tool)
+    - Returns valid_file_ids for persistence / ERPNext upload_file tool
     """
     if not file_ids:
         return user_message, []
@@ -251,7 +250,7 @@ async def _inject_file_content(
     if not uploads:
         return user_message, []
 
-    # Resolve model for provider check and context_length
+    # Resolve model for provider check
     model_id = session_data.get("selected_model_id")
     model_orm = None
     if model_id:
@@ -264,14 +263,11 @@ async def _inject_file_content(
 
     provider = getattr(model_orm, "provider", "") if model_orm else ""
 
-    # Image MIME types
     IMAGE_TYPES = frozenset({
         "image/png", "image/jpeg", "image/gif", "image/webp",
     })
 
-    parts: list[str] = []
     valid_ids: list[str] = []
-
     for upload in uploads:
         is_image = upload.content_type in IMAGE_TYPES
 
@@ -281,40 +277,11 @@ async def _inject_file_content(
                 "Please use an OpenAI or Anthropic model for images."
             )
 
-        if is_image:
-            # Append placeholder for image-capable models
-            parts.append(f"[Image attached: {upload.original_filename}]")
-            valid_ids.append(upload.id)
-        elif upload.extracted_text:
-            # Document: inject a concise metadata block (filename, type,
-            # size, short text preview) instead of dumping the entire
-            # extracted text into the user message.  Full text is
-            # accessible to tools via the file_ids → MinIO pipeline.
-            kb_size = upload.size_bytes / 1024
-            preview = upload.extracted_text[:200]
-            if len(upload.extracted_text) > 200:
-                preview += "..."
-            parts.append(
-                f"[File attached: {upload.original_filename} "
-                f"({upload.content_type}, {kb_size:.1f} KB)]\n"
-                f"Preview: {preview}"
-            )
-            valid_ids.append(upload.id)
-        else:
-            # Document with no extracted text (e.g., unsupported PDF) —
-            # still link it to the message so it shows in the bubble
-            parts.append(
-                f"--- Attached File: {upload.original_filename} ---\n"
-                "[No text could be extracted from this file]"
-            )
-            valid_ids.append(upload.id)
+        valid_ids.append(upload.id)
 
-    if not parts:
-        return user_message, []
-
-    injection = "\n\n".join(parts)
-    modified = f"{user_message}\n\n{injection}"
-    return modified, valid_ids
+    # Return the user message unchanged — file metadata is available
+    # to the agent via the built-in list_uploaded_files tool.
+    return user_message, valid_ids
 
 
 # =============================================================================
