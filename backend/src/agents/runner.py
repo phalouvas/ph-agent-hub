@@ -71,6 +71,7 @@ async def _resolve_session_config(
     session_data: dict,
     tenant_id: str,
     user: User | None = None,
+    file_ids: list[str] | None = None,
 ) -> SessionConfig:
     """Resolve model, system prompt, skill, tools, execution type, and agent name.
 
@@ -88,7 +89,7 @@ async def _resolve_session_config(
 
     # 4. Resolve active tools
     active_tool_callables = await _resolve_tool_callables(
-        db, session_data, tenant_id
+        db, session_data, tenant_id, file_ids=file_ids
     )
 
     # 5. Determine execution type and name
@@ -630,7 +631,7 @@ async def run_agent(
     is_temporary = session_data.get("is_temporary", False)
 
     # ---- 1-6. Resolve session config ------------------------------------
-    cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
+    cfg = await _resolve_session_config(db, session_data, tenant_id, current_user, file_ids=file_ids)
 
     # ---- Build contextualized message (history + auto-summarization) ----
     contextualized_message, _ = await _maybe_summarize_and_build_context(
@@ -838,6 +839,7 @@ async def _resolve_tool_callables(
     db: AsyncSession,
     session_data: dict,
     tenant_id: str,
+    file_ids: list[str] | None = None,
 ) -> list:
     """Resolve active tools into MAF tool callables."""
     session_id = session_data["id"]
@@ -874,7 +876,7 @@ async def _resolve_tool_callables(
     # Build callables for each tool
     callables: list = []
     for tool in tools:
-        tool_callables = await _build_tool_callables(db, tool, tenant_id)
+        tool_callables = await _build_tool_callables(db, tool, tenant_id, file_ids=file_ids)
         callables.extend(tool_callables)
 
     return callables
@@ -884,10 +886,11 @@ async def _build_tool_callables(
     db: AsyncSession,
     tool: Tool,
     tenant_id: str,
+    file_ids: list[str] | None = None,
 ) -> list:
     """Dispatch on tool.type to the appropriate factory."""
     if tool.type == "erpnext":
-        return await _build_erpnext_callables(db, tool, tenant_id)
+        return await _build_erpnext_callables(db, tool, tenant_id, file_ids=file_ids)
     elif tool.type == "membrane":
         from ..tools.membrane import build_membrane_tools
         return build_membrane_tools(tool.config or {})
@@ -909,10 +912,14 @@ async def _build_erpnext_callables(
     db: AsyncSession,
     tool: Tool,
     tenant_id: str,
+    file_ids: list[str] | None = None,
 ) -> list:
     """Build ERPNext tool callables for a given Tool record.
 
     Reads credentials directly from ``tool.config`` JSON.
+    If ``file_ids`` are provided, queries FileUpload records and passes
+    them to the ERPNext factory so the ``upload_file`` tool can access
+    file binaries from MinIO.
     """
     from ..tools.erpnext import build_erpnext_tools
 
@@ -927,10 +934,35 @@ async def _build_erpnext_callables(
             "Set base_url, api_key, and api_secret in the tool config."
         )
 
+    # Resolve file infos if file_ids were provided
+    file_infos: list[dict] | None = None
+    if file_ids:
+        from ..db.orm.file_uploads import FileUpload
+        from sqlalchemy import select as sa_select
+        result = await db.execute(
+            sa_select(FileUpload).where(
+                FileUpload.id.in_(file_ids),
+                FileUpload.tenant_id == tenant_id,
+            )
+        )
+        uploads = list(result.scalars().all())
+        if uploads:
+            file_infos = [
+                {
+                    "id": u.id,
+                    "storage_key": u.storage_key,
+                    "bucket": u.bucket,
+                    "original_filename": u.original_filename,
+                    "content_type": u.content_type,
+                }
+                for u in uploads
+            ]
+
     return build_erpnext_tools(
         base_url=base_url,
         api_key=api_key,
         api_secret=api_secret,
+        file_infos=file_infos,
     )
 
 
@@ -1265,7 +1297,7 @@ async def run_agent_stream(
 
     try:
         # ---- 1-6. Resolve session config --------------------------------
-        cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
+        cfg = await _resolve_session_config(db, session_data, tenant_id, current_user, file_ids=file_ids)
 
         # ---- Build contextualized message (history + auto-summarization) --
         contextualized_message, summary_info = await _maybe_summarize_and_build_context(
