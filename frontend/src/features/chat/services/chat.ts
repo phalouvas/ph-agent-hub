@@ -112,7 +112,6 @@ export function updateSession(
   data: {
     title?: string;
     is_pinned?: boolean;
-    is_temporary?: boolean;
     selected_template_id?: string | null;
     selected_prompt_id?: string | null;
     selected_skill_id?: string | null;

@@ -16,7 +16,6 @@ import {
   Tooltip,
   Drawer,
   Modal,
-  Switch,
   Input,
   message,
 } from "antd";
@@ -57,7 +56,6 @@ export function SessionSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<SessionData | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  const [editTemp, setEditTemp] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -89,10 +87,10 @@ export function SessionSidebar() {
     mutationFn: () =>
       updateSession(editingSession!.id, {
         title: editTitle || editingSession!.title,
-        is_temporary: editTemp,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["session", editingSession?.id] });
       setEditingSession(null);
     },
     onError: () => message.error("Failed to update session"),
@@ -222,7 +220,6 @@ export function SessionSidebar() {
                       e.stopPropagation();
                       setEditingSession(item);
                       setEditTitle(item.title);
-                      setEditTemp(item.is_temporary);
                     }}
                   />
                 </Tooltip>,
@@ -355,13 +352,6 @@ export function SessionSidebar() {
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
           />
-          <Space>
-            <Switch
-              checked={editTemp}
-              onChange={setEditTemp}
-            />
-            <Text>Temporary session (not saved to database)</Text>
-          </Space>
         </Space>
       </Modal>
     </div>

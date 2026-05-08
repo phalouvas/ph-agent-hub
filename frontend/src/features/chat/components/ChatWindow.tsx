@@ -105,6 +105,8 @@ export function ChatWindow({
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
       onError(err) {
         setStreamError(err);
@@ -115,6 +117,8 @@ export function ChatWindow({
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
     });
   }, [inputValue, streaming, sessionId, startStream, queryClient]);

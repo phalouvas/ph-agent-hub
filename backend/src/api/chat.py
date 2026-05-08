@@ -68,7 +68,6 @@ class SessionCreate(BaseModel):
 class SessionUpdate(BaseModel):
     title: str | None = None
     is_pinned: bool | None = None
-    is_temporary: bool | None = None
     selected_template_id: str | None = None
     selected_prompt_id: str | None = None
     selected_skill_id: str | None = None
