@@ -134,12 +134,6 @@ export function SessionSidebar() {
 
   const newChatMenuItems: MenuProps["items"] = [
     {
-      key: "permanent",
-      label: "Permanent Chat",
-      icon: <PlusOutlined />,
-      onClick: () => handleNewChat(false),
-    },
-    {
       key: "temporary",
       label: "Temporary Chat",
       icon: <ThunderboltOutlined />,
