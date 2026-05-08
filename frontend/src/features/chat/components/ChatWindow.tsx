@@ -11,6 +11,7 @@ import { Button, Input, Space, Spin, Empty, Alert, Switch } from "antd";
 import {
   SendOutlined,
   StopOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "./MessageBubble";
@@ -63,6 +64,11 @@ export function ChatWindow({
   const queryClient = useQueryClient();
   const [toolsOpen, setToolsOpen] = useState(false);
 
+  // Track whether the user has manually scrolled up (to disable auto-scroll)
+  const userScrolledUpRef = useRef(false);
+  // State for showing the "scroll to bottom" button (refs don't trigger re-renders)
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
   // Optimistic user message — shown immediately on send, replaced by
   // the real persisted message when the response completes or the
   // stream is stopped / errors out.
@@ -95,12 +101,38 @@ export function ChatWindow({
   );
   const modelSupportsThinking = selectedModel?.thinking_enabled === true;
 
-  // Auto-scroll to bottom
+  // Smart auto-scroll: only scroll to bottom when user hasn't scrolled up.
+  // Allows the user to interrupt auto-scroll by scrolling up, and resumes
+  // auto-scroll when they scroll back to the bottom.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    const el = scrollRef.current;
+    if (!el || userScrolledUpRef.current) return;
+    // Use requestAnimationFrame to avoid layout thrashing during rapid token updates
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
   }, [messages, streamingContent, toolEvents]);
+
+  // Scroll event handler: detect when user manually scrolls away from the bottom
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Threshold in pixels — user is "at bottom" if within 80px of the bottom edge
+    const threshold = 80;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const scrolledUp = distanceFromBottom > threshold;
+    userScrolledUpRef.current = scrolledUp;
+    setShowScrollButton(scrolledUp);
+  }, []);
+
+  // Scroll to bottom and re-enable auto-scroll
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    userScrolledUpRef.current = false;
+    setShowScrollButton(false);
+  }, []);
 
   const handleSend = useCallback(async () => {
     if (!inputValue.trim() || streaming) return;
@@ -110,6 +142,10 @@ export function ChatWindow({
     setStreamingReasoningContent("");
     setStreamError(null);
     setToolEvents([]);
+
+    // Re-enable auto-scroll when user sends a new message
+    userScrolledUpRef.current = false;
+    setShowScrollButton(false);
 
     // Optimistic: show the user message immediately
     setPendingUserMessage({
@@ -195,10 +231,10 @@ export function ChatWindow({
     }
   };
 
-  // Build a flat display list: optimistic user message + real messages + streaming bubble
-  const displayMessages: Array<any> = [];
+  // Build a flat display list: real messages + optimistic user message + streaming bubble
+  const displayMessages: Array<any> = [...(messages || [])];
 
-  // 1. Show the user's message immediately (optimistic UI)
+  // Show the user's message immediately at the bottom (optimistic UI)
   if (pendingUserMessage) {
     displayMessages.push({
       id: pendingUserMessage.id,
@@ -214,9 +250,6 @@ export function ChatWindow({
       updated_at: new Date().toISOString(),
     });
   }
-
-  // 2. Real persisted messages from the backend
-  displayMessages.push(...(messages || []));
   if (streamingContent && streamingMessageId) {
     displayMessages.push({
       id: streamingMessageId,
@@ -315,10 +348,12 @@ export function ChatWindow({
       {/* Messages area */}
       <div
         ref={scrollRef}
+        onScroll={handleScroll}
         style={{
           flex: 1,
           overflow: "auto",
           padding: "16px",
+          position: "relative",
         }}
       >
         {streamError && (
@@ -360,6 +395,25 @@ export function ChatWindow({
               disabled={streaming}
             />
           ))
+        )}
+
+        {/* Scroll-to-bottom floating button — appears when user scrolls up */}
+        {showScrollButton && (
+          <Button
+            shape="circle"
+            size="small"
+            icon={<DownOutlined />}
+            onClick={scrollToBottom}
+            style={{
+              position: "sticky",
+              bottom: 16,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 10,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            }}
+            title="Scroll to bottom"
+          />
         )}
       </div>
 
