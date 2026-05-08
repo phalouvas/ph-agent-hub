@@ -17,8 +17,10 @@ import {
   Drawer,
   Modal,
   Input,
+  Dropdown,
   message,
 } from "antd";
+import type { MenuProps } from "antd";
 import {
   PlusOutlined,
   SearchOutlined,
@@ -28,6 +30,8 @@ import {
   PushpinFilled,
   DeleteOutlined,
   EditOutlined,
+  DownOutlined,
+  ThunderboltOutlined,
   MenuOutlined,
 } from "@ant-design/icons";
 import { Logo } from "../../../shared/components/Logo";
@@ -72,9 +76,10 @@ export function SessionSidebar() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: ({ is_temporary }: { is_temporary?: boolean }) =>
       createSession({
         title: "New Chat",
+        is_temporary: is_temporary ?? false,
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -123,9 +128,24 @@ export function SessionSidebar() {
     );
   });
 
-  const handleNewChat = () => {
-    createMutation.mutate();
+  const handleNewChat = (temporary = false) => {
+    createMutation.mutate({ is_temporary: temporary });
   };
+
+  const newChatMenuItems: MenuProps["items"] = [
+    {
+      key: "permanent",
+      label: "Permanent Chat",
+      icon: <PlusOutlined />,
+      onClick: () => handleNewChat(false),
+    },
+    {
+      key: "temporary",
+      label: "Temporary Chat",
+      icon: <ThunderboltOutlined />,
+      onClick: () => handleNewChat(true),
+    },
+  ];
 
   const handleLogout = async () => {
     await logout();
@@ -178,14 +198,25 @@ export function SessionSidebar() {
 
       {/* New Chat Button */}
       <div style={{ padding: "8px 12px" }}>
-        <Button
-          type="dashed"
-          icon={<PlusOutlined />}
-          block
-          onClick={handleNewChat}
-        >
-          New Chat
-        </Button>
+        <div style={{ display: "flex", gap: 0 }}>
+          <Button
+            type="dashed"
+            icon={<PlusOutlined />}
+            loading={createMutation.isPending}
+            style={{ flex: 1 }}
+            onClick={() => handleNewChat(false)}
+          >
+            New Chat
+          </Button>
+          <Dropdown menu={{ items: newChatMenuItems }} trigger={["click"]}>
+            <Button
+              type="dashed"
+              icon={<DownOutlined />}
+              loading={createMutation.isPending}
+              style={{ width: 32 }}
+            />
+          </Dropdown>
+        </div>
       </div>
 
       {/* Session List */}
