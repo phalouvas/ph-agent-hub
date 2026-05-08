@@ -184,6 +184,16 @@ def _extract_message_text(content: list | None) -> str:
     return "\n".join(parts)
 
 
+def _msg_get(msg, attr: str, default=None):
+    """Read an attribute from an ORM object or a key from a dict.
+
+    Handles both Message ORM objects (DB) and message dicts (Redis).
+    """
+    if isinstance(msg, dict):
+        return msg.get(attr, default)
+    return getattr(msg, attr, default)
+
+
 def _format_conversation_history(messages: list) -> str:
     """Format a list of message dicts/ORMs into a readable history string.
 
@@ -196,10 +206,9 @@ def _format_conversation_history(messages: list) -> str:
     lines: list[str] = ["[Previous conversation]"]
 
     for msg in messages:
-        # Handle both ORM objects and dicts (from Redis)
-        sender = getattr(msg, "sender", None) or msg.get("sender", "")
-        content = getattr(msg, "content", None) or msg.get("content")
-        summarized = getattr(msg, "summarized", None) or msg.get("summarized", False)
+        sender = _msg_get(msg, "sender", "")
+        content = _msg_get(msg, "content")
+        summarized = _msg_get(msg, "summarized", False)
 
         if summarized:
             continue  # Skip messages that have been compressed into a summary
@@ -369,10 +378,10 @@ async def _maybe_summarize_and_build_context(
     user_msg_tokens = _estimate_tokens(user_message)
     history_tokens = sum(
         _estimate_tokens(_extract_message_text(
-            getattr(m, "content", None) or m.get("content")
+            _msg_get(m, "content")
         ))
         for m in all_messages
-        if not (getattr(m, "summarized", None) or m.get("summarized", False))
+        if not _msg_get(m, "summarized", False)
     )
     total_estimated = system_prompt_tokens + user_msg_tokens + history_tokens
 
@@ -386,7 +395,7 @@ async def _maybe_summarize_and_build_context(
         # Messages are in chronological order; find the cutoff point.
         non_summarized = [
             m for m in all_messages
-            if not (getattr(m, "summarized", None) or m.get("summarized", False))
+            if not _msg_get(m, "summarized", False)
         ]
 
         # Count user+assistant pairs from the end
@@ -394,7 +403,7 @@ async def _maybe_summarize_and_build_context(
         cutoff_idx = len(non_summarized)
         for i in range(len(non_summarized) - 1, -1, -1):
             msg = non_summarized[i]
-            sender = getattr(msg, "sender", None) or msg.get("sender", "")
+            sender = _msg_get(msg, "sender", "")
             if sender == "user":
                 pair_count += 1
                 if pair_count >= KEEP_RECENT_PAIRS:
@@ -425,7 +434,7 @@ async def _maybe_summarize_and_build_context(
                     for raw_msg in all_raw:
                         raw_id = raw_msg.get("id", "")
                         for to_mark in messages_to_summarize:
-                            mark_id = getattr(to_mark, "id", None) or to_mark.get("id", "")
+                            mark_id = _msg_get(to_mark, "id", "")
                             if raw_id == mark_id:
                                 raw_msg["summarized"] = True
                     # Re-store updated messages with TTL refresh
@@ -458,7 +467,7 @@ async def _maybe_summarize_and_build_context(
                 # Calculate tokens saved
                 old_tokens = sum(
                     _estimate_tokens(_extract_message_text(
-                        getattr(m, "content", None) or m.get("content")
+                        _msg_get(m, "content")
                     ))
                     for m in messages_to_summarize
                 )

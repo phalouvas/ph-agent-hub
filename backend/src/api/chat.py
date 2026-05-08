@@ -23,6 +23,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from ..agents.runner import (
     _get_next_branch_index,
+    _msg_get,
     run_agent,
     run_agent_assistant_only,
     run_agent_stream,
@@ -1033,7 +1034,7 @@ async def summarize_session(
     # Find non-summarized messages
     non_summarized = [
         m for m in all_messages
-        if not (getattr(m, "summarized", None) or m.get("summarized", False))
+        if not _msg_get(m, "summarized", False)
     ]
 
     # Count user+assistant pairs from the end
@@ -1042,7 +1043,7 @@ async def summarize_session(
     cutoff_idx = len(non_summarized)
     for i in range(len(non_summarized) - 1, -1, -1):
         msg = non_summarized[i]
-        sender = getattr(msg, "sender", None) or msg.get("sender", "")
+        sender = _msg_get(msg, "sender", "")
         if sender == "user":
             pair_count += 1
             if pair_count >= keep_pairs:
@@ -1076,7 +1077,7 @@ async def summarize_session(
         for raw_msg in all_raw:
             raw_id = raw_msg.get("id", "")
             for to_mark in messages_to_summarize:
-                mark_id = getattr(to_mark, "id", None) or to_mark.get("id", "")
+                mark_id = _msg_get(to_mark, "id", "")
                 if raw_id == mark_id:
                     raw_msg["summarized"] = True
         r = await get_redis()
@@ -1106,7 +1107,7 @@ async def summarize_session(
     # Calculate tokens saved
     old_tokens = sum(
         _estimate_tokens(_extract_message_text(
-            getattr(m, "content", None) or m.get("content")
+            _msg_get(m, "content")
         ))
         for m in messages_to_summarize
     )
