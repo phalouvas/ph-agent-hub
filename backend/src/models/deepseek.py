@@ -67,10 +67,10 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
     ) -> Any:  # ChatResponse
         """Extract ``reasoning_content`` from non-streaming response."""
         chat_response = super()._parse_response_from_openai(response, options)
-        for choice in response.choices:
+        for choice, msg in zip(response.choices, chat_response.messages):
             rc = getattr(choice.message, "reasoning_content", None)
             if rc:
-                chat_response.messages.contents.append(
+                msg.contents.append(
                     Content.from_text_reasoning(
                         text=rc,
                         protected_data=json.dumps(rc),

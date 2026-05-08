@@ -7,7 +7,7 @@
 // =============================================================================
 
 import React from "react";
-import { Typography, Space, Collapse, Tag, Button, Popconfirm, App } from "antd";
+import { Typography, Space, Collapse, Tag, Button, Popconfirm, App, Spin } from "antd";
 import {
   UserOutlined,
   RobotOutlined,
@@ -75,6 +75,7 @@ interface MessageBubbleProps {
   branchInfo?: { currentIndex: number; totalBranches: number } | null;
   onNavigateBranch?: (branchIndex: number) => void;
   disabled?: boolean;
+  regenerating?: boolean;
 }
 
 export function MessageBubble({
@@ -86,6 +87,7 @@ export function MessageBubble({
   branchInfo,
   onNavigateBranch,
   disabled,
+  regenerating,
 }: MessageBubbleProps) {
   const isUser = message.sender === "user";
   const isSystem = message.sender === "system";
@@ -396,9 +398,9 @@ export function MessageBubble({
             <Button
               type="text"
               size="small"
-              icon={<RedoOutlined />}
+              icon={regenerating ? <Spin size="small" /> : <RedoOutlined />}
               onClick={() => onRegenerate(message.id)}
-              disabled={disabled}
+              disabled={disabled || regenerating}
             />
           )}
           {onDelete && (

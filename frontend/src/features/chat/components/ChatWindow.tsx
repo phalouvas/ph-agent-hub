@@ -250,9 +250,21 @@ export function ChatWindow({
     queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
   };
 
+  const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
+
   const handleRegenerate = async (messageId: string) => {
-    await regenerateMessage(sessionId, messageId);
-    queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+    setRegeneratingMsgId(messageId);
+    try {
+      await regenerateMessage(sessionId, messageId);
+      queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+      message.success("Response regenerated");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Regenerate failed";
+      message.error(msg);
+      console.error("Regenerate error:", err);
+    } finally {
+      setRegeneratingMsgId(null);
+    }
   };
 
   // File upload handlers
@@ -489,6 +501,7 @@ export function ChatWindow({
                   : undefined
               }
               disabled={streaming}
+              regenerating={regeneratingMsgId === msg.id}
             />
           ))
         )}
