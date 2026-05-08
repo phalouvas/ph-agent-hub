@@ -2,8 +2,8 @@
 // PH Agent Hub — SessionSidebar
 // =============================================================================
 // Ant Design Layout.Sider (Drawer on mobile); session list (pinned first);
-// new chat button with temp/permanent toggle; links to MemoryManager,
-// SessionSearch, logout.
+// instant new chat; edit button per session (rename, temp toggle);
+// links to MemoryManager, SessionSearch, logout.
 // =============================================================================
 
 import React, { useState } from "react";
@@ -28,6 +28,7 @@ import {
   PushpinOutlined,
   PushpinFilled,
   DeleteOutlined,
+  EditOutlined,
   MenuOutlined,
 } from "@ant-design/icons";
 import { Logo } from "../../../shared/components/Logo";
@@ -39,6 +40,7 @@ import {
   createSession,
   deleteSession,
   updateSession,
+  SessionData,
 } from "../services/chat";
 import { MemoryManager } from "./MemoryManager";
 import { SessionSearch } from "./SessionSearch";
@@ -53,9 +55,9 @@ export function SessionSidebar() {
   const queryClient = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [newChatModal, setNewChatModal] = useState(false);
-  const [newChatTemp, setNewChatTemp] = useState(false);
-  const [newChatTitle, setNewChatTitle] = useState("");
+  const [editingSession, setEditingSession] = useState<SessionData | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editTemp, setEditTemp] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -74,16 +76,26 @@ export function SessionSidebar() {
   const createMutation = useMutation({
     mutationFn: () =>
       createSession({
-        title: newChatTitle || "New Chat",
-        is_temporary: newChatTemp,
+        title: "New Chat",
       }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      setNewChatModal(false);
-      setNewChatTitle("");
       navigate(`/chat/${data.id}`);
     },
     onError: () => message.error("Failed to create session"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      updateSession(editingSession!.id, {
+        title: editTitle || editingSession!.title,
+        is_temporary: editTemp,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      setEditingSession(null);
+    },
+    onError: () => message.error("Failed to update session"),
   });
 
   const deleteMutation = useMutation({
@@ -114,9 +126,7 @@ export function SessionSidebar() {
   });
 
   const handleNewChat = () => {
-    setNewChatTemp(false);
-    setNewChatTitle("");
-    setNewChatModal(true);
+    createMutation.mutate();
   };
 
   const handleLogout = async () => {
@@ -203,6 +213,19 @@ export function SessionSidebar() {
                     : "3px solid transparent",
               }}
               actions={[
+                <Tooltip title="Edit" key="edit">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingSession(item);
+                      setEditTitle(item.title);
+                      setEditTemp(item.is_temporary);
+                    }}
+                  />
+                </Tooltip>,
                 <Tooltip
                   title={item.is_pinned ? "Unpin" : "Pin"}
                   key="pin"
@@ -318,24 +341,24 @@ export function SessionSidebar() {
         sessionId={sessionId}
       />
 
-      {/* New Chat Modal */}
+      {/* Edit Chat Modal */}
       <Modal
-        title="New Chat"
-        open={newChatModal}
-        onOk={() => createMutation.mutate()}
-        onCancel={() => setNewChatModal(false)}
-        confirmLoading={createMutation.isPending}
+        title="Edit Chat"
+        open={editingSession !== null}
+        onOk={() => updateMutation.mutate()}
+        onCancel={() => setEditingSession(null)}
+        confirmLoading={updateMutation.isPending}
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <Input
-            placeholder="Chat title (optional)"
-            value={newChatTitle}
-            onChange={(e) => setNewChatTitle(e.target.value)}
+            placeholder="Chat title"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
           />
           <Space>
             <Switch
-              checked={newChatTemp}
-              onChange={setNewChatTemp}
+              checked={editTemp}
+              onChange={setEditTemp}
             />
             <Text>Temporary session (not saved to database)</Text>
           </Space>

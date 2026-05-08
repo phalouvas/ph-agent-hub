@@ -68,6 +68,7 @@ class SessionCreate(BaseModel):
 class SessionUpdate(BaseModel):
     title: str | None = None
     is_pinned: bool | None = None
+    is_temporary: bool | None = None
     selected_template_id: str | None = None
     selected_prompt_id: str | None = None
     selected_skill_id: str | None = None
@@ -444,6 +445,17 @@ async def send_message(
     """
     data = await _load_session(db, session_id)
     await _require_session_owner(data, current_user)
+
+    # ---- Auto-title: if session still has the default title, use the
+    #      first user message as the title (truncated to 60 chars). ----
+    if data.get("title") == "New Chat" and body.content.strip():
+        auto_title = body.content.strip()[:60]
+        if data.get("is_temporary"):
+            data["title"] = auto_title
+            await store_temp_session(session_id, data)
+        else:
+            await session_service.update_session(db, session_id, title=auto_title)
+            data["title"] = auto_title
 
     # Detect streaming request via Accept header
     accept = request.headers.get("accept", "")
