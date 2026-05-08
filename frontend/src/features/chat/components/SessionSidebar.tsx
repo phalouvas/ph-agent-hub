@@ -109,6 +109,7 @@ export function SessionSidebar() {
         navigate("/chat");
       }
     },
+    onError: () => message.error("Failed to delete session"),
   });
 
   const pinMutation = useMutation({

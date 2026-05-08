@@ -143,7 +143,23 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 5. Delete the session itself
+    # 5. Null out session_id references in file_uploads and memory
+    from ..db.orm.file_uploads import FileUpload
+    from ..db.orm.memory import Memory
+
+    await db.execute(
+        sa_update(FileUpload)
+        .where(FileUpload.session_id == session_id)
+        .values(session_id=None)
+    )
+    await db.execute(
+        sa_update(Memory)
+        .where(Memory.session_id == session_id)
+        .values(session_id=None)
+    )
+    await db.flush()
+
+    # 6. Delete the session itself
     await db.delete(session)
     await db.commit()
 
