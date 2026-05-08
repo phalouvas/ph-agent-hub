@@ -33,6 +33,7 @@ def build_erpnext_tools(
     base_url: str,
     api_key: str,
     api_secret: str,
+    file_infos: list[dict] | None = None,
 ) -> list:
     """Return a list of MAF @tool-decorated async functions bound to an
     ERPNext instance.
@@ -41,6 +42,8 @@ def build_erpnext_tools(
         base_url: ERPNext site URL (e.g. ``https://erp.example.com``).
         api_key: ERPNext API key.
         api_secret: ERPNext API secret.
+        file_infos: Optional list of FileUpload dicts (storage_key, bucket,
+            original_filename, content_type, id) for the ``upload_file`` tool.
 
     Returns:
         A list of callables ready to pass to ``Agent(tools=...)``.
@@ -74,14 +77,20 @@ def build_erpnext_tools(
         filters: dict | None = None,
         fields: list[str] | None = None,
         limit_page_length: int | None = None,
+        limit_start: int | None = None,
+        order_by: str | None = None,
+        or_filters: dict | None = None,
     ) -> list[dict]:
         """Retrieve a list of ERPNext documents.
 
         Args:
             doctype: The DocType name (e.g. "Sales Order").
-            filters: Optional ERPNext filter dict.
+            filters: Optional ERPNext filter dict (AND logic).
             fields: Optional list of field names to return.
             limit_page_length: Optional max number of records.
+            limit_start: Optional offset for pagination.
+            order_by: Optional field name to sort by (e.g. "creation desc").
+            or_filters: Optional ERPNext OR filter dict.
         """
         params: dict[str, Any] = {}
         if filters:
@@ -90,6 +99,12 @@ def build_erpnext_tools(
             params["fields"] = json.dumps(fields)
         if limit_page_length is not None:
             params["limit_page_length"] = limit_page_length
+        if limit_start is not None:
+            params["limit_start"] = limit_start
+        if order_by is not None:
+            params["order_by"] = order_by
+        if or_filters:
+            params["or_filters"] = json.dumps(or_filters)
 
         url = f"/api/resource/{doctype}"
         resp = await client.get(url, params=params)
@@ -104,4 +119,239 @@ def build_erpnext_tools(
         )
         return results
 
-    return [get_doc, get_list]
+    # ------------------------------------------------------------------
+    @tool
+    async def create_doc(doctype: str, data: dict) -> dict:
+        """Create a new ERPNext document.
+
+        Args:
+            doctype: The DocType name (e.g. "Supplier").
+            data: Dict of field names to values for the new document.
+        """
+        url = f"/api/resource/{doctype}"
+        resp = await client.post(url, json=data)
+        resp.raise_for_status()
+        result: dict = resp.json()
+        logger.debug("create_doc %s → %s", doctype, result.get("data", {}).get("name", "?"))
+        return result
+
+    # ------------------------------------------------------------------
+    @tool
+    async def update_doc(doctype: str, name: str, data: dict) -> dict:
+        """Update an existing ERPNext document.
+
+        Args:
+            doctype: The DocType name (e.g. "Sales Order").
+            name: The document name/id to update.
+            data: Dict of field names to new values.
+        """
+        url = f"/api/resource/{doctype}/{name}"
+        resp = await client.put(url, json=data)
+        resp.raise_for_status()
+        result: dict = resp.json()
+        logger.debug("update_doc %s/%s", doctype, name)
+        return result
+
+    # ------------------------------------------------------------------
+    @tool
+    async def delete_doc(doctype: str, name: str) -> dict:
+        """Delete an ERPNext document.
+
+        Args:
+            doctype: The DocType name (e.g. "Sales Order").
+            name: The document name/id to delete.
+        """
+        url = f"/api/resource/{doctype}/{name}"
+        resp = await client.delete(url)
+        resp.raise_for_status()
+        logger.debug("delete_doc %s/%s", doctype, name)
+        return {"message": f"Deleted {doctype} {name}"}
+
+    # ------------------------------------------------------------------
+    @tool
+    async def submit_doc(doctype: str, name: str) -> dict:
+        """Submit an ERPNext document (sets docstatus to 1, triggers submit hooks).
+
+        Args:
+            doctype: The DocType name (e.g. "Purchase Invoice").
+            name: The document name/id to submit.
+        """
+        url = f"/api/resource/{doctype}/{name}"
+        resp = await client.put(url, json={"docstatus": 1})
+        resp.raise_for_status()
+        result: dict = resp.json()
+        logger.debug("submit_doc %s/%s", doctype, name)
+        return result
+
+    # ------------------------------------------------------------------
+    @tool
+    async def cancel_doc(doctype: str, name: str) -> dict:
+        """Cancel an ERPNext document (sets docstatus to 2).
+
+        Args:
+            doctype: The DocType name (e.g. "Purchase Invoice").
+            name: The document name/id to cancel.
+        """
+        url = f"/api/resource/{doctype}/{name}"
+        resp = await client.put(url, json={"docstatus": 2})
+        resp.raise_for_status()
+        result: dict = resp.json()
+        logger.debug("cancel_doc %s/%s", doctype, name)
+        return result
+
+    # ------------------------------------------------------------------
+    @tool
+    async def amend_doc(doctype: str, name: str) -> dict:
+        """Amend a submitted/cancelled ERPNext document, creating a new draft.
+
+        Calls ``frappe.client.amend_doc`` which creates a new document with
+        ``docstatus=0`` and ``amended_from`` set to the original.
+
+        Args:
+            doctype: The DocType name (e.g. "Sales Invoice").
+            name: The document name/id to amend.
+        """
+        url = "/api/method/frappe.client.amend_doc"
+        resp = await client.post(url, json={"doctype": doctype, "name": name})
+        resp.raise_for_status()
+        result: dict = resp.json()
+        logger.debug("amend_doc %s/%s", doctype, name)
+        return result
+
+    # ------------------------------------------------------------------
+    @tool
+    async def get_doctype_meta(doctype: str) -> list[dict]:
+        """Get field definitions for a DocType so the agent knows which
+        fields are mandatory, valid Link/Select options, etc.
+
+        Args:
+            doctype: The DocType name (e.g. "Purchase Invoice").
+        """
+        params = {
+            "filters": json.dumps([["parent", "=", doctype]]),
+            "fields": json.dumps([
+                "fieldname", "fieldtype", "label", "reqd", "options", "default",
+            ]),
+            "limit_page_length": 300,
+        }
+        url = "/api/resource/DocField"
+        resp = await client.get(url, params=params)
+        resp.raise_for_status()
+        data: dict = resp.json()
+        results: list[dict] = data.get("data", [])
+        logger.debug("get_doctype_meta %s → %d fields", doctype, len(results))
+        return results
+
+    # ------------------------------------------------------------------
+    @tool
+    async def call_method(
+        method: str,
+        args: dict | None = None,
+        http_method: str = "POST",
+    ) -> dict:
+        """Call any whitelisted ERPNext API method.
+
+        Covers everything not exposed via resource CRUD: email, PDF generation,
+        custom reports, payroll, etc.
+
+        Args:
+            method: The dotted method path (e.g. "frappe.core.doctype.file.file.upload_file").
+            args: Optional dict of keyword arguments to pass to the method.
+            http_method: HTTP method to use, "GET" or "POST" (default "POST").
+        """
+        url = f"/api/method/{method}"
+        if http_method.upper() == "GET":
+            params: dict[str, Any] = {}
+            if args:
+                params = {k: json.dumps(v) if not isinstance(v, str) else v for k, v in args.items()}
+            resp = await client.get(url, params=params)
+        else:
+            resp = await client.post(url, json=args or {})
+        resp.raise_for_status()
+        result: dict = resp.json()
+        logger.debug("call_method %s (%s)", method, http_method)
+        return result
+
+    tools = [get_doc, get_list, create_doc, update_doc, delete_doc,
+             submit_doc, cancel_doc, amend_doc, get_doctype_meta, call_method]
+
+    # ------------------------------------------------------------------
+    # upload_file tool (only if file_infos provided)
+    # ------------------------------------------------------------------
+    if file_infos:
+        # Build a lookup dict keyed by original_filename (case-insensitive)
+        _file_lookup: dict[str, dict] = {}
+        for fi in file_infos:
+            _file_lookup[fi["original_filename"].lower()] = fi
+
+        @tool
+        async def upload_file(
+            filename: str,
+            doctype: str | None = None,
+            docname: str | None = None,
+        ) -> dict:
+            """Upload a file to ERPNext, attaching it to a document.
+
+            The file must have been previously uploaded to PH Agent Hub
+            (visible in the current session).  Specify the exact
+            ``original_filename`` as shown in the file list.
+
+            Args:
+                filename: The original filename of the uploaded file.
+                doctype: Optional DocType to attach the file to.
+                docname: Optional document name to attach the file to.
+            """
+            from ..storage.s3 import download_object
+
+            file_info = _file_lookup.get(filename.lower())
+            if file_info is None:
+                available = list(_file_lookup.keys())
+                return {
+                    "error": f"File '{filename}' not found in uploaded files.",
+                    "available_files": available,
+                }
+
+            # Download binary from MinIO
+            try:
+                file_bytes = await download_object(
+                    file_info["bucket"], file_info["storage_key"]
+                )
+            except Exception as exc:
+                return {"error": f"Failed to download file from storage: {exc}"}
+
+            # Build multipart form
+            files_payload: dict[str, Any] = {
+                "file": (
+                    file_info["original_filename"],
+                    file_bytes,
+                    file_info.get("content_type", "application/octet-stream"),
+                )
+            }
+            data_payload: dict[str, str] = {"is_private": "0"}
+            if doctype:
+                data_payload["doctype"] = doctype
+            if docname:
+                data_payload["docname"] = docname
+
+            # Use a separate httpx call for multipart (different content-type)
+            base = base_url.rstrip("/")
+            async with httpx.AsyncClient(
+                base_url=base, headers=auth_header, timeout=60.0
+            ) as upload_client:
+                resp = await upload_client.post(
+                    "/api/method/upload_file",
+                    data=data_payload,
+                    files=files_payload,
+                )
+                resp.raise_for_status()
+                result: dict = resp.json()
+                logger.debug(
+                    "upload_file %s → ERPNext file %s",
+                    filename,
+                    result.get("message", {}).get("file_url", "?"),
+                )
+                return result
+
+        tools.append(upload_file)
+
+    return tools

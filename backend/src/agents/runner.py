@@ -34,7 +34,6 @@ from ..core.redis import (
     get_temp_messages,
     get_temp_session,
 )
-from ..db.orm.erpnext_instances import ERPNextInstance
 from ..db.orm.messages import Message
 from ..db.orm.models import Model
 from ..db.orm.prompts import Prompt
@@ -72,6 +71,7 @@ async def _resolve_session_config(
     session_data: dict,
     tenant_id: str,
     user: User | None = None,
+    file_ids: list[str] | None = None,
 ) -> SessionConfig:
     """Resolve model, system prompt, skill, tools, execution type, and agent name.
 
@@ -89,7 +89,7 @@ async def _resolve_session_config(
 
     # 4. Resolve active tools
     active_tool_callables = await _resolve_tool_callables(
-        db, session_data, tenant_id
+        db, session_data, tenant_id, file_ids=file_ids
     )
 
     # 5. Determine execution type and name
@@ -631,7 +631,7 @@ async def run_agent(
     is_temporary = session_data.get("is_temporary", False)
 
     # ---- 1-6. Resolve session config ------------------------------------
-    cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
+    cfg = await _resolve_session_config(db, session_data, tenant_id, current_user, file_ids=file_ids)
 
     # ---- Build contextualized message (history + auto-summarization) ----
     contextualized_message, _ = await _maybe_summarize_and_build_context(
@@ -839,6 +839,7 @@ async def _resolve_tool_callables(
     db: AsyncSession,
     session_data: dict,
     tenant_id: str,
+    file_ids: list[str] | None = None,
 ) -> list:
     """Resolve active tools into MAF tool callables."""
     session_id = session_data["id"]
@@ -875,8 +876,20 @@ async def _resolve_tool_callables(
     # Build callables for each tool
     callables: list = []
     for tool in tools:
-        tool_callables = await _build_tool_callables(db, tool, tenant_id)
+        tool_callables = await _build_tool_callables(db, tool, tenant_id, session_id=session_id)
         callables.extend(tool_callables)
+
+    # ---- Built-in tool: list_uploaded_files (always available) ----------
+    # This discovery tool lets the agent see what files are attached to
+    # the session without polluting the user message with injected text.
+    try:
+        from ..tools.file_list import build_file_list_tool
+        file_list_tools = build_file_list_tool(db, session_id, tenant_id)
+        callables.extend(file_list_tools)
+    except Exception:
+        logger.warning(
+            "Failed to build file_list tool for session %s", session_id, exc_info=True
+        )
 
     return callables
 
@@ -885,10 +898,11 @@ async def _build_tool_callables(
     db: AsyncSession,
     tool: Tool,
     tenant_id: str,
+    session_id: str = "",
 ) -> list:
     """Dispatch on tool.type to the appropriate factory."""
     if tool.type == "erpnext":
-        return await _build_erpnext_callables(db, tool, tenant_id)
+        return await _build_erpnext_callables(db, tool, tenant_id, session_id=session_id)
     elif tool.type == "membrane":
         from ..tools.membrane import build_membrane_tools
         return build_membrane_tools(tool.config or {})
@@ -910,46 +924,57 @@ async def _build_erpnext_callables(
     db: AsyncSession,
     tool: Tool,
     tenant_id: str,
+    session_id: str = "",
 ) -> list:
     """Build ERPNext tool callables for a given Tool record.
 
-    Looks up the ERPNextInstance via ``tool.config.erpnext_instance_id``.
-    Falls back to the first enabled instance for the tenant.
+    Reads credentials directly from ``tool.config`` JSON.
+    Queries ALL FileUpload records for the session so the
+    ``upload_file`` tool can access files uploaded in any
+    message — the built-in ``list_uploaded_files`` tool
+    acts as the discovery guard against misuse.
     """
     from ..tools.erpnext import build_erpnext_tools
 
     config = tool.config or {}
-    instance_id = config.get("erpnext_instance_id")
+    base_url = config.get("base_url")
+    api_key = config.get("api_key")
+    api_secret = config.get("api_secret")
 
-    instance: ERPNextInstance | None = None
+    if not all([base_url, api_key, api_secret]):
+        raise NotFoundError(
+            f"ERPNext tool '{tool.name}' is missing required config fields. "
+            "Set base_url, api_key, and api_secret in the tool config."
+        )
 
-    if instance_id:
+    # Resolve file infos from ALL session file uploads
+    file_infos: list[dict] | None = None
+    if session_id:
+        from ..db.orm.file_uploads import FileUpload
         result = await db.execute(
-            select(ERPNextInstance).where(
-                ERPNextInstance.id == instance_id,
-                ERPNextInstance.tenant_id == tenant_id,
+            select(FileUpload).where(
+                FileUpload.session_id == session_id,
+                FileUpload.tenant_id == tenant_id,
             )
         )
-        instance = result.scalar_one_or_none()
-
-    if instance is None:
-        # Fall back to first enabled instance for the tenant
-        result = await db.execute(
-            select(ERPNextInstance).where(
-                ERPNextInstance.tenant_id == tenant_id,
-            )
-        )
-        instance = result.scalars().first()
-        if instance is None:
-            raise NotFoundError(
-                f"No ERPNext instance found for tenant '{tenant_id}'. "
-                "Create one via POST /admin/erpnext-instances."
-            )
+        uploads = list(result.scalars().all())
+        if uploads:
+            file_infos = [
+                {
+                    "id": u.id,
+                    "storage_key": u.storage_key,
+                    "bucket": u.bucket,
+                    "original_filename": u.original_filename,
+                    "content_type": u.content_type,
+                }
+                for u in uploads
+            ]
 
     return build_erpnext_tools(
-        base_url=instance.base_url,
-        api_key=instance.api_key,
-        api_secret=instance.api_secret,
+        base_url=base_url,
+        api_key=api_key,
+        api_secret=api_secret,
+        file_infos=file_infos,
     )
 
 
@@ -1104,9 +1129,11 @@ async def _persist_assistant_message(
     for evt in (tool_events or []):
         content.append(evt)
 
-    # Always append the final text response
-    if assistant_response.strip():
-        content.append({"type": "text", "text": assistant_response})
+    # Always append the final text response, stripped of any leaked
+    # <function_calls> XML (DeepSeek thinking-mode artifact)
+    clean_text = _strip_raw_tool_xml(assistant_response)
+    if clean_text.strip():
+        content.append({"type": "text", "text": clean_text})
     assistant_msg_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
 
@@ -1156,7 +1183,8 @@ async def _persist_messages(
         A tuple of (user_message_id, assistant_message_id).
     """
     user_msg_content = [{"type": "text", "text": user_message}]
-    assistant_msg_content = [{"type": "text", "text": assistant_response}]
+    clean_response = _strip_raw_tool_xml(assistant_response)
+    assistant_msg_content = [{"type": "text", "text": clean_response}]
 
     if is_temporary:
         # Store in Redis
@@ -1284,7 +1312,7 @@ async def run_agent_stream(
 
     try:
         # ---- 1-6. Resolve session config --------------------------------
-        cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
+        cfg = await _resolve_session_config(db, session_data, tenant_id, current_user, file_ids=file_ids)
 
         # ---- Build contextualized message (history + auto-summarization) --
         contextualized_message, summary_info = await _maybe_summarize_and_build_context(
@@ -1637,6 +1665,22 @@ def _maybe_accumulate_text(event_dict: dict, current: str) -> str:
         return current + delta
     except (json.JSONDecodeError, KeyError):
         return current
+
+
+def _strip_raw_tool_xml(text: str) -> str:
+    """Strip raw ``<function_calls>...</function_calls>`` XML from text.
+
+    DeepSeek thinking mode occasionally leaks tool-call XML into the
+    regular text output when the consecutive-error limit is hit.  This
+    strips it so it doesn't render as visible garbage in the UI.
+    """
+    import re
+    return re.sub(
+        r"<function_calls>.*?</function_calls>",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ).strip()
 
 
 def _maybe_accumulate_tool_events(

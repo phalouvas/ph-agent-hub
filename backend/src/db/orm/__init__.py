@@ -12,7 +12,6 @@ from .users import User
 from .models import Model
 from .groups import UserGroup, UserGroupMember, ModelGroup
 from .tools import Tool
-from .erpnext_instances import ERPNextInstance
 from .templates import Template, TemplateAllowedTool
 from .prompts import Prompt
 from .skills import Skill, SkillAllowedTool
@@ -32,7 +31,6 @@ __all__ = [
     "UserGroupMember",
     "ModelGroup",
     "Tool",
-    "ERPNextInstance",
     "Template",
     "TemplateAllowedTool",
     "Prompt",

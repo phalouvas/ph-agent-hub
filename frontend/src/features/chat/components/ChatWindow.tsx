@@ -230,7 +230,7 @@ export function ChatWindow({
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
     });
-  }, [inputValue, streaming, sessionId, startStream, queryClient]);
+  }, [inputValue, streaming, sessionId, startStream, queryClient, pendingFiles]);
 
   const handleStop = async () => {
     await stopStream(sessionId);

@@ -29,20 +29,32 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
   const queryClient = useQueryClient();
   const isEdit = !!tool;
   const [isPublic, setIsPublic] = React.useState(tool?.is_public ?? false);
+  const [toolType, setToolType] = React.useState(tool?.type ?? "custom");
 
   React.useEffect(() => {
     if (open) {
       if (tool) {
-        form.setFieldsValue({
+        const fields: Record<string, unknown> = {
           name: tool.name,
           type: tool.type,
           enabled: tool.enabled,
           is_public: tool.is_public,
-          config_json: tool.config
+        };
+        // Populate structured ERPNext fields from config
+        if (tool.type === "erpnext" && tool.config) {
+          fields.erpnext_base_url = tool.config.base_url || "";
+          fields.erpnext_api_key = tool.config.api_key || "";
+          fields.erpnext_api_secret = tool.config.api_secret || "";
+        }
+        // Populate config_json for custom type
+        if (tool.type === "custom") {
+          fields.config_json = tool.config
             ? JSON.stringify(tool.config, null, 2)
-            : "",
-        });
+            : "";
+        }
+        form.setFieldsValue(fields);
         setIsPublic(tool.is_public);
+        setToolType(tool.type);
       } else {
         form.resetFields();
         form.setFieldsValue({
@@ -51,14 +63,24 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
           is_public: false,
         });
         setIsPublic(false);
+        setToolType("custom");
       }
     }
   }, [open, tool, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => {
-      // Parse config JSON if provided
-      if (typeof data.config_json === "string" && data.config_json.trim()) {
+      // Assemble config from structured fields for erpnext
+      if (data.type === "erpnext") {
+        data.config = {
+          base_url: data.erpnext_base_url || "",
+          api_key: data.erpnext_api_key || "",
+          api_secret: data.erpnext_api_secret || "",
+        };
+        delete data.erpnext_base_url;
+        delete data.erpnext_api_key;
+        delete data.erpnext_api_secret;
+      } else if (typeof data.config_json === "string" && data.config_json.trim()) {
         try {
           data.config = JSON.parse(data.config_json as string);
         } catch {
@@ -84,7 +106,17 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
       id: string;
       data: Record<string, unknown>;
     }) => {
-      if (typeof data.config_json === "string" && data.config_json.trim()) {
+      // Assemble config from structured fields for erpnext
+      if (data.type === "erpnext") {
+        data.config = {
+          base_url: data.erpnext_base_url || "",
+          api_key: data.erpnext_api_key || "",
+          api_secret: data.erpnext_api_secret || "",
+        };
+        delete data.erpnext_base_url;
+        delete data.erpnext_api_key;
+        delete data.erpnext_api_secret;
+      } else if (typeof data.config_json === "string" && data.config_json.trim()) {
         try {
           data.config = JSON.parse(data.config_json as string);
         } catch {
@@ -138,14 +170,47 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
               { label: "Datetime", value: "datetime" },
               { label: "Web Search", value: "web_search" },
             ]}
+            onChange={(value) => setToolType(value)}
           />
         </Form.Item>
-        <Form.Item name="config_json" label="Config (JSON)">
-          <TextArea
-            rows={6}
-            placeholder='{"key": "value"}'
-          />
-        </Form.Item>
+
+        {/* ERPNext-specific structured fields */}
+        {toolType === "erpnext" && (
+          <>
+            <Form.Item
+              name="erpnext_base_url"
+              label="Base URL"
+              rules={[{ required: true, message: "ERPNext site URL is required" }]}
+            >
+              <Input placeholder="https://erp.example.com" />
+            </Form.Item>
+            <Form.Item
+              name="erpnext_api_key"
+              label="API Key"
+              rules={[{ required: true, message: "API Key is required" }]}
+            >
+              <Input placeholder="Your ERPNext API key" />
+            </Form.Item>
+            <Form.Item
+              name="erpnext_api_secret"
+              label="API Secret"
+              rules={[{ required: true, message: "API Secret is required" }]}
+            >
+              <Input.Password placeholder="Your ERPNext API secret" />
+            </Form.Item>
+          </>
+        )}
+
+        {/* Config JSON for custom type only */}
+        {toolType === "custom" && (
+          <Form.Item name="config_json" label="Config (JSON)">
+            <TextArea
+              rows={6}
+              placeholder='{"key": "value"}'
+            />
+          </Form.Item>
+        )}
+
         <Form.Item name="enabled" label="Enabled" valuePropName="checked">
           <Switch />
         </Form.Item>

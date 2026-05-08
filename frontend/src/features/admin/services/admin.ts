@@ -349,6 +349,34 @@ export function removeModelFromGroup(groupId: string, modelId: string): Promise<
   });
 }
 
+export interface GroupToolData {
+  id: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+}
+
+export function listGroupTools(groupId: string): Promise<GroupToolData[]> {
+  return api<GroupToolData[]>(`/admin/groups/${groupId}/tools`);
+}
+
+export function assignToolToGroup(groupId: string, toolId: string): Promise<void> {
+  return api<void>(`/admin/groups/${groupId}/tools`, {
+    method: "POST",
+    body: { tool_id: toolId },
+  });
+}
+
+export function removeToolFromGroup(groupId: string, toolId: string): Promise<void> {
+  return api<void>(`/admin/groups/${groupId}/tools/${toolId}`, {
+    method: "DELETE",
+  });
+}
+
+export function listToolGroups(toolId: string): Promise<GroupData[]> {
+  return api<GroupData[]>(`/admin/tools/${toolId}/groups`);
+}
+
 export function listUserGroups(userId: string): Promise<GroupData[]> {
   return api<GroupData[]>(`/admin/users/${userId}/groups`);
 }

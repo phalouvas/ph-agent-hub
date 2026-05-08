@@ -226,12 +226,12 @@ async def _inject_file_content(
     session_data: dict,
     current_user: UserORM,
 ) -> tuple[str, list[str]]:
-    """Build file content injection string and return (modified_message, valid_file_ids).
+    """Validate file attachments and return (user_message, valid_file_ids).
 
     - Validates DeepSeek + image → 422
-    - Extracts text from document uploads
-    - Truncates to char budget based on model context_length
-    - Returns modified user_message with injected content
+    - Returns the user message UNCHANGED (no text injection — file
+      discovery is handled by the built-in ``list_uploaded_files`` tool)
+    - Returns valid_file_ids for persistence / ERPNext upload_file tool
     """
     if not file_ids:
         return user_message, []
@@ -250,7 +250,7 @@ async def _inject_file_content(
     if not uploads:
         return user_message, []
 
-    # Resolve model for provider check and context_length
+    # Resolve model for provider check
     model_id = session_data.get("selected_model_id")
     model_orm = None
     if model_id:
@@ -262,23 +262,12 @@ async def _inject_file_content(
         model_orm = model_result.scalar_one_or_none()
 
     provider = getattr(model_orm, "provider", "") if model_orm else ""
-    context_length = getattr(model_orm, "context_length", None) if model_orm else None
 
-    # Calculate char budget
-    if context_length:
-        max_file_chars = min(int(context_length * 3 * 0.4), 100_000)
-    else:
-        max_file_chars = 20_000
-
-    # Image MIME types
     IMAGE_TYPES = frozenset({
         "image/png", "image/jpeg", "image/gif", "image/webp",
     })
 
-    parts: list[str] = []
-    total_chars = 0
     valid_ids: list[str] = []
-
     for upload in uploads:
         is_image = upload.content_type in IMAGE_TYPES
 
@@ -288,36 +277,11 @@ async def _inject_file_content(
                 "Please use an OpenAI or Anthropic model for images."
             )
 
-        if is_image:
-            # Append placeholder for image-capable models
-            parts.append(f"[Image attached: {upload.original_filename}]")
-            valid_ids.append(upload.id)
-        elif upload.extracted_text:
-            # Document: inject extracted text
-            header = f"--- Attached File: {upload.original_filename} ---"
-            remaining = max_file_chars - total_chars
-            if remaining <= 0:
-                break
-            # Truncate text to remaining budget
-            text = upload.extracted_text[:remaining]
-            parts.append(f"{header}\n{text}")
-            total_chars += len(header) + len(text) + 2  # +2 for newlines
-            valid_ids.append(upload.id)
-        else:
-            # Document with no extracted text (e.g., unsupported PDF) —
-            # still link it to the message so it shows in the bubble
-            parts.append(
-                f"--- Attached File: {upload.original_filename} ---\n"
-                "[No text could be extracted from this file]"
-            )
-            valid_ids.append(upload.id)
+        valid_ids.append(upload.id)
 
-    if not parts:
-        return user_message, []
-
-    injection = "\n\n".join(parts)
-    modified = f"{user_message}\n\n{injection}"
-    return modified, valid_ids
+    # Return the user message unchanged — file metadata is available
+    # to the agent via the built-in list_uploaded_files tool.
+    return user_message, valid_ids
 
 
 # =============================================================================
