@@ -7,12 +7,13 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Upload, message } from "antd";
+import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Upload, message, notification } from "antd";
 import {
   SendOutlined,
   StopOutlined,
   DownOutlined,
   PaperClipOutlined,
+  CompressOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "./MessageBubble";
@@ -21,6 +22,7 @@ import {
   listMessages,
   deleteMessage,
   regenerateMessage,
+  summarizeSession,
 } from "../services/chat";
 import api from "../../../services/api";
 import {
@@ -201,6 +203,14 @@ export function ChatWindow({
       },
       onFollowUpQuestions(questions) {
         setFollowUpQuestions(questions);
+      },
+      onSummarized(data) {
+        notification.info({
+          message: "Conversation Summarized",
+          description: `Compressed ${data.summarized_message_count} earlier messages to save context space.`,
+          placement: "topRight",
+          duration: 4,
+        });
       },
       onError(err) {
         setPendingUserMessage(null);
@@ -394,6 +404,27 @@ export function ChatWindow({
           onClick={() => setToolsOpen(true)}
         >
           Tools
+        </Button>
+        <Button
+          size="small"
+          icon={<CompressOutlined />}
+          onClick={async () => {
+            try {
+              const result = await summarizeSession(sessionId);
+              notification.success({
+                message: "Conversation Summarized",
+                description: `Compressed ${result.summarized_message_count} messages. Saved ~${result.tokens_saved} tokens.`,
+                placement: "topRight",
+                duration: 5,
+              });
+              queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+            } catch (err: any) {
+              message.error(err?.message || "Summarization failed");
+            }
+          }}
+          title="Summarize conversation"
+        >
+          Summarize
         </Button>
         {modelSupportsThinking && (
           <Switch

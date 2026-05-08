@@ -31,6 +31,7 @@ from ..core.redis import (
     append_temp_message,
     check_stream_cancel,
     clear_stream_cancel,
+    get_temp_messages,
     get_temp_session,
 )
 from ..db.orm.erpnext_instances import ERPNextInstance
@@ -121,6 +122,481 @@ async def _resolve_session_config(
 
 
 # ---------------------------------------------------------------------------
+# Message summarization (Issue #29)
+# ---------------------------------------------------------------------------
+
+# Conservative estimate: ~4 characters per token. Works across all
+# model families without requiring provider-specific tokenizers.
+CHARS_PER_TOKEN_ESTIMATE = 4
+
+# Fraction of context_length at which auto-summarization triggers.
+SUMMARIZE_THRESHOLD = 0.75
+
+# Number of most recent user/assistant message *pairs* to keep intact
+# when summarizing. Older messages are compressed into a summary.
+KEEP_RECENT_PAIRS = 3
+
+# Maximum summary length in characters (to keep the summary itself
+# from consuming too much context).
+MAX_SUMMARY_CHARS = 2000
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from character length.
+
+    Uses a conservative 4 chars/token ratio that slightly over-estimates
+    for most models, ensuring we trigger summarization before truly
+    running out of context.
+    """
+    if not text:
+        return 0
+    return max(1, len(text) // CHARS_PER_TOKEN_ESTIMATE)
+
+
+def _extract_message_text(content: list | None) -> str:
+    """Extract readable text from a message's JSON content array.
+
+    Handles the structured content format used by _persist_assistant_message.
+    """
+    if not content or not isinstance(content, list):
+        return ""
+
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type", "")
+        if item_type == "text":
+            text = item.get("text", "")
+            if text:
+                parts.append(text)
+        elif item_type == "function_call":
+            name = item.get("name", "unknown")
+            parts.append(f"[Used tool: {name}]")
+        elif item_type == "function_result":
+            name = item.get("name", "unknown")
+            output = item.get("output", "")
+            if isinstance(output, str) and output:
+                # Truncate tool output in history
+                truncated = output[:300] + "..." if len(output) > 300 else output
+                parts.append(f"[Tool result from {name}: {truncated}]")
+
+    return "\n".join(parts)
+
+
+def _msg_get(msg, attr: str, default=None):
+    """Read an attribute from an ORM object or a key from a dict.
+
+    Handles both Message ORM objects (DB) and message dicts (Redis).
+    """
+    if isinstance(msg, dict):
+        return msg.get(attr, default)
+    return getattr(msg, attr, default)
+
+
+def _format_conversation_history(messages: list) -> str:
+    """Format a list of message dicts/ORMs into a readable history string.
+
+    Used to inject past conversation into the model context.
+    Summarized messages are skipped (replaced by the summary system message).
+    """
+    if not messages:
+        return ""
+
+    lines: list[str] = ["[Previous conversation]"]
+
+    for msg in messages:
+        sender = _msg_get(msg, "sender", "")
+        content = _msg_get(msg, "content")
+        summarized = _msg_get(msg, "summarized", False)
+
+        if summarized:
+            continue  # Skip messages that have been compressed into a summary
+
+        text = _extract_message_text(content)
+        if not text:
+            continue
+
+        if sender == "user":
+            lines.append(f"User: {text}")
+        elif sender == "assistant":
+            lines.append(f"Assistant: {text}")
+        elif sender == "system":
+            lines.append(f"[Summary of earlier conversation]\n{text}")
+
+    if len(lines) == 1:
+        return ""  # Only the header, no actual messages
+
+    return "\n\n".join(lines)
+
+
+def _build_history_string(
+    messages: list,
+    context_length: int | None,
+) -> str:
+    """Build conversation history for inclusion in the model context.
+
+    Respects a token budget to avoid the history itself consuming too
+    much of the context window. Includes up to 60% of context_length
+    for history, leaving room for system prompt, tools, and the new
+    user message + response.
+    """
+    if not messages:
+        return ""
+
+    full_history = _format_conversation_history(messages)
+    if not full_history:
+        return ""
+
+    # Budget: 60% of context_length for history
+    if context_length:
+        history_budget_tokens = int(context_length * 0.6)
+        history_budget_chars = history_budget_tokens * CHARS_PER_TOKEN_ESTIMATE
+    else:
+        history_budget_chars = 8000 * CHARS_PER_TOKEN_ESTIMATE  # ~32K chars default
+
+    if len(full_history) <= history_budget_chars:
+        return full_history
+
+    # Truncate from the beginning (oldest messages first)
+    # Keep the last history_budget_chars characters
+    truncated = "...\n(earlier conversation omitted)\n\n" + full_history[-history_budget_chars:]
+    return truncated
+
+
+async def _get_messages_for_session(
+    db: AsyncSession,
+    session_id: str,
+    is_temporary: bool,
+) -> list:
+    """Retrieve ordered, non-deleted messages for a session.
+
+    Returns a list of Message ORM objects (DB) or message dicts (Redis).
+    """
+    if is_temporary:
+        raw = await get_temp_messages(session_id)
+        return raw or []
+    else:
+        result = await db.execute(
+            select(Message)
+            .where(
+                Message.session_id == session_id,
+                Message.is_deleted == False,  # noqa: E712
+            )
+            .order_by(Message.created_at)
+        )
+        return list(result.scalars().all())
+
+
+async def _generate_summary(
+    model: Model,
+    model_client: Any,
+    messages_to_summarize: list,
+) -> str | None:
+    """Use the configured model to generate a concise summary of past messages.
+
+    Detects existing summary system messages in the input and merges them
+    into a single consolidated summary, avoiding summary accumulation over
+    very long conversations.
+
+    Creates a fresh non-thinking client for the summarization call.
+    Returns None on failure (summarization is best-effort).
+    """
+    if not messages_to_summarize:
+        return None
+
+    # Separate existing summary system messages from regular messages.
+    # Existing summaries should be merged into the new one rather than
+    # treated as raw conversation, which would bloat the prompt.
+    existing_summaries: list[str] = []
+    regular_messages: list = []
+
+    for msg in messages_to_summarize:
+        sender = _msg_get(msg, "sender", "")
+        if sender == "system":
+            # This is a previous summary — extract its text
+            content = _msg_get(msg, "content")
+            text = _extract_message_text(content)
+            if text:
+                existing_summaries.append(text)
+        else:
+            regular_messages.append(msg)
+
+    # Build the conversation text for the regular (non-summary) messages
+    conversation_text = _format_conversation_history(regular_messages)
+
+    # Build the full prompt: merge existing summaries with new content
+    if existing_summaries:
+        # There are previous summaries — ask the LLM to merge them
+        summaries_block = "\n".join(
+            f"- {s}" for s in existing_summaries
+        )
+        if conversation_text:
+            summary_prompt = (
+                "You are maintaining a running conversation summary. "
+                "Below are one or more EXISTING summaries of earlier parts "
+                "of the conversation, followed by newer messages. "
+                "Merge everything into a SINGLE concise summary.\n\n"
+                "=== EXISTING SUMMARIES (merge these into your response) ===\n"
+                f"{summaries_block}\n\n"
+                "=== NEWER CONVERSATION ===\n"
+                f"{conversation_text}\n\n"
+                "Produce ONE consolidated summary. Focus on key topics, "
+                "decisions, important facts, and pending questions. "
+                "Write in plain English, no more than 200 words. "
+                "Do NOT use meta-phrases like 'The conversation covered' — "
+                "just state the facts directly as a compact record."
+            )
+        else:
+            # Only summaries, no regular messages — merge them directly
+            summary_prompt = (
+                "Below are multiple conversation summaries. "
+                "Merge them into a SINGLE concise summary.\n\n"
+                "=== SUMMARIES TO MERGE ===\n"
+                f"{summaries_block}\n\n"
+                "Produce ONE consolidated summary. Focus on key topics, "
+                "decisions, important facts, and pending questions. "
+                "Write in plain English, no more than 200 words. "
+                "Do NOT use meta-phrases — just state the facts directly."
+            )
+    elif conversation_text:
+        # No existing summaries — standard summarization
+        summary_prompt = (
+            "Summarize the following conversation concisely. "
+            "Focus on key topics discussed, decisions made, important facts shared, "
+            "and any pending questions or action items. "
+            "Write in plain English, no more than 200 words. "
+            "Do NOT include phrases like 'The conversation covered' or 'The user and assistant discussed' — "
+            "just state the facts directly as a compact record.\n\n"
+            f"{conversation_text}"
+        )
+    else:
+        return None
+
+    messages_payload = [
+        {"role": "user", "content": summary_prompt},
+    ]
+
+    try:
+        # Create a fresh client (non-thinking mode for simpler output)
+        from ..models.base import get_chat_client
+
+        fresh_client = get_chat_client(model, thinking_enabled=False)
+        raw_client = getattr(fresh_client, "client", None)
+        if raw_client is None:
+            logger.warning("No client attribute on fresh model_client, skipping summarization")
+            return None
+
+        model_name = getattr(fresh_client, "model", model.model_id)
+        response = await raw_client.chat.completions.create(
+            model=model_name,
+            messages=messages_payload,
+            max_tokens=300,
+            temperature=0.3,  # Low temp for factual summary
+        )
+        summary = response.choices[0].message.content if response.choices else ""
+        summary = (summary or "").strip()
+
+        if summary and len(summary) > MAX_SUMMARY_CHARS:
+            summary = summary[:MAX_SUMMARY_CHARS] + "..."
+
+        return summary if summary else None
+
+    except Exception:
+        logger.exception("Failed to generate conversation summary")
+        return None
+
+
+async def _maybe_summarize_and_build_context(
+    db: AsyncSession,
+    session_data: dict,
+    cfg: "SessionConfig",
+    user_message: str,
+) -> tuple[str, dict | None]:
+    """Check if summarization is needed and build the contextualized message.
+
+    Returns:
+        A tuple of (contextualized_message, summary_info_or_None).
+        summary_info is a dict with keys: summary_text, summarized_count,
+        tokens_saved — used for the SSE summarized event.
+    """
+    session_id = session_data["id"]
+    is_temporary = session_data.get("is_temporary", False)
+    context_length = getattr(cfg.model, "context_length", None)
+
+    # Get all messages
+    all_messages = await _get_messages_for_session(db, session_id, is_temporary)
+
+    if not all_messages:
+        return user_message, None
+
+    # Estimate total tokens of the full context
+    system_prompt_tokens = _estimate_tokens(cfg.system_prompt or "")
+    user_msg_tokens = _estimate_tokens(user_message)
+    history_tokens = sum(
+        _estimate_tokens(_extract_message_text(
+            _msg_get(m, "content")
+        ))
+        for m in all_messages
+        if not _msg_get(m, "summarized", False)
+    )
+    total_estimated = system_prompt_tokens + user_msg_tokens + history_tokens
+
+    # Determine threshold
+    threshold_tokens = int((context_length or 8192) * SUMMARIZE_THRESHOLD)
+
+    summary_info: dict | None = None
+
+    if total_estimated > threshold_tokens and context_length:
+        # Need to summarize. Keep the last KEEP_RECENT_PAIRS pairs intact.
+        # Messages are in chronological order; find the cutoff point.
+        non_summarized = [
+            m for m in all_messages
+            if not _msg_get(m, "summarized", False)
+        ]
+
+        # Count user+assistant pairs from the end
+        pair_count = 0
+        cutoff_idx = len(non_summarized)
+        for i in range(len(non_summarized) - 1, -1, -1):
+            msg = non_summarized[i]
+            sender = _msg_get(msg, "sender", "")
+            if sender == "user":
+                pair_count += 1
+                if pair_count >= KEEP_RECENT_PAIRS:
+                    cutoff_idx = i
+                    break
+
+        messages_to_summarize = non_summarized[:cutoff_idx]
+
+        if messages_to_summarize:
+            logger.info(
+                "Auto-summarizing %d messages for session %s "
+                "(estimated %d tokens, threshold %d)",
+                len(messages_to_summarize), session_id,
+                total_estimated, threshold_tokens,
+            )
+
+            summary_text = await _generate_summary(
+                model=cfg.model,
+                model_client=cfg.model_client,
+                messages_to_summarize=messages_to_summarize,
+            )
+
+            if summary_text:
+                # Mark messages as summarized
+                if is_temporary:
+                    # For temp sessions, update the Redis messages
+                    all_raw = await get_temp_messages(session_id)
+                    for raw_msg in all_raw:
+                        raw_id = raw_msg.get("id", "")
+                        for to_mark in messages_to_summarize:
+                            mark_id = _msg_get(to_mark, "id", "")
+                            if raw_id == mark_id:
+                                raw_msg["summarized"] = True
+                    # Re-store updated messages with TTL refresh
+                    from ..core.redis import get_redis
+                    r = await get_redis()
+                    import json as _json
+                    msg_key = f"session:tmp:{session_id}:messages"
+                    session_key = f"session:tmp:{session_id}"
+                    ttl = await r.ttl(session_key)
+                    if ttl and ttl > 0:
+                        await r.setex(msg_key, ttl, _json.dumps(all_raw))
+                    else:
+                        await r.setex(msg_key, settings.TEMPORARY_SESSION_TTL_SECONDS, _json.dumps(all_raw))
+                else:
+                    # For DB sessions, update the summarized flag
+                    for msg in messages_to_summarize:
+                        if hasattr(msg, "summarized"):
+                            msg.summarized = True
+                    await db.commit()
+
+                # Store the summary as a system message
+                summary_content = [{"type": "text", "text": summary_text}]
+                await _persist_system_message(
+                    db=db,
+                    session_id=session_id,
+                    is_temporary=is_temporary,
+                    content=summary_content,
+                )
+
+                # Calculate tokens saved
+                old_tokens = sum(
+                    _estimate_tokens(_extract_message_text(
+                        _msg_get(m, "content")
+                    ))
+                    for m in messages_to_summarize
+                )
+                new_tokens = _estimate_tokens(summary_text)
+                tokens_saved = max(0, old_tokens - new_tokens)
+
+                summary_info = {
+                    "summary_text": summary_text,
+                    "summarized_count": len(messages_to_summarize),
+                    "tokens_saved": tokens_saved,
+                }
+
+                logger.info(
+                    "Summarization complete for session %s: "
+                    "%d messages compressed, ~%d tokens saved",
+                    session_id, len(messages_to_summarize), tokens_saved,
+                )
+
+    # Build the contextualized message with history
+    # Re-fetch messages (summarization may have changed the list)
+    current_messages = await _get_messages_for_session(db, session_id, is_temporary)
+    history_str = _build_history_string(current_messages, context_length)
+
+    if history_str:
+        contextualized = f"{history_str}\n\n---\n\nCurrent message: {user_message}"
+        return contextualized, summary_info
+
+    return user_message, summary_info
+
+
+async def _persist_system_message(
+    db: AsyncSession,
+    session_id: str,
+    is_temporary: bool,
+    content: list[dict],
+) -> str:
+    """Persist a system message (used for conversation summaries).
+
+    Returns the message ID.
+    """
+    msg_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+
+    if is_temporary:
+        await append_temp_message(
+            session_id,
+            {
+                "id": msg_id,
+                "sender": "system",
+                "content": content,
+                "parent_message_id": None,
+                "branch_index": 0,
+                "created_at": now.isoformat(),
+            },
+        )
+    else:
+        msg = Message(
+            id=msg_id,
+            session_id=session_id,
+            sender="system",
+            content=content,
+            parent_message_id=None,
+            branch_index=0,
+            created_at=now,
+        )
+        db.add(msg)
+        await db.commit()
+
+    return msg_id
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -157,6 +633,14 @@ async def run_agent(
     # ---- 1-6. Resolve session config ------------------------------------
     cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
 
+    # ---- Build contextualized message (history + auto-summarization) ----
+    contextualized_message, _ = await _maybe_summarize_and_build_context(
+        db=db,
+        session_data=session_data,
+        cfg=cfg,
+        user_message=user_message,
+    )
+
     # ---- 7. Run agent or workflow ----------------------------------------
     raw_response: str
 
@@ -168,7 +652,7 @@ async def run_agent(
                 model_client=cfg.model_client,
                 system_prompt=cfg.system_prompt,
                 tools=cfg.active_tool_callables,
-                user_message=user_message,
+                user_message=contextualized_message,
                 agent_name=cfg.agent_name,
             )
         else:
@@ -177,7 +661,7 @@ async def run_agent(
                 model_client=cfg.model_client,
                 system_prompt=cfg.system_prompt,
                 tools=cfg.active_tool_callables,
-                user_message=user_message,
+                user_message=contextualized_message,
                 agent_name=cfg.agent_name,
             )
     except Exception as exc:
@@ -802,6 +1286,27 @@ async def run_agent_stream(
         # ---- 1-6. Resolve session config --------------------------------
         cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
 
+        # ---- Build contextualized message (history + auto-summarization) --
+        contextualized_message, summary_info = await _maybe_summarize_and_build_context(
+            db=db,
+            session_data=session_data,
+            cfg=cfg,
+            user_message=user_message,
+        )
+
+        # Emit summarized event if auto-summarization happened
+        if summary_info:
+            yield {
+                "event": "summarized",
+                "data": json.dumps({
+                    "session_id": session_id,
+                    "message_id": message_id,
+                    "summary": summary_info["summary_text"],
+                    "summarized_message_count": summary_info["summarized_count"],
+                    "tokens_saved": summary_info["tokens_saved"],
+                }),
+            }
+
         # ---- 7. Run agent or workflow (streaming) ------------------------
         if cfg.execution_type == "workflow":
             stream = _run_workflow_stream(
@@ -810,7 +1315,7 @@ async def run_agent_stream(
                 model_client=cfg.model_client,
                 system_prompt=cfg.system_prompt,
                 tools=cfg.active_tool_callables,
-                user_message=user_message,
+                user_message=contextualized_message,
                 agent_name=cfg.agent_name,
                 session_id=session_id,
                 message_id=message_id,
@@ -822,7 +1327,7 @@ async def run_agent_stream(
                 model_client=cfg.model_client,
                 system_prompt=cfg.system_prompt,
                 tools=cfg.active_tool_callables,
-                user_message=user_message,
+                user_message=contextualized_message,
                 agent_name=cfg.agent_name,
                 session_id=session_id,
                 message_id=message_id,
@@ -1415,6 +1920,14 @@ async def run_agent_assistant_only(
     # ---- 1-6. Resolve session config ------------------------------------
     cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
 
+    # ---- Build contextualized message (history + auto-summarization) ----
+    contextualized_message, _ = await _maybe_summarize_and_build_context(
+        db=db,
+        session_data=session_data,
+        cfg=cfg,
+        user_message=user_message_text,
+    )
+
     # ---- 7. Run agent or workflow ----------------------------------------
     raw_response: str
 
@@ -1426,7 +1939,7 @@ async def run_agent_assistant_only(
                 model_client=cfg.model_client,
                 system_prompt=cfg.system_prompt,
                 tools=cfg.active_tool_callables,
-                user_message=user_message_text,
+                user_message=contextualized_message,
                 agent_name=cfg.agent_name,
             )
         else:
@@ -1435,7 +1948,7 @@ async def run_agent_assistant_only(
                 model_client=cfg.model_client,
                 system_prompt=cfg.system_prompt,
                 tools=cfg.active_tool_callables,
-                user_message=user_message_text,
+                user_message=contextualized_message,
                 agent_name=cfg.agent_name,
             )
     except Exception as exc:

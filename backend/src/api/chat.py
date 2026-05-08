@@ -23,10 +23,12 @@ from sse_starlette.sse import EventSourceResponse
 
 from ..agents.runner import (
     _get_next_branch_index,
+    _msg_get,
     run_agent,
     run_agent_assistant_only,
     run_agent_stream,
 )
+from ..core.config import settings
 from ..core.dependencies import get_current_user, get_db
 from ..core.exceptions import (
     ForbiddenError,
@@ -112,6 +114,7 @@ class MessageResponse(BaseModel):
     model_id: str | None
     tool_calls: list | None
     is_deleted: bool
+    summarized: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -553,6 +556,7 @@ async def list_messages(
                 model_id=m.get("model_id"),
                 tool_calls=m.get("tool_calls"),
                 is_deleted=m.get("is_deleted", False),
+                summarized=m.get("summarized", False),
                 created_at=_parse_datetime(m.get("created_at")),
                 updated_at=_parse_datetime(m.get("updated_at")),
             )
@@ -962,6 +966,164 @@ async def submit_feedback(
     await db.refresh(feedback)
 
     return FeedbackResponse.model_validate(feedback)
+
+
+# =============================================================================
+# Message Summarization — Issue #29
+# =============================================================================
+
+
+class SummarizeRequest(BaseModel):
+    """Optional: number of recent message pairs to keep intact."""
+    keep_recent_pairs: int = 3
+
+
+class SummarizeResponse(BaseModel):
+    summary: str
+    summarized_message_count: int
+    tokens_saved: int
+
+
+@router.post(
+    "/session/{session_id}/summarize",
+    response_model=SummarizeResponse,
+)
+async def summarize_session(
+    session_id: str,
+    body: SummarizeRequest = SummarizeRequest(),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Manually summarize the conversation in a session.
+
+    Compresses older messages into a concise summary, keeping the most
+    recent *keep_recent_pairs* user/assistant message pairs intact.
+    The summary is stored as a system message in the session.
+
+    This is also triggered automatically when the conversation
+    approaches the model's context length limit.
+    """
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    is_temporary = data.get("is_temporary", False)
+
+    # Resolve the model for the summarization call
+    from ..agents.runner import (
+        _resolve_session_config,
+        _get_messages_for_session,
+        _generate_summary,
+        _extract_message_text,
+        _estimate_tokens,
+        _persist_system_message,
+    )
+
+    cfg = await _resolve_session_config(
+        db, data, current_user.tenant_id, current_user
+    )
+
+    # Get all messages
+    all_messages = await _get_messages_for_session(db, session_id, is_temporary)
+
+    if len(all_messages) < 4:
+        raise ValidationError(
+            "Need at least a few messages to summarize. "
+            "Keep chatting and try again later."
+        )
+
+    # Find non-summarized messages
+    non_summarized = [
+        m for m in all_messages
+        if not _msg_get(m, "summarized", False)
+    ]
+
+    # Count user+assistant pairs from the end
+    keep_pairs = max(1, body.keep_recent_pairs)
+    pair_count = 0
+    cutoff_idx = len(non_summarized)
+    for i in range(len(non_summarized) - 1, -1, -1):
+        msg = non_summarized[i]
+        sender = _msg_get(msg, "sender", "")
+        if sender == "user":
+            pair_count += 1
+            if pair_count >= keep_pairs:
+                cutoff_idx = i
+                break
+
+    messages_to_summarize = non_summarized[:cutoff_idx]
+
+    if not messages_to_summarize:
+        raise ValidationError(
+            "Nothing to summarize — all messages are already within the "
+            f"most recent {keep_pairs} exchange(s)."
+        )
+
+    # Generate summary
+    summary_text = await _generate_summary(
+        model=cfg.model,
+        model_client=cfg.model_client,
+        messages_to_summarize=messages_to_summarize,
+    )
+
+    if not summary_text:
+        raise ValidationError(
+            "Failed to generate summary. The model may be unavailable."
+        )
+
+    # Mark messages as summarized
+    if is_temporary:
+        from ..core.redis import get_redis, get_temp_messages
+        all_raw = await get_temp_messages(session_id)
+        for raw_msg in all_raw:
+            raw_id = raw_msg.get("id", "")
+            for to_mark in messages_to_summarize:
+                mark_id = _msg_get(to_mark, "id", "")
+                if raw_id == mark_id:
+                    raw_msg["summarized"] = True
+        r = await get_redis()
+        import json as _json
+        msg_key = f"session:tmp:{session_id}:messages"
+        session_key = f"session:tmp:{session_id}"
+        ttl = await r.ttl(session_key)
+        if ttl and ttl > 0:
+            await r.setex(msg_key, ttl, _json.dumps(all_raw))
+        else:
+            await r.setex(msg_key, settings.TEMPORARY_SESSION_TTL_SECONDS, _json.dumps(all_raw))
+    else:
+        for msg in messages_to_summarize:
+            if hasattr(msg, "summarized"):
+                msg.summarized = True
+        await db.commit()
+
+    # Store summary as system message
+    summary_content = [{"type": "text", "text": summary_text}]
+    await _persist_system_message(
+        db=db,
+        session_id=session_id,
+        is_temporary=is_temporary,
+        content=summary_content,
+    )
+
+    # Calculate tokens saved
+    old_tokens = sum(
+        _estimate_tokens(_extract_message_text(
+            _msg_get(m, "content")
+        ))
+        for m in messages_to_summarize
+    )
+    new_tokens = _estimate_tokens(summary_text)
+    tokens_saved = max(0, old_tokens - new_tokens)
+
+    logger.info(
+        "Manual summarization for session %s: %d messages compressed, ~%d tokens saved",
+        session_id, len(messages_to_summarize), tokens_saved,
+    )
+
+    return SummarizeResponse(
+        summary=summary_text,
+        summarized_message_count=len(messages_to_summarize),
+        tokens_saved=tokens_saved,
+    )
 
 
 # =============================================================================
