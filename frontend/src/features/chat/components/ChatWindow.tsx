@@ -69,6 +69,7 @@ export function ChatWindow({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [thinkingEnabled, setThinkingEnabled] = useState<boolean | null>(null);
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
+  const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -153,6 +154,7 @@ export function ChatWindow({
     setStreamingReasoningContent("");
     setStreamError(null);
     setToolEvents([]);
+    setFollowUpQuestions([]);
 
     // Re-enable auto-scroll when user sends a new message
     userScrolledUpRef.current = false;
@@ -197,6 +199,9 @@ export function ChatWindow({
         queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
+      onFollowUpQuestions(questions) {
+        setFollowUpQuestions(questions);
+      },
       onError(err) {
         setPendingUserMessage(null);
         setStreamError(err);
@@ -208,6 +213,8 @@ export function ChatWindow({
         setStreamingReasoningContent("");
         setStreamingMessageId(null);
         setToolEvents([]);
+        // Don't clear followUpQuestions here — they are set after
+        // message_complete and should persist until the next message.
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -472,6 +479,50 @@ export function ChatWindow({
             }}
             title="Scroll to bottom"
           />
+        )}
+
+        {/* Follow-up questions chips */}
+        {!streaming && followUpQuestions.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              padding: "0 0 12px 0",
+              justifyContent: "flex-start",
+            }}
+          >
+            {followUpQuestions.map((q, i) => (
+              <Button
+                key={i}
+                size="small"
+                type="default"
+                style={{
+                  borderRadius: 16,
+                  maxWidth: "100%",
+                  whiteSpace: "normal",
+                  height: "auto",
+                  padding: "4px 12px",
+                  textAlign: "left",
+                }}
+                onClick={() => {
+                  setInputValue(q);
+                  setFollowUpQuestions([]);
+                  // Auto-send on next tick after state settles
+                  setTimeout(() => {
+                    const textarea = document.querySelector(
+                      `[data-session-id="${sessionId}"] textarea, #chat-input-${sessionId}`
+                    ) as HTMLTextAreaElement;
+                    if (textarea) {
+                      textarea.focus();
+                    }
+                  }, 0);
+                }}
+              >
+                {q}
+              </Button>
+            ))}
+          </div>
         )}
       </div>
 

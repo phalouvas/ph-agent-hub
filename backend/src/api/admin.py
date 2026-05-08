@@ -191,6 +191,7 @@ class ModelCreate(BaseModel):
     temperature: float = 0.7
     routing_priority: int = 0
     thinking_enabled: bool = False
+    follow_up_questions_enabled: bool = False
     context_length: int | None = None
 
 
@@ -206,6 +207,7 @@ class ModelUpdate(BaseModel):
     temperature: float | None = None
     routing_priority: int | None = None
     thinking_enabled: bool | None = None
+    follow_up_questions_enabled: bool | None = None
     context_length: int | None = None
 
 
@@ -222,6 +224,7 @@ class ModelResponse(BaseModel):
     temperature: float
     routing_priority: int
     thinking_enabled: bool
+    follow_up_questions_enabled: bool = False
     context_length: int | None = None
     created_at: datetime
     updated_at: datetime

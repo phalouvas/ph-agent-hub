@@ -59,6 +59,19 @@ export function ModelList() {
     },
   });
 
+  const toggleFollowUp = useMutation({
+    mutationFn: ({
+      id,
+      follow_up_questions_enabled,
+    }: {
+      id: string;
+      follow_up_questions_enabled: boolean;
+    }) => updateModel(id, { follow_up_questions_enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-models"] });
+    },
+  });
+
   const columns = [
     { title: "Name", dataIndex: "name", key: "name" },
     {
@@ -93,6 +106,23 @@ export function ModelList() {
           checked={record.enabled}
           onChange={(checked) =>
             toggleEnabled.mutate({ id: record.id, enabled: checked })
+          }
+        />
+      ),
+    },
+    {
+      title: "Follow-ups",
+      dataIndex: "follow_up_questions_enabled",
+      key: "follow_up_questions_enabled",
+      render: (_: boolean, record: ModelData) => (
+        <Switch
+          checked={record.follow_up_questions_enabled}
+          size="small"
+          onChange={(checked) =>
+            toggleFollowUp.mutate({
+              id: record.id,
+              follow_up_questions_enabled: checked,
+            })
           }
         />
       ),

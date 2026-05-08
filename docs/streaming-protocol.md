@@ -162,7 +162,29 @@ Emitted when the agent finishes and the full message has been persisted to the d
 
 ---
 
-### 5.6 `error`
+### 5.6 `follow_up_questions`
+Emitted after `message_complete` when the model has `follow_up_questions_enabled` set to `true`. Contains suggested follow-up questions the user can click to continue the conversation.
+
+```json
+{
+  "session_id": "uuid",
+  "message_id": "uuid",
+  "questions": [
+    "Can you explain that in more detail?",
+    "What are the next steps?",
+    "How does this compare to other approaches?"
+  ]
+}
+```
+
+- `questions` — an array of up to 3 strings, each a concise follow-up question.
+- The frontend renders these as clickable chips below the assistant message bubble.
+- Clicking a chip auto-fills the chat input and sends the message.
+- If generation fails, no event is emitted (graceful degradation).
+
+---
+
+### 5.7 `error`
 Emitted when a non-recoverable error occurs during agent execution.
 
 ```json
@@ -191,7 +213,7 @@ Emitted when a non-recoverable error occurs during agent execution.
 
 ---
 
-### 5.7 `heartbeat`
+### 5.8 `heartbeat`
 Emitted every 15 seconds if no other event has been sent, to keep the connection alive through proxies.
 
 ```
