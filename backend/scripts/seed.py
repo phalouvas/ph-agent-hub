@@ -25,6 +25,7 @@ from sqlalchemy import select
 from src.core.security import hash_password
 from src.db.base import AsyncSessionLocal
 from src.db.orm.tenants import Tenant
+from src.db.orm.tools import Tool
 from src.db.orm.users import User
 
 # ---------------------------------------------------------------------------
@@ -86,6 +87,30 @@ async def main() -> None:
             print(f"[seed] Created admin user: {ADMIN_EMAIL} (id={admin.id})")
         else:
             print(f"[seed] Admin user already exists: {ADMIN_EMAIL} (id={admin.id})")
+
+        # 3. Ensure default datetime tool exists
+        result = await db.execute(
+            select(Tool).where(
+                Tool.tenant_id == tenant.id,
+                Tool.type == "datetime",
+                Tool.name == "Current Time",
+            )
+        )
+        datetime_tool = result.scalar_one_or_none()
+
+        if datetime_tool is None:
+            datetime_tool = Tool(
+                tenant_id=tenant.id,
+                name="Current Time",
+                type="datetime",
+                config={"default_timezone": "UTC"},
+                enabled=True,
+            )
+            db.add(datetime_tool)
+            await db.flush()
+            print(f"[seed] Created datetime tool: Current Time (id={datetime_tool.id})")
+        else:
+            print(f"[seed] Datetime tool already exists: Current Time (id={datetime_tool.id})")
 
         await db.commit()
 

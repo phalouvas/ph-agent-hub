@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..core.exceptions import NotFoundError, ValidationError
 from ..db.orm.tools import Tool
 
-VALID_TOOL_TYPES = {"erpnext", "membrane", "custom"}
+VALID_TOOL_TYPES = {"erpnext", "membrane", "custom", "datetime"}
 
 
 async def list_tools(

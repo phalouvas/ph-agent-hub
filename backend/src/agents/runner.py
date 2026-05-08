@@ -411,6 +411,9 @@ async def _build_tool_callables(
     elif tool.type == "custom":
         # Stub for Phase 6
         return []
+    elif tool.type == "datetime":
+        from ..tools.datetime import build_datetime_tools
+        return build_datetime_tools(tool.config or {})
     else:
         logger.warning("Unknown tool type '%s' for tool %s", tool.type, tool.id)
         return []

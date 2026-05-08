@@ -1196,6 +1196,25 @@ async def list_message_uploads(
 
 
 @router.get(
+    "/session/tools/available",
+    response_model=list[ToolResponse],
+)
+async def list_available_tools(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """List all enabled tools available for the current tenant."""
+    result = await db.execute(
+        select(Tool).where(
+            Tool.tenant_id == current_user.tenant_id,
+            Tool.enabled == True,  # noqa: E712
+        ).order_by(Tool.name)
+    )
+    tools = result.scalars().all()
+    return [ToolResponse.model_validate(t) for t in tools]
+
+
+@router.get(
     "/session/{session_id}/tools",
     response_model=list[ToolResponse],
 )

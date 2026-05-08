@@ -130,6 +130,7 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
               { label: "ERPNext", value: "erpnext" },
               { label: "Membrane", value: "membrane" },
               { label: "Custom", value: "custom" },
+              { label: "Datetime", value: "datetime" },
             ]}
           />
         </Form.Item>
