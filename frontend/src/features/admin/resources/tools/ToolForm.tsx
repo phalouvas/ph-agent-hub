@@ -28,6 +28,7 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const isEdit = !!tool;
+  const [isPublic, setIsPublic] = React.useState(tool?.is_public ?? false);
 
   React.useEffect(() => {
     if (open) {
@@ -36,16 +37,20 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
           name: tool.name,
           type: tool.type,
           enabled: tool.enabled,
+          is_public: tool.is_public,
           config_json: tool.config
             ? JSON.stringify(tool.config, null, 2)
             : "",
         });
+        setIsPublic(tool.is_public);
       } else {
         form.resetFields();
         form.setFieldsValue({
           type: "custom",
           enabled: true,
+          is_public: false,
         });
+        setIsPublic(false);
       }
     }
   }, [open, tool, form]);
@@ -142,6 +147,14 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
         </Form.Item>
         <Form.Item name="enabled" label="Enabled" valuePropName="checked">
           <Switch />
+        </Form.Item>
+        <Form.Item
+          name="is_public"
+          label="Public"
+          valuePropName="checked"
+          tooltip="When enabled, all tenant users can use this tool regardless of group membership"
+        >
+          <Switch onChange={(checked) => setIsPublic(checked)} />
         </Form.Item>
       </Form>
     </Modal>

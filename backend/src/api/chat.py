@@ -1203,15 +1203,20 @@ async def list_available_tools(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """List all enabled tools available for the current tenant."""
-    result = await db.execute(
-        select(Tool).where(
-            Tool.tenant_id == current_user.tenant_id,
-            Tool.enabled == True,  # noqa: E712
-        ).order_by(Tool.name)
+    """List all enabled tools available for the current user.
+
+    Tools are filtered by group access control:
+    is_public=True OR tool assigned to a group the user belongs to.
+    """
+    from ..services.tool_service import list_tools
+
+    tools = await list_tools(
+        db,
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
     )
-    tools = result.scalars().all()
-    return [ToolResponse.model_validate(t) for t in tools]
+    enabled = [t for t in tools if t.enabled]
+    return [ToolResponse.model_validate(t) for t in enabled]
 
 
 @router.get(

@@ -80,16 +80,20 @@ from ..services.skill_service import (
 from ..services.group_service import (
     add_member as _svc_add_member,
     assign_model_to_group as _svc_assign_model_to_group,
+    assign_tool_to_group as _svc_assign_tool_to_group,
     create_group as _svc_create_group,
     delete_group as _svc_delete_group,
     get_group_by_id,
     list_group_members as _svc_list_group_members,
     list_group_models as _svc_list_group_models,
+    list_group_tools as _svc_list_group_tools,
     list_groups as _svc_list_groups,
     list_model_groups as _svc_list_model_groups,
+    list_tool_groups as _svc_list_tool_groups,
     list_user_groups as _svc_list_user_groups,
     remove_member as _svc_remove_member,
     remove_model_from_group as _svc_remove_model_from_group,
+    remove_tool_from_group as _svc_remove_tool_from_group,
     update_group as _svc_update_group,
 )
 
@@ -237,6 +241,7 @@ class ToolCreate(BaseModel):
     type: str
     config: dict | None = None
     enabled: bool = True
+    is_public: bool = False
 
 
 class ToolUpdate(BaseModel):
@@ -244,6 +249,7 @@ class ToolUpdate(BaseModel):
     type: str | None = None
     config: dict | None = None
     enabled: bool | None = None
+    is_public: bool | None = None
 
 
 class ToolResponse(BaseModel):
@@ -253,6 +259,7 @@ class ToolResponse(BaseModel):
     type: str
     config: dict | None
     enabled: bool
+    is_public: bool
     created_at: datetime
     updated_at: datetime
 
@@ -325,12 +332,25 @@ class GroupModelResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GroupToolResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    enabled: bool
+
+    model_config = {"from_attributes": True}
+
+
 class MemberAdd(BaseModel):
     user_id: str
 
 
 class ModelAssign(BaseModel):
     model_id: str
+
+
+class ToolAssign(BaseModel):
+    tool_id: str
 
 
 # =============================================================================
@@ -726,6 +746,7 @@ async def create_tool(
         type=body.type,
         config=body.config,
         enabled=body.enabled,
+        is_public=body.is_public,
     )
     await write_audit_log(
         db,
@@ -763,6 +784,8 @@ async def update_tool(
         update_kwargs["config"] = body.config
     if body.enabled is not None:
         update_kwargs["enabled"] = body.enabled
+    if body.is_public is not None:
+        update_kwargs["is_public"] = body.is_public
 
     tool = await _svc_update_tool(db, tool_id, **update_kwargs)
 
@@ -1610,7 +1633,85 @@ async def remove_model_from_group(
 
 
 # =============================================================================
-# Helper Endpoints — user groups & model groups
+# Group-Tool Assignment Endpoints (admin or manager)
+# =============================================================================
+
+
+@router.get("/groups/{group_id}/tools", response_model=list[GroupToolResponse])
+async def list_group_tools(
+    group_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List tools assigned to a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only view groups in their own tenant")
+
+    tools = await _svc_list_group_tools(db, group_id)
+    return [GroupToolResponse.model_validate(t) for t in tools]
+
+
+@router.post("/groups/{group_id}/tools", status_code=201)
+async def assign_tool_to_group(
+    group_id: str,
+    body: ToolAssign,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Assign a tool to a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only modify groups in their own tenant")
+
+    await _svc_assign_tool_to_group(db, group_id, body.tool_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.tool_assigned",
+        target_type="group",
+        target_id=group_id,
+        payload={"tool_id": body.tool_id},
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+
+
+@router.delete("/groups/{group_id}/tools/{tool_id}", status_code=204)
+async def remove_tool_from_group(
+    group_id: str,
+    tool_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Remove a tool from a group."""
+    target = await get_group_by_id(db, group_id)
+    if target is None:
+        raise NotFoundError("Group not found")
+    if current_user.role == "manager" and target.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only modify groups in their own tenant")
+
+    await _svc_remove_tool_from_group(db, group_id, tool_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="group.tool_removed",
+        target_type="group",
+        target_id=group_id,
+        payload={"tool_id": tool_id},
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )
+
+
+# =============================================================================
+# Helper Endpoints — user groups, model groups & tool groups
 # =============================================================================
 
 
@@ -1635,6 +1736,19 @@ async def list_model_groups(
 ):
     """List groups a model is assigned to."""
     groups = await _svc_list_model_groups(db, model_id)
+    if current_user.role == "manager":
+        groups = [g for g in groups if g.tenant_id == current_user.tenant_id]
+    return [GroupResponse.model_validate(g) for g in groups]
+
+
+@router.get("/tools/{tool_id}/groups", response_model=list[GroupResponse])
+async def list_tool_groups(
+    tool_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List groups a tool is assigned to."""
+    groups = await _svc_list_tool_groups(db, tool_id)
     if current_user.role == "manager":
         groups = [g for g in groups if g.tenant_id == current_user.tenant_id]
     return [GroupResponse.model_validate(g) for g in groups]

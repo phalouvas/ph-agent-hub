@@ -105,6 +105,7 @@ async def main() -> None:
                 type="datetime",
                 config={"default_timezone": "UTC"},
                 enabled=True,
+                is_public=True,
             )
             db.add(datetime_tool)
             await db.flush()
