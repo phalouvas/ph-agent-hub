@@ -12,7 +12,16 @@ from typing import Any
 
 from agent_framework import tool
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ph_agent_hub.tools.web_search")
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+#: Maximum character length for each search result's body/snippet when
+#: returned to the model.  Keeps tool output compact so the model can
+#: process it efficiently without being overwhelmed by verbose text.
+MAX_SNIPPET_LENGTH: int = 300
 
 # ---------------------------------------------------------------------------
 # Tool factory
@@ -162,16 +171,25 @@ def _do_search(
         backend=backend,
     )
 
-    # Simplify results to a consistent subset of keys
+    # Simplify and trim results to keep output compact
     simplified: list[dict[str, Any]] = []
     for item in raw:
+        body = item.get("body", "")
+        if len(body) > MAX_SNIPPET_LENGTH:
+            body = body[:MAX_SNIPPET_LENGTH] + "…"
+
         simplified.append(
             {
                 "title": item.get("title", ""),
                 "url": item.get("href", item.get("url", "")),
-                "snippet": item.get("body", ""),
+                "snippet": body,
                 "source": item.get("source", ""),
             }
         )
 
+    logger.info(
+        "web_search results: query=%r count=%d",
+        query,
+        len(simplified),
+    )
     return simplified
