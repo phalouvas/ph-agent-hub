@@ -54,6 +54,17 @@ async def delete_object(bucket: str, key: str) -> None:
     await asyncio.to_thread(_delete)
 
 
+async def download_object(bucket: str, key: str) -> bytes:
+    """Download an object's bytes from MinIO."""
+    client = get_client()
+
+    def _download():
+        response = client.get_object(Bucket=bucket, Key=key)
+        return response["Body"].read()
+
+    return await asyncio.to_thread(_download)
+
+
 async def generate_presigned_url(
     bucket: str, key: str, expires_in: int = 900
 ) -> str:

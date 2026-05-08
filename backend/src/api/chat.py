@@ -15,6 +15,7 @@ from typing import Any, AsyncIterator
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,7 @@ from ..db.orm.sessions import Session
 from ..db.orm.tools import Tool
 from ..db.orm.users import User as UserORM
 from ..services import session_service, upload_service
+from ..storage import s3
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -1105,6 +1107,40 @@ async def get_upload_url(
         user_id=current_user.id,
     )
     return {"url": url}
+
+
+@router.get(
+    "/session/{session_id}/upload/{file_id}/download",
+)
+async def download_upload(
+    session_id: str,
+    file_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Download a file upload through the backend (same domain)."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    upload = await upload_service.get_upload_by_id(
+        db=db,
+        file_id=file_id,
+        user_id=current_user.id,
+    )
+    file_bytes = await s3.download_object(
+        bucket=upload.bucket,
+        key=upload.storage_key,
+    )
+    return StreamingResponse(
+        content=iter([file_bytes]),
+        media_type=upload.content_type,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{upload.original_filename}"'
+            ),
+            "Content-Length": str(upload.size_bytes),
+        },
+    )
 
 
 @router.delete(

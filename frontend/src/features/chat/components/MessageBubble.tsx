@@ -27,7 +27,8 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MessageFeedback } from "./MessageFeedback";
 import { MessageBranchNav } from "./MessageBranchNav";
 import type { MessageData } from "../services/chat";
-import { listMessageUploads, getUploadUrl } from "../services/chat";
+import { listMessageUploads } from "../services/chat";
+import { getToken } from "../../../services/api";
 
 const { Text, Paragraph } = Typography;
 
@@ -317,8 +318,26 @@ export function MessageBubble({
                 onClick={async (e) => {
                   e.stopPropagation();
                   try {
-                    const { url } = await getUploadUrl(sessionId, f.file_id);
-                    window.open(url, "_blank");
+                    const BASE_URL = import.meta.env.VITE_API_URL || "/api";
+                    const token = getToken();
+                    const res = await fetch(
+                      `${BASE_URL}/chat/session/${sessionId}/upload/${f.file_id}/download`,
+                      {
+                        headers: token
+                          ? { Authorization: `Bearer ${token}` }
+                          : {},
+                      },
+                    );
+                    if (!res.ok) return;
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = f.original_filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
                   } catch {
                     // Silently fail
                   }
