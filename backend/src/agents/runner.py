@@ -295,26 +295,83 @@ async def _generate_summary(
 ) -> str | None:
     """Use the configured model to generate a concise summary of past messages.
 
+    Detects existing summary system messages in the input and merges them
+    into a single consolidated summary, avoiding summary accumulation over
+    very long conversations.
+
     Creates a fresh non-thinking client for the summarization call.
     Returns None on failure (summarization is best-effort).
     """
     if not messages_to_summarize:
         return None
 
-    # Build the conversation text to summarize
-    conversation_text = _format_conversation_history(messages_to_summarize)
-    if not conversation_text:
-        return None
+    # Separate existing summary system messages from regular messages.
+    # Existing summaries should be merged into the new one rather than
+    # treated as raw conversation, which would bloat the prompt.
+    existing_summaries: list[str] = []
+    regular_messages: list = []
 
-    summary_prompt = (
-        "Summarize the following conversation concisely. "
-        "Focus on key topics discussed, decisions made, important facts shared, "
-        "and any pending questions or action items. "
-        "Write in plain English, no more than 200 words. "
-        "Do NOT include phrases like 'The conversation covered' or 'The user and assistant discussed' — "
-        "just state the facts directly as a compact record.\n\n"
-        f"{conversation_text}"
-    )
+    for msg in messages_to_summarize:
+        sender = _msg_get(msg, "sender", "")
+        if sender == "system":
+            # This is a previous summary — extract its text
+            content = _msg_get(msg, "content")
+            text = _extract_message_text(content)
+            if text:
+                existing_summaries.append(text)
+        else:
+            regular_messages.append(msg)
+
+    # Build the conversation text for the regular (non-summary) messages
+    conversation_text = _format_conversation_history(regular_messages)
+
+    # Build the full prompt: merge existing summaries with new content
+    if existing_summaries:
+        # There are previous summaries — ask the LLM to merge them
+        summaries_block = "\n".join(
+            f"- {s}" for s in existing_summaries
+        )
+        if conversation_text:
+            summary_prompt = (
+                "You are maintaining a running conversation summary. "
+                "Below are one or more EXISTING summaries of earlier parts "
+                "of the conversation, followed by newer messages. "
+                "Merge everything into a SINGLE concise summary.\n\n"
+                "=== EXISTING SUMMARIES (merge these into your response) ===\n"
+                f"{summaries_block}\n\n"
+                "=== NEWER CONVERSATION ===\n"
+                f"{conversation_text}\n\n"
+                "Produce ONE consolidated summary. Focus on key topics, "
+                "decisions, important facts, and pending questions. "
+                "Write in plain English, no more than 200 words. "
+                "Do NOT use meta-phrases like 'The conversation covered' — "
+                "just state the facts directly as a compact record."
+            )
+        else:
+            # Only summaries, no regular messages — merge them directly
+            summary_prompt = (
+                "Below are multiple conversation summaries. "
+                "Merge them into a SINGLE concise summary.\n\n"
+                "=== SUMMARIES TO MERGE ===\n"
+                f"{summaries_block}\n\n"
+                "Produce ONE consolidated summary. Focus on key topics, "
+                "decisions, important facts, and pending questions. "
+                "Write in plain English, no more than 200 words. "
+                "Do NOT use meta-phrases — just state the facts directly."
+            )
+    elif conversation_text:
+        # No existing summaries — standard summarization
+        summary_prompt = (
+            "Summarize the following conversation concisely. "
+            "Focus on key topics discussed, decisions made, important facts shared, "
+            "and any pending questions or action items. "
+            "Write in plain English, no more than 200 words. "
+            "Do NOT include phrases like 'The conversation covered' or 'The user and assistant discussed' — "
+            "just state the facts directly as a compact record.\n\n"
+            f"{conversation_text}"
+        )
+    else:
+        return None
 
     messages_payload = [
         {"role": "user", "content": summary_prompt},
