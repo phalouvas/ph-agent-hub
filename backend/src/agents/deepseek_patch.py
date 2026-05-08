@@ -1,89 +1,14 @@
 # =============================================================================
-# PH Agent Hub — DeepSeek MAF Monkey-Patches
+# PH Agent Hub — DeepSeek Utility Functions
 # =============================================================================
-# All monkey-patches applied to MAF internals for DeepSeek compatibility
-# are isolated here.  No other module modifies MAF internals.
+# Lightweight utilities for DeepSeek output processing.
+# No longer monkey-patches MAF internals — thinking mode is handled by
+# DeepSeekThinkingClient (see src/models/deepseek.py).
 #
-# Call ``apply_deepseek_patches()`` once (it is idempotent) before running
-# an agent with a DeepSeek model.
+# Kept: strip_reasoning, extract_json_block (used by stabilizer.py)
 # =============================================================================
 
-import logging
 import re
-
-logger = logging.getLogger(__name__)
-
-_patched: bool = False
-
-
-def apply_deepseek_patches() -> None:
-    """Apply DeepSeek compatibility patches to MAF internals.
-
-    Idempotent — calling multiple times is safe.
-    """
-    global _patched
-    if _patched:
-        return
-
-    try:
-        _patch_agent_framework()
-        _patched = True
-        logger.info("DeepSeek patches applied to agent-framework.")
-    except Exception as exc:
-        logger.warning("Failed to apply some DeepSeek patches: %s", exc)
-
-
-# ---------------------------------------------------------------------------
-# Patch helpers
-# ---------------------------------------------------------------------------
-
-
-def _patch_agent_framework() -> None:
-    """Apply output-processing patches to the MAF agent-framework.
-
-    We patch the OpenAIChatClient and/or Agent internals to handle
-    DeepSeek-specific output quirks (reasoning blocks, malformed JSON, etc.).
-    """
-    try:
-        from agent_framework.openai import OpenAIChatClient
-
-        _patch_openai_chat_client(OpenAIChatClient)
-    except ImportError:
-        logger.warning("Could not import agent_framework.openai.OpenAIChatClient; skipping patches.")
-
-
-def _patch_openai_chat_client(cls: type) -> None:
-    """Monkey-patch OpenAIChatClient methods for DeepSeek compatibility."""
-
-    # ---- Patch parse_output -----------------------------------------------
-    _original_parse = getattr(cls, "parse_output", None)
-    if _original_parse is not None:
-
-        def patched_parse(self, output: str) -> str:
-            # Strip reasoning before standard parse
-            cleaned = strip_reasoning(output)
-            return _original_parse(self, cleaned)
-
-        cls.parse_output = patched_parse
-
-    # ---- Patch extract_json ----------------------------------------------
-    _original_extract_json = getattr(cls, "extract_json", None)
-    if _original_extract_json is not None:
-
-        def patched_extract_json(self, text: str) -> str:
-            # Try standard extraction first
-            try:
-                return _original_extract_json(self, text)
-            except Exception:
-                # Fall back to our JSON extractor
-                return extract_json_block(text)
-
-        cls.extract_json = patched_extract_json
-
-
-# ---------------------------------------------------------------------------
-# Public utility functions (also used by stabilizer.py)
-# ---------------------------------------------------------------------------
 
 _RE_THINK = re.compile(
     r"<think[^>]*>.*?</think>", re.DOTALL | re.IGNORECASE

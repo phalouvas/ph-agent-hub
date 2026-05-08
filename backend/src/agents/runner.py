@@ -63,6 +63,7 @@ class SessionConfig:
     active_tool_callables: list
     execution_type: str
     agent_name: str
+    thinking_enabled: bool
 
 
 async def _resolve_session_config(
@@ -78,7 +79,6 @@ async def _resolve_session_config(
     """
     # 1. Resolve model
     model = await _resolve_model(db, session_data, user)
-    model_client = get_chat_client(model)
 
     # 2. Build system prompt
     system_prompt = await _build_system_prompt(db, session_data)
@@ -100,10 +100,13 @@ async def _resolve_session_config(
         execution_type = "agent"
     agent_name = skill.title if skill else "assistant"
 
-    # 6. Apply DeepSeek middleware
-    if model.provider.lower() == "deepseek":
-        from .deepseek_patch import apply_deepseek_patches
-        apply_deepseek_patches()
+    # 6. Resolve thinking_enabled: session override > model default
+    thinking_enabled = session_data.get("thinking_enabled")
+    if thinking_enabled is None:
+        thinking_enabled = getattr(model, "thinking_enabled", False)
+
+    # Rebuild model_client with thinking_enabled
+    model_client = get_chat_client(model, thinking_enabled=thinking_enabled)
 
     return SessionConfig(
         model=model,
@@ -113,6 +116,7 @@ async def _resolve_session_config(
         active_tool_callables=active_tool_callables,
         execution_type=execution_type,
         agent_name=agent_name,
+        thinking_enabled=thinking_enabled,
     )
 
 
@@ -180,12 +184,7 @@ async def run_agent(
             f"Agent execution failed: {exc}"
         ) from exc
 
-    # ---- 8. Stabilise DeepSeek output -----------------------------------
-    if cfg.model.provider.lower() == "deepseek" and settings.DEEPSEEK_STRIP_REASONING:
-        from .stabilizer import stabilize_text
-        raw_response = stabilize_text(raw_response)
-
-    # ---- 9. Persist messages --------------------------------------------
+    # ---- 8. Persist messages --------------------------------------------
     _user_msg_id, assistant_msg_id = await _persist_messages(
         db=db,
         session_id=session_id,
@@ -713,83 +712,6 @@ async def _persist_messages(
 # =============================================================================
 
 
-class ThinkBlockStreamFilter:
-    """Stateful, streaming-aware ``<think>...</think>`` content filter.
-
-    Wraps an async token iterator and suppresses all content between
-    ``<think>`` and ``</think>`` tags.  Buffers partial tag text so that
-    incomplete tag boundaries never emit stray ``<think`` characters
-    into the output stream.
-
-    Only needed when ``model.provider == "deepseek"`` and
-    ``settings.DEEPSEEK_STRIP_REASONING`` is True.
-    """
-
-    _OPEN = "<think"
-    _CLOSE = "</think>"
-
-    def __init__(self, token_iter: AsyncIterator[str]) -> None:
-        self._iter = token_iter
-        self._buffer: str = ""
-        self._inside_think: bool = False
-
-    def __aiter__(self) -> "ThinkBlockStreamFilter":
-        return self
-
-    async def __anext__(self) -> str:
-        while True:
-            # Drain buffer first
-            if self._buffer:
-                ch = self._buffer[0]
-                self._buffer = self._buffer[1:]
-            else:
-                try:
-                    ch = await self._iter.__anext__()
-                except StopAsyncIteration:
-                    # Flush any remaining buffered text that is not inside
-                    # a think block.  If we're still inside a think block
-                    # the closing tag was never emitted — discard.
-                    if self._buffer and not self._inside_think:
-                        remaining = self._buffer
-                        self._buffer = ""
-                        return remaining
-                    raise
-
-            if self._inside_think:
-                # Accumulate until we see the closing tag
-                self._buffer = ch + self._buffer  # prepend for tag matching
-                idx = self._buffer.find(self._CLOSE)
-                if idx != -1:
-                    # Found closing tag — discard everything up to & including it
-                    self._buffer = self._buffer[idx + len(self._CLOSE):]
-                    self._inside_think = False
-                # else: keep buffering inside the think block
-                continue
-
-            # Outside think block — check for opening tag
-            self._buffer = ch + self._buffer
-            idx = self._buffer.find(self._OPEN)
-            if idx != -1:
-                # Emit everything before the opening tag
-                before = self._buffer[:idx]
-                self._buffer = self._buffer[idx + len(self._OPEN):]
-                self._inside_think = True
-                if before:
-                    return before
-                # Continue loop — will enter _inside_think branch
-                continue
-
-            # No tag found — emit oldest character
-            if len(self._buffer) > len(self._OPEN):
-                # Buffer is large enough to be sure no partial <think is coming
-                emit = self._buffer[:-len(self._OPEN) + 1]
-                self._buffer = self._buffer[-len(self._OPEN) + 1:]
-                return emit
-
-            # Buffer still small — fetch more
-            continue
-
-
 async def run_agent_stream(
     session_data: dict,
     user_message: str,
@@ -899,18 +821,10 @@ async def run_agent_stream(
         }
         return  # Don't proceed to message_complete on error
 
-    # ---- 8. Stabilise DeepSeek output (on full text) ---------------------
-    if (
-        cfg.model.provider.lower() == "deepseek"
-        and settings.DEEPSEEK_STRIP_REASONING
-    ):
-        from .stabilizer import stabilize_text
-        accumulated_text = stabilize_text(accumulated_text)
-
-    # ---- 9. Extract token counts from stream final response -------------
+    # ---- 8. Extract token counts from stream final response -------------
     tokens_in, tokens_out = _stream_token_info.get("in", 0), _stream_token_info.get("out", 0)
 
-    # ---- 10. Persist assistant message ------------------------------------
+    # ---- 9. Persist assistant message ------------------------------------
     await _persist_assistant_message(
         db=db,
         session_id=session_id,
@@ -920,7 +834,7 @@ async def run_agent_stream(
         parent_message_id=user_msg_id,
     )
 
-    # ---- 11. Write usage log ---------------------------------------------
+    # ---- 10. Write usage log ---------------------------------------------
     try:
         await write_usage_log(
             db,
@@ -933,7 +847,7 @@ async def run_agent_stream(
     except Exception:
         logger.exception("Failed to write usage log (streaming)")
 
-    # ---- 12. Emit message_complete ---------------------------------------
+    # ---- 11. Emit message_complete ---------------------------------------
     yield {
         "event": "message_complete",
         "data": json.dumps({
@@ -974,14 +888,6 @@ async def _run_agent_stream(
 
     response_stream = agent.run(user_message, stream=True)
 
-    # Per-stream think filter — instantiated once so state is isolated
-    think_filter: _ThinkFilter | None = None
-    if (
-        model.provider.lower() == "deepseek"
-        and settings.DEEPSEEK_STRIP_REASONING
-    ):
-        think_filter = _ThinkFilter()
-
     step_index = 0
     async for update in response_stream:
         # Check each content item in the update
@@ -991,13 +897,15 @@ async def _run_agent_stream(
             if content_type == "text":
                 delta = getattr(content, "text", "")
                 if delta:
-                    if think_filter is not None:
-                        delta = think_filter.feed(delta)
-
-                    if delta:
-                        yield _sse_event("token", {
-                            "delta": delta,
-                        }, session_id=session_id, message_id=message_id)
+                    yield _sse_event("token", {
+                        "delta": delta,
+                    }, session_id=session_id, message_id=message_id)
+            elif content_type == "text_reasoning":
+                delta = getattr(content, "text", "")
+                if delta:
+                    yield _sse_event("reasoning_token", {
+                        "delta": delta,
+                    }, session_id=session_id, message_id=message_id)
             elif content_type in ("function_call", "tool_call"):
                 tool_call_id = getattr(content, "call_id", None) or str(uuid.uuid4())
                 tool_name = getattr(content, "name", "unknown")
@@ -1143,50 +1051,6 @@ def _maybe_accumulate_text(event_dict: dict, current: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-class _ThinkFilter:
-    """Per-stream stateful ``<think>`` block filter.
-
-    Feeds one token delta at a time and returns filtered text.  State is
-    instance-local — safe for concurrent streams.  Used by
-    ``_run_agent_stream`` when ``model.provider == "deepseek"`` and
-    ``settings.DEEPSEEK_STRIP_REASONING`` is True.
-    """
-
-    _OPEN = "<think"
-    _CLOSE = "</think>"
-
-    def __init__(self) -> None:
-        self._buffer: str = ""
-        self._inside: bool = False
-
-    def feed(self, delta: str) -> str:
-        """Push *delta* and return any filtered text available right now."""
-        self._buffer += delta
-        result: list[str] = []
-
-        while self._buffer:
-            if self._inside:
-                idx = self._buffer.find(self._CLOSE)
-                if idx != -1:
-                    self._buffer = self._buffer[idx + len(self._CLOSE):]
-                    self._inside = False
-                else:
-                    self._buffer = ""
-                    break
-            else:
-                idx = self._buffer.find(self._OPEN)
-                if idx == -1:
-                    result.append(self._buffer)
-                    self._buffer = ""
-                    break
-                else:
-                    result.append(self._buffer[:idx])
-                    self._buffer = self._buffer[idx + len(self._OPEN):]
-                    self._inside = True
-
-        return "".join(result)
-
-
 def _summarise_tool_result(output: Any) -> str:
     """Create a short human-readable summary of a tool result.
 
@@ -1312,12 +1176,7 @@ async def run_agent_assistant_only(
             f"Agent execution failed: {exc}"
         ) from exc
 
-    # ---- 8. Stabilise DeepSeek output -----------------------------------
-    if cfg.model.provider.lower() == "deepseek" and settings.DEEPSEEK_STRIP_REASONING:
-        from .stabilizer import stabilize_text
-        raw_response = stabilize_text(raw_response)
-
-    # ---- 9. Persist ONLY the assistant message --------------------------
+    # ---- 8. Persist ONLY the assistant message --------------------------
     assistant_msg_content = [{"type": "text", "text": raw_response}]
     assistant_msg_id = str(uuid.uuid4())
 

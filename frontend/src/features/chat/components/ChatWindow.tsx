@@ -7,7 +7,7 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Button, Input, Space, Spin, Empty, Alert } from "antd";
+import { Button, Input, Space, Spin, Empty, Alert, Switch } from "antd";
 import {
   SendOutlined,
   StopOutlined,
@@ -53,8 +53,10 @@ export function ChatWindow({
 }: ChatWindowProps) {
   const [inputValue, setInputValue] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingReasoningContent, setStreamingReasoningContent] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [thinkingEnabled, setThinkingEnabled] = useState<boolean | null>(null);
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -80,6 +82,7 @@ export function ChatWindow({
     const content = inputValue.trim();
     setInputValue("");
     setStreamingContent("");
+    setStreamingReasoningContent("");
     setStreamError(null);
     setToolEvents([]);
 
@@ -87,6 +90,9 @@ export function ChatWindow({
       onToken(token, msgId) {
         setStreamingMessageId(msgId);
         setStreamingContent((prev) => prev + token);
+      },
+      onReasoningToken(delta) {
+        setStreamingReasoningContent((prev) => prev + delta);
       },
       onToolStart(data) {
         setToolEvents((prev) => [
@@ -102,6 +108,7 @@ export function ChatWindow({
       },
       onMessageComplete() {
         setStreamingContent("");
+        setStreamingReasoningContent("");
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
@@ -114,6 +121,7 @@ export function ChatWindow({
       },
       onClose() {
         setStreamingContent("");
+        setStreamingReasoningContent("");
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
@@ -163,6 +171,9 @@ export function ChatWindow({
       branch_index: 0,
       sender: "assistant" as const,
       content: [
+        ...(streamingReasoningContent
+          ? [{ type: "reasoning", text: streamingReasoningContent }]
+          : []),
         ...(streamingContent
           ? [{ type: "text", text: streamingContent }]
           : []),
@@ -232,6 +243,18 @@ export function ChatWindow({
         >
           Tools
         </Button>
+        <Switch
+          size="small"
+          checked={thinkingEnabled ?? true}
+          checkedChildren="🧠"
+          unCheckedChildren="🧠"
+          title="Thinking Mode"
+          onChange={(v) => {
+            setThinkingEnabled(v);
+            onSessionUpdate?.({ thinking_enabled: v });
+          }}
+          style={{ opacity: thinkingEnabled != null ? 0.6 : 1 }}
+        />
       </div>
 
       {/* Messages area */}

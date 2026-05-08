@@ -28,6 +28,7 @@ async def create_session(
     selected_prompt_id: str | None = None,
     selected_skill_id: str | None = None,
     selected_model_id: str | None = None,
+    thinking_enabled: bool | None = None,
 ) -> Session:
     """Create a new permanent session.
 
@@ -60,6 +61,7 @@ async def create_session(
         selected_prompt_id=selected_prompt_id,
         selected_skill_id=selected_skill_id,
         selected_model_id=selected_model_id,
+        thinking_enabled=thinking_enabled,
     )
     db.add(session)
     await db.commit()

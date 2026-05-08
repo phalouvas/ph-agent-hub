@@ -45,6 +45,7 @@ class Session(Base):
     selected_model_id: Mapped[str | None] = mapped_column(
         CHAR(36), ForeignKey("models.id"), nullable=True
     )
+    thinking_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

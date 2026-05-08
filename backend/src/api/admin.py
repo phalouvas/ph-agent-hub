@@ -190,6 +190,7 @@ class ModelCreate(BaseModel):
     max_tokens: int = 4096
     temperature: float = 0.7
     routing_priority: int = 0
+    thinking_enabled: bool = False
 
 
 class ModelUpdate(BaseModel):
@@ -203,6 +204,7 @@ class ModelUpdate(BaseModel):
     max_tokens: int | None = None
     temperature: float | None = None
     routing_priority: int | None = None
+    thinking_enabled: bool | None = None
 
 
 class ModelResponse(BaseModel):
@@ -217,6 +219,7 @@ class ModelResponse(BaseModel):
     max_tokens: int
     temperature: float
     routing_priority: int
+    thinking_enabled: bool
     created_at: datetime
     updated_at: datetime
 
@@ -586,6 +589,7 @@ async def create_model(
         max_tokens=body.max_tokens,
         temperature=body.temperature,
         routing_priority=body.routing_priority,
+        thinking_enabled=body.thinking_enabled,
     )
     await write_audit_log(
         db,
@@ -634,6 +638,8 @@ async def update_model(
         update_kwargs["temperature"] = body.temperature
     if body.routing_priority is not None:
         update_kwargs["routing_priority"] = body.routing_priority
+    if body.thinking_enabled is not None:
+        update_kwargs["thinking_enabled"] = body.thinking_enabled
 
     model = await _svc_update_model(db, model_id, **update_kwargs)
 
