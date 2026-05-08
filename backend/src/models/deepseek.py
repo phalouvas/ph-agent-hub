@@ -35,15 +35,28 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
         messages: Sequence[Message],
         options: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Inject ``extra_body`` with explicit thinking mode (always sent).
+        """Inject ``extra_body`` with explicit thinking mode.
 
-        DeepSeek's default thinking behavior varies by model (some have it
-        on by default).  We always send an explicit enabled/disabled to
-        guarantee consistent behavior regardless of model defaults.
+        When thinking is enabled but a tool call has just completed
+        (tool result present in messages), disable thinking for this
+        request to avoid the DeepSeek requirement that reasoning_content
+        must be passed back — which MAF doesn't fully support across
+        tool-call boundaries.
         """
         result = super()._prepare_options(messages, options)
+
+        thinking_type = "disabled"
+        if self._thinking_enabled:
+            # Check if there are tool results in the conversation
+            prepared_msgs = result.get("messages", [])
+            has_tool_result = any(
+                msg.get("role") == "tool" for msg in prepared_msgs
+            )
+            if not has_tool_result:
+                thinking_type = "enabled"
+
         result["extra_body"] = {
-            "thinking": {"type": "enabled" if self._thinking_enabled else "disabled"}
+            "thinking": {"type": thinking_type}
         }
         return result
 
