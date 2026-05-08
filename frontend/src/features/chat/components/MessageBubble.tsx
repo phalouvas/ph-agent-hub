@@ -16,7 +16,10 @@ import {
   DeleteOutlined,
   RedoOutlined,
   BulbOutlined,
+  FileOutlined,
+  DownloadOutlined,
 } from "@ant-design/icons";
+import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -24,6 +27,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MessageFeedback } from "./MessageFeedback";
 import { MessageBranchNav } from "./MessageBranchNav";
 import type { MessageData } from "../services/chat";
+import { listMessageUploads, getUploadUrl } from "../services/chat";
 
 const { Text, Paragraph } = Typography;
 
@@ -107,6 +111,14 @@ export function MessageBubble({
           borderBottomLeftRadius: 4,
         }),
   };
+
+  // Fetch attached files for user messages
+  const { data: attachedFiles } = useQuery({
+    queryKey: ["message-uploads", message.id],
+    queryFn: () => listMessageUploads(sessionId, message.id),
+    enabled: isUser,
+    staleTime: Infinity,
+  });
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -292,6 +304,30 @@ export function MessageBubble({
               },
             ]}
           />
+        )}
+        {/* Attached files (user messages only) */}
+        {isUser && attachedFiles && attachedFiles.length > 0 && (
+          <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {attachedFiles.map((f) => (
+              <Tag
+                key={f.file_id}
+                icon={<FileOutlined />}
+                color="default"
+                style={{ cursor: "pointer", margin: 0 }}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    const { url } = await getUploadUrl(sessionId, f.file_id);
+                    window.open(url, "_blank");
+                  } catch {
+                    // Silently fail
+                  }
+                }}
+              >
+                {f.original_filename}
+              </Tag>
+            ))}
+          </div>
         )}
       </div>
 

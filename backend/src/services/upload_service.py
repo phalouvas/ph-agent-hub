@@ -5,6 +5,8 @@
 # Only ``storage/s3.py`` calls ``boto3`` (single-module rule).
 # =============================================================================
 
+import tempfile
+import os
 import uuid
 
 from sqlalchemy import delete, select, update
@@ -15,6 +17,23 @@ from ..core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from ..db.orm.file_uploads import FileUpload
 from ..db.orm.users import User
 from ..storage import s3
+
+# Document MIME types that can have text extracted
+_EXTRACTABLE_MIME_TYPES = frozenset({
+    "application/pdf",
+    "text/csv",
+    "text/plain",
+    "text/markdown",
+    "application/json",
+})
+
+# Image MIME types (no text extraction)
+_IMAGE_MIME_TYPES = frozenset({
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+})
 
 
 async def create_upload(
@@ -64,6 +83,19 @@ async def create_upload(
     await s3.ensure_bucket_exists(bucket)
     await s3.upload_object(bucket, key, file_bytes, content_type)
 
+    # 5a. Extract text for document types via markitdown
+    extracted_text: str | None = None
+    if content_type in _EXTRACTABLE_MIME_TYPES:
+        try:
+            extracted_text = await _extract_text(
+                file_bytes=file_bytes,
+                filename=original_filename,
+                content_type=content_type,
+            )
+        except Exception:
+            # Best-effort: extraction failure should not block upload
+            pass
+
     # 6. Persist DB row
     upload = FileUpload(
         id=file_id,
@@ -76,6 +108,7 @@ async def create_upload(
         storage_key=key,
         bucket=bucket,
         is_temporary=False,
+        extracted_text=extracted_text,
     )
     db.add(upload)
     await db.commit()
@@ -170,3 +203,112 @@ async def link_uploads_to_message(
         .values(message_id=message_id)
     )
     await db.commit()
+
+
+async def delete_uploads_for_session(
+    db: AsyncSession,
+    session_id: str,
+) -> None:
+    """Delete all file uploads (MinIO objects + DB rows) for a session.
+
+    Used as cascade cleanup before deleting a session.
+    """
+    result = await db.execute(
+        select(FileUpload).where(FileUpload.session_id == session_id)
+    )
+    uploads = list(result.scalars().all())
+
+    for upload in uploads:
+        try:
+            await s3.delete_object(bucket=upload.bucket, key=upload.storage_key)
+        except Exception:
+            pass  # Best-effort: MinIO object may already be gone
+
+    if uploads:
+        await db.execute(
+            delete(FileUpload).where(FileUpload.session_id == session_id)
+        )
+        await db.commit()
+
+
+async def delete_uploads_for_message(
+    db: AsyncSession,
+    message_id: str,
+) -> None:
+    """Delete all file uploads (MinIO objects + DB rows) linked to a message.
+
+    Used as cascade cleanup before deleting a message.
+    """
+    result = await db.execute(
+        select(FileUpload).where(FileUpload.message_id == message_id)
+    )
+    uploads = list(result.scalars().all())
+
+    for upload in uploads:
+        try:
+            await s3.delete_object(bucket=upload.bucket, key=upload.storage_key)
+        except Exception:
+            pass  # Best-effort
+
+    if uploads:
+        await db.execute(
+            delete(FileUpload).where(FileUpload.message_id == message_id)
+        )
+        await db.commit()
+
+
+async def list_uploads_for_message(
+    db: AsyncSession,
+    message_id: str,
+) -> list[FileUpload]:
+    """List all file uploads linked to a specific message."""
+    result = await db.execute(
+        select(FileUpload)
+        .where(FileUpload.message_id == message_id)
+        .order_by(FileUpload.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Text extraction (markitdown)
+# ---------------------------------------------------------------------------
+
+
+async def _extract_text(
+    file_bytes: bytes,
+    filename: str,
+    content_type: str,
+) -> str:
+    """Extract text from a document using markitdown.
+
+    Writes bytes to a temp file so markitdown can use the filename
+    extension to pick the correct converter.
+    """
+    import asyncio
+
+    suffix = _get_suffix(filename)
+
+    def _sync_extract() -> str:
+        from markitdown import MarkItDown
+
+        md = MarkItDown()
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+
+        try:
+            result = md.convert(tmp_path)
+            return result.text_content
+        finally:
+            os.unlink(tmp_path)
+
+    return await asyncio.to_thread(_sync_extract)
+
+
+def _get_suffix(filename: str) -> str:
+    """Return a safe file suffix for temp file creation."""
+    _, ext = os.path.splitext(filename)
+    if ext and len(ext) <= 10:
+        return ext
+    return ""

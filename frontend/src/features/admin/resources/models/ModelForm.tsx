@@ -92,6 +92,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           temperature: model.temperature,
           routing_priority: model.routing_priority,
           thinking_enabled: model.thinking_enabled,
+          context_length: model.context_length,
         });
         setIsPublic(model.is_public);
       } else {
@@ -103,6 +104,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           temperature: 0.7,
           routing_priority: 0,
           thinking_enabled: false,
+          context_length: undefined,
         });
         setIsPublic(false);
         setInitialGroupIds([]);
@@ -194,6 +196,13 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         </Form.Item>
         <Form.Item name="max_tokens" label="Max Tokens">
           <InputNumber min={1} max={128000} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          name="context_length"
+          label="Context Window (tokens)"
+          tooltip="The model's maximum input context length in tokens. Used to calculate how much file content can be injected into messages."
+        >
+          <InputNumber min={0} max={2_000_000} style={{ width: "100%" }} placeholder="e.g., 128000" />
         </Form.Item>
         <Form.Item name="temperature" label="Temperature">
           <InputNumber min={0} max={2} step={0.1} style={{ width: "100%" }} />

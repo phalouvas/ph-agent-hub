@@ -191,6 +191,7 @@ class ModelCreate(BaseModel):
     temperature: float = 0.7
     routing_priority: int = 0
     thinking_enabled: bool = False
+    context_length: int | None = None
 
 
 class ModelUpdate(BaseModel):
@@ -205,6 +206,7 @@ class ModelUpdate(BaseModel):
     temperature: float | None = None
     routing_priority: int | None = None
     thinking_enabled: bool | None = None
+    context_length: int | None = None
 
 
 class ModelResponse(BaseModel):
@@ -220,6 +222,7 @@ class ModelResponse(BaseModel):
     temperature: float
     routing_priority: int
     thinking_enabled: bool
+    context_length: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -590,6 +593,7 @@ async def create_model(
         temperature=body.temperature,
         routing_priority=body.routing_priority,
         thinking_enabled=body.thinking_enabled,
+        context_length=body.context_length,
     )
     await write_audit_log(
         db,
@@ -640,6 +644,8 @@ async def update_model(
         update_kwargs["routing_priority"] = body.routing_priority
     if body.thinking_enabled is not None:
         update_kwargs["thinking_enabled"] = body.thinking_enabled
+    if body.context_length is not None:
+        update_kwargs["context_length"] = body.context_length
 
     model = await _svc_update_model(db, model_id, **update_kwargs)
 

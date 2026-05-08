@@ -30,6 +30,7 @@ pydantic-settings
 
 # File uploads
 python-multipart
+markitdown
 
 # AI Agent Framework
 agent-framework

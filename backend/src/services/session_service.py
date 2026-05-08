@@ -167,15 +167,14 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 5. Null out session_id references in file_uploads and memory
-    from ..db.orm.file_uploads import FileUpload
+    # 5. Delete file uploads (MinIO objects + DB rows)
+    from ..services import upload_service
+
+    await upload_service.delete_uploads_for_session(db, session_id)
+
+    # 6. Null out session_id references in memory
     from ..db.orm.memory import Memory
 
-    await db.execute(
-        sa_update(FileUpload)
-        .where(FileUpload.session_id == session_id)
-        .values(session_id=None)
-    )
     await db.execute(
         sa_update(Memory)
         .where(Memory.session_id == session_id)
@@ -183,9 +182,7 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 6. Delete the session itself
-    await db.delete(session)
-    await db.commit()
+    # 7. Delete the session itself
 
 
 # ---------------------------------------------------------------------------

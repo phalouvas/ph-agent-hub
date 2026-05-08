@@ -15,12 +15,14 @@ const BASE_URL = import.meta.env.VITE_API_URL || "/api";
 interface FileUploadProps {
   sessionId: string;
   disabled?: boolean;
+  multiple?: boolean;
   onUploadComplete?: () => void;
 }
 
 export function FileUpload({
   sessionId,
   disabled,
+  multiple = false,
   onUploadComplete,
 }: FileUploadProps) {
   const [fileList, setFileList] = React.useState<UploadFile[]>([]);
@@ -42,6 +44,7 @@ export function FileUpload({
         Authorization: `Bearer ${getToken()}`,
       }}
       disabled={disabled}
+      multiple={multiple}
       showUploadList={{ showRemoveIcon: true }}
     >
       <Button icon={<UploadOutlined />} disabled={disabled}>

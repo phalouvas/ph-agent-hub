@@ -66,6 +66,7 @@ async def create_model(
     routing_priority: int = 0,
     thinking_enabled: bool = False,
     model_id: str | None = None,
+    context_length: int | None = None,
 ) -> Model:
     """Create a new model. api_key is transparently encrypted by the ORM."""
     model = Model(
@@ -81,6 +82,7 @@ async def create_model(
         temperature=temperature,
         routing_priority=routing_priority,
         thinking_enabled=thinking_enabled,
+        context_length=context_length,
     )
     db.add(model)
     await db.commit()

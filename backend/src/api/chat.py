@@ -213,6 +213,102 @@ async def _require_session_owner(
         raise ForbiddenError("Session belongs to a different tenant")
 
 
+async def _inject_file_content(
+    db: AsyncSession,
+    file_ids: list[str],
+    user_message: str,
+    session_data: dict,
+    current_user: UserORM,
+) -> tuple[str, list[str]]:
+    """Build file content injection string and return (modified_message, valid_file_ids).
+
+    - Validates DeepSeek + image → 422
+    - Extracts text from document uploads
+    - Truncates to char budget based on model context_length
+    - Returns modified user_message with injected content
+    """
+    if not file_ids:
+        return user_message, []
+
+    # Load FileUpload rows
+    from ..db.orm.file_uploads import FileUpload as FileUploadORM
+
+    result = await db.execute(
+        select(FileUploadORM).where(
+            FileUploadORM.id.in_(file_ids),
+            FileUploadORM.user_id == current_user.id,
+        )
+    )
+    uploads = list(result.scalars().all())
+
+    if not uploads:
+        return user_message, []
+
+    # Resolve model for provider check and context_length
+    model_id = session_data.get("selected_model_id")
+    model_orm = None
+    if model_id:
+        from ..db.orm.models import Model as ModelORM
+
+        model_result = await db.execute(
+            select(ModelORM).where(ModelORM.id == model_id)
+        )
+        model_orm = model_result.scalar_one_or_none()
+
+    provider = getattr(model_orm, "provider", "") if model_orm else ""
+    context_length = getattr(model_orm, "context_length", None) if model_orm else None
+
+    # Calculate char budget
+    if context_length:
+        max_file_chars = min(int(context_length * 3 * 0.4), 100_000)
+    else:
+        max_file_chars = 20_000
+
+    # Image MIME types
+    IMAGE_TYPES = frozenset({
+        "image/png", "image/jpeg", "image/gif", "image/webp",
+    })
+
+    parts: list[str] = []
+    total_chars = 0
+    valid_ids: list[str] = []
+
+    for upload in uploads:
+        is_image = upload.content_type in IMAGE_TYPES
+
+        if is_image and provider == "deepseek":
+            raise ValidationError(
+                "This model does not support image attachments. "
+                "Please use an OpenAI or Anthropic model for images."
+            )
+
+        if is_image:
+            # Append placeholder for image-capable models
+            parts.append(f"[Image attached: {upload.original_filename}]")
+            valid_ids.append(upload.id)
+        elif upload.extracted_text:
+            # Document: inject extracted text
+            header = f"--- Attached File: {upload.original_filename} ---"
+            remaining = max_file_chars - total_chars
+            if remaining <= 0:
+                break
+            # Truncate text to remaining budget
+            text = upload.extracted_text[:remaining]
+            parts.append(f"{header}\n{text}")
+            total_chars += len(header) + len(text) + 2  # +2 for newlines
+            valid_ids.append(upload.id)
+        else:
+            # No extracted text (e.g., unsupported binary) — skip
+            pass
+
+    if not parts:
+        return user_message, []
+
+    injection = "\n\n".join(parts)
+    modified = f"{user_message}\n\n{injection}"
+    return modified, valid_ids
+
+
 # =============================================================================
 # Session CRUD
 # =============================================================================
@@ -469,6 +565,16 @@ async def send_message(
     accept = request.headers.get("accept", "")
     is_streaming = "text/event-stream" in accept.lower()
 
+    # ---- Inject file content into user message --------------------------
+    file_ids = body.file_ids or []
+    modified_message, valid_file_ids = await _inject_file_content(
+        db=db,
+        file_ids=file_ids,
+        user_message=body.content,
+        session_data=data,
+        current_user=current_user,
+    )
+
     if is_streaming:
         return await _handle_streaming_message(
             session_id=session_id,
@@ -476,24 +582,18 @@ async def send_message(
             data=data,
             db=db,
             current_user=current_user,
+            modified_message=modified_message,
+            valid_file_ids=valid_file_ids,
         )
 
     # ---- Non-streaming path (Phase 6 backward compat) --------------------
     response_text, assistant_msg_id = await run_agent(
         session_data=data,
-        user_message=body.content,
+        user_message=modified_message,
         db=db,
         current_user=current_user,
+        file_ids=valid_file_ids,
     )
-
-    # Link file uploads to the assistant message
-    if body.file_ids:
-        await upload_service.link_uploads_to_message(
-            db=db,
-            file_ids=body.file_ids,
-            message_id=assistant_msg_id,
-            user_id=current_user.id,
-        )
 
     model_id = data.get("selected_model_id")
 
@@ -515,18 +615,23 @@ async def _handle_streaming_message(
     data: dict[str, Any],
     db: AsyncSession,
     current_user: UserORM,
+    modified_message: str = "",
+    valid_file_ids: list[str] | None = None,
 ) -> EventSourceResponse:
     """Assemble and return an SSE EventSourceResponse for a streaming agent run."""
     message_id = str(uuid.uuid4())
+    _valid_file_ids = valid_file_ids or []
+    _user_message = modified_message or body.content
 
     async def inner_gen() -> AsyncIterator[dict]:
         """The inner generator that yields SSE event dicts."""
         async for event_dict in run_agent_stream(
             session_data=data,
-            user_message=body.content,
+            user_message=_user_message,
             db=db,
             current_user=current_user,
             message_id=message_id,
+            file_ids=_valid_file_ids,
         ):
             yield event_dict
 
@@ -672,6 +777,10 @@ async def delete_message(
         raise NotFoundError("Message not found")
 
     msg.is_deleted = True
+
+    # Cascade: delete attached file uploads (MinIO objects + DB rows)
+    await upload_service.delete_uploads_for_message(db, message_id)
+
     await db.commit()
     return Response(status_code=204)
 
@@ -1013,6 +1122,36 @@ async def delete_upload(
         user_id=current_user.id,
     )
     return Response(status_code=204)
+
+
+@router.get(
+    "/session/{session_id}/message/{message_id}/uploads",
+    response_model=list[FileUploadResponse],
+)
+async def list_message_uploads(
+    session_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """List all file uploads linked to a specific message."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    uploads = await upload_service.list_uploads_for_message(
+        db=db,
+        message_id=message_id,
+    )
+    return [
+        FileUploadResponse(
+            file_id=u.id,
+            original_filename=u.original_filename,
+            content_type=u.content_type,
+            size_bytes=u.size_bytes,
+            created_at=u.created_at,
+        )
+        for u in uploads
+    ]
 
 
 @router.get(
