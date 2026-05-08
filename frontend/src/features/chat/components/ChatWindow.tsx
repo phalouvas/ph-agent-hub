@@ -6,8 +6,8 @@
 // renders MessageBubble list.
 // =============================================================================
 
-import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Button, Input, Space, Spin, Empty, Alert } from "antd";
+import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { Button, Input, Space, Spin, Empty, Alert, Switch } from "antd";
 import {
   SendOutlined,
   StopOutlined,
@@ -20,6 +20,7 @@ import {
   deleteMessage,
   regenerateMessage,
 } from "../services/chat";
+import api from "../../../services/api";
 import {
   ModelSelector,
   TemplateSelector,
@@ -53,8 +54,10 @@ export function ChatWindow({
 }: ChatWindowProps) {
   const [inputValue, setInputValue] = useState("");
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingReasoningContent, setStreamingReasoningContent] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [thinkingEnabled, setThinkingEnabled] = useState<boolean | null>(null);
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
@@ -68,6 +71,22 @@ export function ChatWindow({
     refetchInterval: false,
   });
 
+  // Fetch models to determine if selected model supports thinking
+  interface ModelInfo {
+    id: string;
+    thinking_enabled: boolean;
+    provider: string;
+  }
+  const { data: modelList } = useQuery({
+    queryKey: ["models"],
+    queryFn: () => api<ModelInfo[]>("/models"),
+  });
+  const selectedModel = useMemo(
+    () => (modelList || []).find((m) => m.id === selectedModelId),
+    [modelList, selectedModelId],
+  );
+  const modelSupportsThinking = selectedModel?.thinking_enabled === true;
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
@@ -80,6 +99,7 @@ export function ChatWindow({
     const content = inputValue.trim();
     setInputValue("");
     setStreamingContent("");
+    setStreamingReasoningContent("");
     setStreamError(null);
     setToolEvents([]);
 
@@ -87,6 +107,9 @@ export function ChatWindow({
       onToken(token, msgId) {
         setStreamingMessageId(msgId);
         setStreamingContent((prev) => prev + token);
+      },
+      onReasoningToken(delta) {
+        setStreamingReasoningContent((prev) => prev + delta);
       },
       onToolStart(data) {
         setToolEvents((prev) => [
@@ -102,6 +125,7 @@ export function ChatWindow({
       },
       onMessageComplete() {
         setStreamingContent("");
+        setStreamingReasoningContent("");
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
@@ -114,6 +138,7 @@ export function ChatWindow({
       },
       onClose() {
         setStreamingContent("");
+        setStreamingReasoningContent("");
         setStreamingMessageId(null);
         setToolEvents([]);
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
@@ -163,6 +188,9 @@ export function ChatWindow({
       branch_index: 0,
       sender: "assistant" as const,
       content: [
+        ...(streamingReasoningContent
+          ? [{ type: "reasoning", text: streamingReasoningContent }]
+          : []),
         ...(streamingContent
           ? [{ type: "text", text: streamingContent }]
           : []),
@@ -232,6 +260,19 @@ export function ChatWindow({
         >
           Tools
         </Button>
+        {modelSupportsThinking && (
+          <Switch
+            size="small"
+            checked={thinkingEnabled ?? true}
+            checkedChildren="🧠"
+            unCheckedChildren="🧠"
+            title="Thinking Mode"
+            onChange={(v) => {
+              setThinkingEnabled(v);
+              onSessionUpdate?.({ thinking_enabled: v });
+            }}
+          />
+        )}
       </div>
 
       {/* Messages area */}

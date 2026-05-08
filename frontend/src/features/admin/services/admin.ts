@@ -42,6 +42,7 @@ export interface ModelData {
   max_tokens: number;
   temperature: number;
   routing_priority: number;
+  thinking_enabled: boolean;
   created_at: string;
   updated_at: string;
 }

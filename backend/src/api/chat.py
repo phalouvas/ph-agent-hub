@@ -63,6 +63,7 @@ class SessionCreate(BaseModel):
     selected_skill_id: str | None = None
     selected_model_id: str | None = None
     active_tool_ids: list[str] | None = None
+    thinking_enabled: bool | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -72,6 +73,7 @@ class SessionUpdate(BaseModel):
     selected_prompt_id: str | None = None
     selected_skill_id: str | None = None
     selected_model_id: str | None = None
+    thinking_enabled: bool | None = None
 
 
 class SessionResponse(BaseModel):
@@ -85,6 +87,7 @@ class SessionResponse(BaseModel):
     selected_prompt_id: str | None
     selected_skill_id: str | None
     selected_model_id: str | None
+    thinking_enabled: bool | None
     created_at: datetime
     updated_at: datetime
 
@@ -175,6 +178,7 @@ def _session_to_dict(session: Session) -> dict[str, Any]:
         "selected_prompt_id": session.selected_prompt_id,
         "selected_skill_id": session.selected_skill_id,
         "selected_model_id": session.selected_model_id,
+        "thinking_enabled": session.thinking_enabled,
     }
 
 
@@ -235,6 +239,7 @@ async def create_session(
             "selected_prompt_id": body.selected_prompt_id,
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
+            "thinking_enabled": body.thinking_enabled,
             "active_tool_ids": body.active_tool_ids or [],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -253,6 +258,7 @@ async def create_session(
             "selected_prompt_id": body.selected_prompt_id,
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
+            "thinking_enabled": body.thinking_enabled,
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
         }
@@ -269,6 +275,7 @@ async def create_session(
             selected_prompt_id=body.selected_prompt_id,
             selected_skill_id=body.selected_skill_id,
             selected_model_id=body.selected_model_id,
+            thinking_enabled=body.thinking_enabled,
         )
         return SessionResponse.model_validate(session)
 
@@ -308,6 +315,7 @@ async def get_session(
         "selected_prompt_id": data.get("selected_prompt_id"),
         "selected_skill_id": data.get("selected_skill_id"),
         "selected_model_id": data.get("selected_model_id"),
+        "thinking_enabled": data.get("thinking_enabled"),
         "created_at": _parse_datetime(data.get("created_at")),
         "updated_at": _parse_datetime(data.get("updated_at")),
     }
@@ -344,6 +352,7 @@ async def update_session(
             "selected_prompt_id": data.get("selected_prompt_id"),
             "selected_skill_id": data.get("selected_skill_id"),
             "selected_model_id": data.get("selected_model_id"),
+            "thinking_enabled": data.get("thinking_enabled"),
             "created_at": _parse_datetime(data.get("created_at")),
             "updated_at": datetime.now(timezone.utc),
         }

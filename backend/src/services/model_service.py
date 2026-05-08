@@ -64,6 +64,7 @@ async def create_model(
     max_tokens: int = 4096,
     temperature: float = 0.7,
     routing_priority: int = 0,
+    thinking_enabled: bool = False,
     model_id: str | None = None,
 ) -> Model:
     """Create a new model. api_key is transparently encrypted by the ORM."""
@@ -79,6 +80,7 @@ async def create_model(
         max_tokens=max_tokens,
         temperature=temperature,
         routing_priority=routing_priority,
+        thinking_enabled=thinking_enabled,
     )
     db.add(model)
     await db.commit()

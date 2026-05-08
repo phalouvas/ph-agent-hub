@@ -15,6 +15,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   RedoOutlined,
+  BulbOutlined,
 } from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -82,8 +83,9 @@ export function MessageBubble({
   const isUser = message.sender === "user";
   const contentItems = parseContent(message.content);
 
-  // Separate text from tool events
+  // Separate text, reasoning, and tool events
   const textItems = contentItems.filter((c) => c.type === "text");
+  const reasoningItems = contentItems.filter((c) => c.type === "reasoning");
   const toolItems = contentItems.filter(
     (c) => c.type === "function_call" || c.type === "function_result",
   );
@@ -127,6 +129,56 @@ export function MessageBubble({
 
       {/* Bubble */}
       <div style={bubbleStyle}>
+        {/* Reasoning panel */}
+        {reasoningItems.length > 0 && (
+          <Collapse
+            ghost
+            size="small"
+            defaultActiveKey={[]}
+            items={[
+              {
+                key: "reasoning",
+                label: (
+                  <Space>
+                    <BulbOutlined style={{ color: "#722ed1" }} />
+                    <Text style={{ fontSize: 12 }}>
+                      Reasoning ({reasoningItems.map((r) => r.text || "").join("").length} chars)
+                    </Text>
+                  </Space>
+                ),
+                children: (
+                  <div
+                    style={{
+                      maxHeight: 300,
+                      overflow: "auto",
+                      background: "#f9f0ff",
+                      border: "1px solid #d3adf7",
+                      borderRadius: 6,
+                      padding: "8px 12px",
+                    }}
+                  >
+                    <Typography.Paragraph
+                      style={{
+                        fontSize: 12,
+                        whiteSpace: "pre-wrap",
+                        margin: 0,
+                        color: "#531dab",
+                      }}
+                    >
+                      {reasoningItems.map((r) => r.text || "").join("")}
+                    </Typography.Paragraph>
+                  </div>
+                ),
+                style: {
+                  marginBottom: textItems.length > 0 ? 8 : 0,
+                  background: "rgba(249, 240, 255, 0.5)",
+                  borderRadius: 6,
+                },
+              },
+            ]}
+          />
+        )}
+
         {textItems.map((item, i) => (
           <div key={i}>
             {isUser ? (

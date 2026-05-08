@@ -91,6 +91,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           max_tokens: model.max_tokens,
           temperature: model.temperature,
           routing_priority: model.routing_priority,
+          thinking_enabled: model.thinking_enabled,
         });
         setIsPublic(model.is_public);
       } else {
@@ -101,6 +102,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           max_tokens: 4096,
           temperature: 0.7,
           routing_priority: 0,
+          thinking_enabled: false,
         });
         setIsPublic(false);
         setInitialGroupIds([]);
@@ -198,6 +200,20 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         </Form.Item>
         <Form.Item name="routing_priority" label="Routing Priority">
           <InputNumber min={0} max={100} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item shouldUpdate noStyle>
+          {() =>
+            form.getFieldValue("provider") === "deepseek" ? (
+              <Form.Item
+                name="thinking_enabled"
+                label="Enable Thinking Mode"
+                valuePropName="checked"
+                tooltip="When enabled, DeepSeek will emit reasoning tokens between <think> tags, displayed as a collapsible panel in chat"
+              >
+                <Switch />
+              </Form.Item>
+            ) : null
+          }
         </Form.Item>
         <Form.Item name="enabled" label="Enabled" valuePropName="checked">
           <Switch />

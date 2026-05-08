@@ -72,6 +72,15 @@ export interface MessageCompleteEvent {
   };
 }
 
+export interface ReasoningTokenEvent {
+  event: "reasoning_token";
+  data: {
+    session_id: string;
+    message_id: string;
+    delta: string;
+  };
+}
+
 export interface ErrorEvent {
   event: "error";
   data: {
@@ -92,6 +101,7 @@ export type StreamEvent =
   | ToolResultEvent
   | StepCompleteEvent
   | MessageCompleteEvent
+  | ReasoningTokenEvent
   | ErrorEvent
   | HeartbeatEvent;
 
@@ -117,6 +127,7 @@ export function useStream() {
         onToolResult?: (data: ToolResultEvent["data"]) => void;
         onStepComplete?: (data: StepCompleteEvent["data"]) => void;
         onMessageComplete?: (data: MessageCompleteEvent["data"]) => void;
+        onReasoningToken?: (delta: string, messageId: string) => void;
         onError?: (error: string, messageId: string) => void;
         onClose?: () => void;
       },
@@ -174,6 +185,9 @@ export function useStream() {
                     break;
                   case "message_complete":
                     handlers.onMessageComplete?.(parsed);
+                    break;
+                  case "reasoning_token":
+                    handlers.onReasoningToken?.(parsed.delta, parsed.message_id);
                     break;
                   case "error":
                     handlers.onError?.(parsed.message || parsed.error || "Unknown error", parsed.message_id);
