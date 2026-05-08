@@ -7,7 +7,7 @@
 // =============================================================================
 
 import React from "react";
-import { Typography, Space, Collapse, Tag, Button, Popconfirm } from "antd";
+import { Typography, Space, Collapse, Tag, Button, Popconfirm, App } from "antd";
 import {
   UserOutlined,
   RobotOutlined,
@@ -18,6 +18,7 @@ import {
   BulbOutlined,
   FileOutlined,
   DownloadOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
@@ -113,6 +114,8 @@ export function MessageBubble({
         }),
   };
 
+  const { message: messageApi } = App.useApp();
+
   // Fetch attached files for user messages
   const { data: attachedFiles } = useQuery({
     queryKey: ["message-uploads", message.id],
@@ -124,21 +127,23 @@ export function MessageBubble({
   return (
     <div style={{ marginBottom: 16 }}>
       {/* Sender indicator */}
-      <Space style={{ marginBottom: 4, marginLeft: isUser ? undefined : 4 }}>
-        {isUser ? (
-          <UserOutlined style={{ color: "#1677ff" }} />
-        ) : (
-          <RobotOutlined style={{ color: "#52c41a" }} />
-        )}
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {isUser ? "You" : "Assistant"}
-        </Text>
-        {message.model_id && !isUser && (
-          <Text type="secondary" style={{ fontSize: 11 }}>
-            · {message.model_id.slice(0, 8)}
+      <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 4 }}>
+        <Space style={{ marginLeft: isUser ? undefined : 4 }}>
+          {isUser ? (
+            <UserOutlined style={{ color: "#1677ff" }} />
+          ) : (
+            <RobotOutlined style={{ color: "#52c41a" }} />
+          )}
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {isUser ? "You" : "Assistant"}
           </Text>
-        )}
-      </Space>
+          {message.model_id && !isUser && (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              · {message.model_id.slice(0, 8)}
+            </Text>
+          )}
+        </Space>
+      </div>
 
       {/* Bubble */}
       <div style={bubbleStyle}>
@@ -360,6 +365,20 @@ export function MessageBubble({
             sessionId={sessionId}
             messageId={message.id}
           />
+          <Button
+            type="text"
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => {
+              const text = textItems.map((t) => t.text || "").join("\n");
+              navigator.clipboard.writeText(text).then(() => {
+                messageApi.success("Copied to clipboard");
+              }).catch(() => {
+                messageApi.error("Failed to copy");
+              });
+            }}
+            disabled={disabled}
+          />
           {onRegenerate && (
             <Button
               type="text"
@@ -378,7 +397,22 @@ export function MessageBubble({
 
       {/* Actions row (user messages only) */}
       {isUser && (
-        <Space style={{ marginLeft: "auto", display: "flex" }} size="small">
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+        <Space size="small">
+          <Button
+            type="text"
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => {
+              const text = textItems.map((t) => t.text || "").join("\n");
+              navigator.clipboard.writeText(text).then(() => {
+                messageApi.success("Copied to clipboard");
+              }).catch(() => {
+                messageApi.error("Failed to copy");
+              });
+            }}
+            disabled={disabled}
+          />
           {onEdit && (
             <Button
               type="text"
@@ -403,6 +437,7 @@ export function MessageBubble({
             </Popconfirm>
           )}
         </Space>
+        </div>
       )}
     </div>
   );
