@@ -24,7 +24,7 @@ class Tool(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     type: Mapped[str] = mapped_column(
-        Enum("erpnext", "membrane", "custom", "datetime", "web_search", name="tool_type_enum"), nullable=False
+        Enum("erpnext", "membrane", "custom", "datetime", "web_search", "fetch_url", "weather", "calculator", "wikipedia", "rss_feed", "currency_exchange", name="tool_type_enum"), nullable=False
     )
     config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

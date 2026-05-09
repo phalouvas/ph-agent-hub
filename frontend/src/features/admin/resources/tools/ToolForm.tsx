@@ -164,11 +164,17 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
         >
           <Select
             options={[
-              { label: "ERPNext", value: "erpnext" },
-              { label: "Membrane", value: "membrane" },
+              { label: "Calculator", value: "calculator" },
+              { label: "Currency Exchange", value: "currency_exchange" },
               { label: "Custom", value: "custom" },
               { label: "Datetime", value: "datetime" },
+              { label: "ERPNext", value: "erpnext" },
+              { label: "Fetch URL", value: "fetch_url" },
+              { label: "Membrane", value: "membrane" },
+              { label: "RSS Feed", value: "rss_feed" },
+              { label: "Weather", value: "weather" },
               { label: "Web Search", value: "web_search" },
+              { label: "Wikipedia", value: "wikipedia" },
             ]}
             onChange={(value) => setToolType(value)}
           />

@@ -143,6 +143,131 @@ async def main() -> None:
         else:
             print(f"[seed] Web Search tool already exists: Web Search (id={web_search_tool.id})")
 
+        # 5. Ensure default fetch URL tool exists
+        result = await db.execute(
+            select(Tool).where(
+                Tool.tenant_id == tenant.id,
+                Tool.type == "fetch_url",
+                Tool.name == "Fetch URL",
+            )
+        )
+        fetch_url_tool = result.scalar_one_or_none()
+
+        if fetch_url_tool is None:
+            fetch_url_tool = Tool(
+                tenant_id=tenant.id,
+                name="Fetch URL",
+                type="fetch_url",
+                config={"timeout": 30, "max_content_length": 100000},
+                enabled=True,
+                is_public=True,
+            )
+            db.add(fetch_url_tool)
+            await db.flush()
+            print(f"[seed] Created fetch_url tool: Fetch URL (id={fetch_url_tool.id})")
+        else:
+            print(f"[seed] Fetch URL tool already exists: Fetch URL (id={fetch_url_tool.id})")
+
+        # 6. Ensure default weather tool exists
+        result = await db.execute(
+            select(Tool).where(
+                Tool.tenant_id == tenant.id,
+                Tool.type == "weather",
+                Tool.name == "Weather",
+            )
+        )
+        weather_tool = result.scalar_one_or_none()
+
+        if weather_tool is None:
+            weather_tool = Tool(
+                tenant_id=tenant.id,
+                name="Weather",
+                type="weather",
+                config={},
+                enabled=True,
+                is_public=True,
+            )
+            db.add(weather_tool)
+            await db.flush()
+            print(f"[seed] Created weather tool: Weather (id={weather_tool.id})")
+        else:
+            print(f"[seed] Weather tool already exists: Weather (id={weather_tool.id})")
+
+        # 7. Ensure default calculator tool exists
+        result = await db.execute(
+            select(Tool).where(
+                Tool.tenant_id == tenant.id,
+                Tool.type == "calculator",
+                Tool.name == "Calculator",
+            )
+        )
+        calculator_tool = result.scalar_one_or_none()
+
+        if calculator_tool is None:
+            calculator_tool = Tool(
+                tenant_id=tenant.id,
+                name="Calculator",
+                type="calculator",
+                config={},
+                enabled=True,
+                is_public=True,
+            )
+            db.add(calculator_tool)
+            await db.flush()
+            print(f"[seed] Created calculator tool: Calculator (id={calculator_tool.id})")
+        else:
+            print(f"[seed] Calculator tool already exists: Calculator (id={calculator_tool.id})")
+
+        # 8. Ensure default wikipedia tool exists
+        result = await db.execute(
+            select(Tool).where(
+                Tool.tenant_id == tenant.id,
+                Tool.type == "wikipedia",
+                Tool.name == "Wikipedia",
+            )
+        )
+        wikipedia_tool = result.scalar_one_or_none()
+
+        if wikipedia_tool is None:
+            wikipedia_tool = Tool(
+                tenant_id=tenant.id,
+                name="Wikipedia",
+                type="wikipedia",
+                config={"language": "en", "max_results": 5, "max_extract_chars": 10000},
+                enabled=True,
+                is_public=True,
+            )
+            db.add(wikipedia_tool)
+            await db.flush()
+            print(f"[seed] Created wikipedia tool: Wikipedia (id={wikipedia_tool.id})")
+        else:
+            print(f"[seed] Wikipedia tool already exists: Wikipedia (id={wikipedia_tool.id})")
+
+        # 9. Ensure default currency exchange tool exists
+        result = await db.execute(
+            select(Tool).where(
+                Tool.tenant_id == tenant.id,
+                Tool.type == "currency_exchange",
+                Tool.name == "Currency Exchange",
+            )
+        )
+        currency_tool = result.scalar_one_or_none()
+
+        if currency_tool is None:
+            currency_tool = Tool(
+                tenant_id=tenant.id,
+                name="Currency Exchange",
+                type="currency_exchange",
+                config={"base_currency": "EUR"},
+                enabled=True,
+                is_public=True,
+            )
+            db.add(currency_tool)
+            await db.flush()
+            print(f"[seed] Created currency_exchange tool: Currency Exchange (id={currency_tool.id})")
+        else:
+            print(f"[seed] Currency Exchange tool already exists: Currency Exchange (id={currency_tool.id})")
+
         await db.commit()
 
     print("[seed] Done.")
