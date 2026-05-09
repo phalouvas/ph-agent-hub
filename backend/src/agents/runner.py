@@ -1125,6 +1125,7 @@ async def _persist_assistant_message(
     tool_events: list[dict] | None = None,
     tokens_in: int = 0,
     tokens_out: int = 0,
+    branch_index: int = 0,
 ) -> str:
     """Persist just the assistant message, returning its ID."""
     content: list[dict] = []
@@ -1150,7 +1151,7 @@ async def _persist_assistant_message(
                 "content": content,
                 "model_id": model_id,
                 "parent_message_id": parent_message_id,
-                "branch_index": 0,
+                "branch_index": branch_index,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "created_at": now.isoformat(),
@@ -1164,7 +1165,7 @@ async def _persist_assistant_message(
             content=content,
             model_id=model_id,
             parent_message_id=parent_message_id,
-            branch_index=0,
+            branch_index=branch_index,
             tokens_in=tokens_in if tokens_in > 0 else None,
             tokens_out=tokens_out if tokens_out > 0 else None,
             created_at=now,
@@ -1971,6 +1972,202 @@ async def _get_next_branch_index(
     if max_idx is None:
         return 0
     return max_idx + 1
+
+
+async def run_agent_stream_assistant_only(
+    session_data: dict,
+    user_message: str,
+    db: AsyncSession,
+    current_user: User,
+    message_id: str,
+    parent_message_id: str,
+    branch_index: int,
+) -> AsyncIterator[dict]:
+    """Streaming version of ``run_agent_assistant_only``.
+
+    Runs the agent and yields SSE event dicts just like
+    ``run_agent_stream``, but does NOT persist a user message (the
+    parent already exists).  Used by the regenerate endpoint when
+    the client sends ``Accept: text/event-stream``.
+
+    Args:
+        session_data: Unified session dict (from DB or Redis).
+        user_message: The original user message text to re-run.
+        db: Active async DB session.
+        current_user: The authenticated user.
+        message_id: Pre-generated UUID for the new assistant message.
+        parent_message_id: The existing parent user message ID to link
+            the new assistant message to.
+        branch_index: The branch index for this assistant message.
+
+    Yields:
+        Dicts with ``event`` and ``data`` keys for
+        ``EventSourceResponse``.
+    """
+    tenant_id = current_user.tenant_id
+    session_id = session_data["id"]
+    is_temporary = session_data.get("is_temporary", False)
+
+    accumulated_text: str = ""
+    accumulated_tool_events: list[dict] = []
+    total_tokens: int = 0
+    _stream_token_info: dict = {}
+    cfg = None
+
+    try:
+        # ---- 1-6. Resolve session config --------------------------------
+        cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
+
+        # ---- Build contextualized message -------------------------------
+        contextualized_message, summary_info = await _maybe_summarize_and_build_context(
+            db=db,
+            session_data=session_data,
+            cfg=cfg,
+            user_message=user_message,
+        )
+
+        # Emit summarized event if auto-summarization happened
+        if summary_info:
+            yield {
+                "event": "summarized",
+                "data": json.dumps({
+                    "session_id": session_id,
+                    "message_id": message_id,
+                    "summary": summary_info["summary_text"],
+                    "summarized_message_count": summary_info["summarized_count"],
+                    "tokens_saved": summary_info["tokens_saved"],
+                }),
+            }
+
+        # ---- 7. Run agent or workflow (streaming) -----------------------
+        if cfg.execution_type == "workflow":
+            stream = _run_workflow_stream(
+                model=cfg.model,
+                skill=cfg.skill,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
+                user_message=contextualized_message,
+                agent_name=cfg.agent_name,
+                session_id=session_id,
+                message_id=message_id,
+                token_counts=_stream_token_info,
+            )
+        else:
+            stream = _run_agent_stream(
+                model=cfg.model,
+                model_client=cfg.model_client,
+                system_prompt=cfg.system_prompt,
+                tools=cfg.active_tool_callables,
+                user_message=contextualized_message,
+                agent_name=cfg.agent_name,
+                session_id=session_id,
+                message_id=message_id,
+                token_counts=_stream_token_info,
+            )
+
+        async for event_dict in stream:
+            # Check for cancellation before each yield
+            if await check_stream_cancel(session_id):
+                await clear_stream_cancel(session_id)
+                logger.warning(
+                    "Stream cancelled for session %s (regenerate) — partial content will be persisted",
+                    session_id,
+                )
+                accumulated_text = _maybe_accumulate_text(
+                    event_dict, accumulated_text
+                )
+                break
+
+            accumulated_text = _maybe_accumulate_text(
+                event_dict, accumulated_text
+            )
+            accumulated_tool_events = _maybe_accumulate_tool_events(
+                event_dict, accumulated_tool_events
+            )
+
+            yield event_dict
+
+    except Exception as exc:
+        logger.exception("Agent stream (regenerate) failed for session %s", session_id)
+        yield {
+            "event": "error",
+            "data": json.dumps({
+                "session_id": session_id,
+                "message_id": message_id,
+                "code": _exc_to_error_code(exc),
+                "message": str(exc),
+            }),
+        }
+        return
+
+    # ---- 8. Extract token counts ----------------------------------------
+    tokens_in, tokens_out = _stream_token_info.get("in", 0), _stream_token_info.get("out", 0)
+
+    # ---- 9. Persist assistant message -----------------------------------
+    await _persist_assistant_message(
+        db=db,
+        session_id=session_id,
+        is_temporary=is_temporary,
+        assistant_response=accumulated_text,
+        model_id=cfg.model.id,
+        parent_message_id=parent_message_id,
+        tool_events=accumulated_tool_events,
+        tokens_in=tokens_in,
+        tokens_out=tokens_out,
+        branch_index=branch_index,
+    )
+
+    # ---- 10. Write usage log --------------------------------------------
+    try:
+        await write_usage_log(
+            db,
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            model_id=cfg.model.id,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+        )
+    except Exception:
+        logger.exception("Failed to write usage log (regenerate streaming)")
+
+    # ---- 11. Emit message_complete --------------------------------------
+    yield {
+        "event": "message_complete",
+        "data": json.dumps({
+            "session_id": session_id,
+            "message_id": message_id,
+            "branch_index": branch_index,
+            "total_tokens": total_tokens,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "model_id": cfg.model.id,
+        }),
+    }
+
+    # ---- 12. Generate follow-up questions (if enabled) ------------------
+    if getattr(cfg.model, "follow_up_questions_enabled", False):
+        try:
+            questions = await _generate_follow_up_questions(
+                model=cfg.model,
+                system_prompt=cfg.system_prompt,
+                user_message=user_message,
+                assistant_response=accumulated_text,
+            )
+            if questions:
+                yield {
+                    "event": "follow_up_questions",
+                    "data": json.dumps({
+                        "session_id": session_id,
+                        "message_id": message_id,
+                        "questions": questions,
+                    }),
+                }
+        except Exception:
+            logger.exception(
+                "Failed to generate follow-up questions for session %s (regenerate)",
+                session_id,
+            )
 
 
 async def run_agent_assistant_only(

@@ -27,6 +27,7 @@ from ..agents.runner import (
     run_agent,
     run_agent_assistant_only,
     run_agent_stream,
+    run_agent_stream_assistant_only,
 )
 from ..core.config import settings
 from ..core.dependencies import get_current_user, get_db
@@ -805,6 +806,7 @@ async def delete_message(
 async def regenerate_assistant_message(
     session_id: str,
     message_id: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
@@ -812,6 +814,10 @@ async def regenerate_assistant_message(
 
     Uses the parent user message's text to re-run the agent, then
     persists only the new assistant message (no duplicate user message).
+
+    When the request includes ``Accept: text/event-stream`` the response
+    is a Server-Sent Events stream (same events as send_message).
+    Otherwise a plain JSON response is returned.
     """
     data = await _load_session(db, session_id)
     await _require_session_owner(data, current_user)
@@ -866,7 +872,27 @@ async def regenerate_assistant_message(
         parent_message_id=parent_user_msg.id,
     )
 
-    # Run agent (assistant-only, no duplicate user message)
+    # Detect streaming request via Accept header
+    accept = request.headers.get("accept", "")
+    is_streaming = "text/event-stream" in accept.lower()
+
+    # Soft-delete the old assistant message so only the regenerated
+    # response is visible in the message list.
+    assistant_msg.is_deleted = True
+    await db.commit()
+
+    if is_streaming:
+        return await _handle_streaming_regenerate(
+            session_id=session_id,
+            data=data,
+            db=db,
+            current_user=current_user,
+            user_text=user_text,
+            parent_message_id=parent_user_msg.id,
+            branch_index=next_branch,
+        )
+
+    # ---- Non-streaming path ---------------------------------------------
     response_text, new_assistant_msg_id = await run_agent_assistant_only(
         session_data=data,
         user_message_text=user_text,
@@ -877,20 +903,45 @@ async def regenerate_assistant_message(
         assistant_branch_index=next_branch,
     )
 
-    # Soft-delete the old assistant message so only the regenerated
-    # response is visible in the message list.  The object may be
-    # expired after run_agent_assistant_only's internal commit, so
-    # refresh it first.
-    await db.refresh(assistant_msg)
-    assistant_msg.is_deleted = True
-    await db.commit()
-
     model_id = data.get("selected_model_id")
     return SendMessageResponse(
         message_id=new_assistant_msg_id,
         content=response_text,
         model_id=model_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Regenerate streaming helper
+# ---------------------------------------------------------------------------
+
+
+async def _handle_streaming_regenerate(
+    session_id: str,
+    data: dict[str, Any],
+    db: AsyncSession,
+    current_user: UserORM,
+    user_text: str,
+    parent_message_id: str,
+    branch_index: int,
+) -> EventSourceResponse:
+    """Assemble and return an SSE EventSourceResponse for a streaming regenerate."""
+    message_id = str(uuid.uuid4())
+
+    async def inner_gen() -> AsyncIterator[dict]:
+        async for event_dict in run_agent_stream_assistant_only(
+            session_data=data,
+            user_message=user_text,
+            db=db,
+            current_user=current_user,
+            message_id=message_id,
+            parent_message_id=parent_message_id,
+            branch_index=branch_index,
+        ):
+            yield event_dict
+
+    gen = _stream_with_heartbeat(inner_gen(), interval=15)
+    return EventSourceResponse(gen, media_type="text/event-stream")
 
 
 # =============================================================================

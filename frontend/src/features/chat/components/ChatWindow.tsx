@@ -7,13 +7,14 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Upload, message, notification } from "antd";
+import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Typography, Upload, message, notification } from "antd";
 import {
   SendOutlined,
   StopOutlined,
   DownOutlined,
   PaperClipOutlined,
   CompressOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "./MessageBubble";
@@ -21,7 +22,6 @@ import { useStream } from "../hooks/useStream";
 import {
   listMessages,
   deleteMessage,
-  regenerateMessage,
   summarizeSession,
 } from "../services/chat";
 import api from "../../../services/api";
@@ -35,6 +35,7 @@ import {
 } from "./";
 
 const { TextArea } = Input;
+const { Text } = Typography;
 
 // ---------------------------------------------------------------------------
 // Pending file info (stored after upload completes)
@@ -92,7 +93,7 @@ export function ChatWindow({
     content: string;
   } | null>(null);
 
-  const { streaming, startStream, stopStream } = useStream();
+  const { streaming, startStream, startRegenerateStream, stopStream } = useStream();
 
   const { data: messages, isLoading: loadingMessages } = useQuery({
     queryKey: ["messages", sessionId],
@@ -126,7 +127,7 @@ export function ChatWindow({
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
-  }, [messages, streamingContent, toolEvents]);
+  }, [messages, streamingContent, toolEvents, streaming]);
 
   // Scroll event handler: detect when user manually scrolls away from the bottom
   const handleScroll = useCallback(() => {
@@ -259,20 +260,77 @@ export function ChatWindow({
 
   const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
 
-  const handleRegenerate = async (messageId: string) => {
+  const handleRegenerate = useCallback((messageId: string) => {
+    if (streaming) return;
     setRegeneratingMsgId(messageId);
-    try {
-      await regenerateMessage(sessionId, messageId);
-      queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
-      message.success("Response regenerated");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Regenerate failed";
-      message.error(msg);
-      console.error("Regenerate error:", err);
-    } finally {
-      setRegeneratingMsgId(null);
-    }
-  };
+    setStreamingContent("");
+    setStreamingReasoningContent("");
+    setStreamError(null);
+    setToolEvents([]);
+    setFollowUpQuestions([]);
+    setStreamingTokens(null);
+
+    // Re-enable auto-scroll
+    userScrolledUpRef.current = false;
+    setShowScrollButton(false);
+
+    startRegenerateStream(sessionId, messageId, {
+      onToken(token, msgId) {
+        setStreamingMessageId(msgId);
+        setStreamingContent((prev) => prev + token);
+      },
+      onReasoningToken(delta) {
+        setStreamingReasoningContent((prev) => prev + delta);
+      },
+      onToolStart(data) {
+        setToolEvents((prev) => [...prev, { type: "function_call", data }]);
+      },
+      onToolResult(data) {
+        setToolEvents((prev) => [...prev, { type: "function_result", data }]);
+      },
+      onMessageComplete(data) {
+        setRegeneratingMsgId(null);
+        setStreamingContent("");
+        setStreamingReasoningContent("");
+        setStreamingMessageId(null);
+        setToolEvents([]);
+        if (data.tokens_in || data.tokens_out) {
+          setStreamingTokens({ tokens_in: data.tokens_in || 0, tokens_out: data.tokens_out || 0 });
+        }
+        queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      },
+      onFollowUpQuestions(questions) {
+        setFollowUpQuestions(questions);
+      },
+      onSummarized(data) {
+        notification.info({
+          message: "Conversation Summarized",
+          description: `Compressed ${data.summarized_message_count} earlier messages to save context space.`,
+          placement: "topRight",
+          duration: 4,
+        });
+      },
+      onError(err) {
+        setRegeneratingMsgId(null);
+        setStreamingTokens(null);
+        setStreamError(err);
+        message.error(err || "Regenerate failed");
+      },
+      onClose() {
+        setRegeneratingMsgId(null);
+        setStreamingContent("");
+        setStreamingReasoningContent("");
+        setStreamingMessageId(null);
+        setToolEvents([]);
+        setStreamingTokens(null);
+        queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      },
+    });
+  }, [streaming, sessionId, startRegenerateStream, queryClient]);
 
   // File upload handlers
   const handleFileUpload = useCallback(
@@ -318,7 +376,10 @@ export function ChatWindow({
   };
 
   // Build a flat display list: real messages + optimistic user message + streaming bubble
-  const displayMessages: Array<any> = [...(messages || [])];
+  // Filter out the message being regenerated — the streaming bubble replaces it.
+  const displayMessages: Array<any> = (messages || []).filter(
+    (m) => m.id !== regeneratingMsgId,
+  );
 
   // Show the user's message immediately at the bottom (optimistic UI)
   if (pendingUserMessage) {
@@ -390,6 +451,12 @@ export function ChatWindow({
         }
       }}
     >
+      <style>{`
+        @keyframes thinkingDot {
+          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+          40% { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
       {/* Top bar */}
       <div
         style={{
@@ -534,6 +601,49 @@ export function ChatWindow({
           />
         )}
 
+        {/* Thinking placeholder — shown while streaming but before first token */}
+        {streaming && !streamingContent && !streamingMessageId && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
+              <Space style={{ marginLeft: 4 }}>
+                <RobotOutlined style={{ color: "#52c41a" }} />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Assistant
+                </Text>
+              </Space>
+            </div>
+            <div
+              style={{
+                display: "inline-block",
+                maxWidth: "80%",
+                padding: "12px 16px",
+                borderRadius: 12,
+                borderBottomLeftRadius: 4,
+                background: "#f0f0f0",
+              }}
+            >
+              <Space size={4}>
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#bbb",
+                      animation: `thinkingDot 1.4s ease-in-out ${i * 0.2}s infinite`,
+                    }}
+                  />
+                ))}
+                <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>
+                  AI is thinking…
+                </Text>
+              </Space>
+            </div>
+          </div>
+        )}
+
         {/* Follow-up questions chips */}
         {!streaming && followUpQuestions.length > 0 && (
           <div
@@ -638,13 +748,16 @@ export function ChatWindow({
             style={{ resize: "none" }}
           />
           {streaming ? (
-            <Button
-              danger
-              icon={<StopOutlined />}
-              onClick={handleStop}
-            >
-              Stop
-            </Button>
+            <Space size={4}>
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={handleStop}
+              >
+                Stop
+              </Button>
+              <Spin size="small" />
+            </Space>
           ) : (
             <Button
               type="primary"
