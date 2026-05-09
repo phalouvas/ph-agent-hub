@@ -958,6 +958,24 @@ async def _build_tool_callables(
     elif tool.type == "web_search":
         from ..tools.web_search import build_web_search_tools
         return build_web_search_tools(tool.config or {})
+    elif tool.type == "fetch_url":
+        from ..tools.fetch_url import build_fetch_url_tools
+        return build_fetch_url_tools(tool.config or {})
+    elif tool.type == "weather":
+        from ..tools.weather import build_weather_tools
+        return build_weather_tools(tool.config or {})
+    elif tool.type == "calculator":
+        from ..tools.calculator import build_calculator_tools
+        return build_calculator_tools(tool.config or {})
+    elif tool.type == "wikipedia":
+        from ..tools.wikipedia import build_wikipedia_tools
+        return build_wikipedia_tools(tool.config or {})
+    elif tool.type == "rss_feed":
+        from ..tools.rss_feed import build_rss_feed_tools
+        return build_rss_feed_tools(tool.config or {})
+    elif tool.type == "currency_exchange":
+        from ..tools.currency_exchange import build_currency_exchange_tools
+        return build_currency_exchange_tools(tool.config or {})
     else:
         logger.warning("Unknown tool type '%s' for tool %s", tool.type, tool.id)
         return []

@@ -41,8 +41,14 @@ pypdfium2
 # AI Agent Framework
 agent-framework
 
-# Async HTTP (ERPNext tool calls)
+# Async HTTP (ERPNext tool calls + fetch_url, weather, wikipedia, currency tools)
 httpx
+
+# HTML to text conversion (fetch_url tool)
+html2text
+
+# RSS/Atom feed parsing (rss_feed tool)
+feedparser
 
 # Rate limiting
 slowapi
