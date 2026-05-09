@@ -1545,7 +1545,7 @@ async def _run_agent_stream(
                 tool_call_id = getattr(content, "call_id", None) or ""
                 tool_name = getattr(content, "name", "unknown")
                 output = getattr(content, "output", None) or getattr(content, "result", None)
-                success = True  # MAF surfaces errors via separate content types
+                success = not _is_tool_error(output)
                 result_summary = _summarise_tool_result(output)
 
                 # Resolve the final tool name and arguments from pending calls
@@ -1686,15 +1686,16 @@ def _maybe_accumulate_text(event_dict: dict, current: str) -> str:
 
 
 def _strip_raw_tool_xml(text: str) -> str:
-    """Strip raw ``<function_calls>...</function_calls>`` XML from text.
+    """Strip raw tool-call XML from text.
 
     DeepSeek thinking mode occasionally leaks tool-call XML into the
     regular text output when the consecutive-error limit is hit.  This
-    strips it so it doesn't render as visible garbage in the UI.
+    strips both ``<function_calls>`` (MAF) and ``<*tool_calls*>`` (DSML)
+    patterns so they don't render as visible garbage in the UI.
     """
     import re
     return re.sub(
-        r"<function_calls>.*?</function_calls>",
+        r"<[\w_-]*tool_calls[\w_-]*>.*?</[\w_-]*tool_calls[\w_-]*>",
         "",
         text,
         flags=re.DOTALL | re.IGNORECASE,
@@ -1809,6 +1810,31 @@ def _resolve_tool_arguments(
         except (json.JSONDecodeError, TypeError):
             pass
     return None
+
+
+def _is_tool_error(output: Any) -> bool:
+    """Detect whether a tool output indicates an error.
+
+    MAF surfaces errors via separate content types, but DeepSeek's DSML
+    format sometimes returns errors as plain output text.  This inspects
+    the output content to infer whether the tool call actually succeeded.
+    """
+    if output is None:
+        return False
+    if isinstance(output, dict):
+        # e.g. {"error": "Permission denied"} or {"exc_type": "..."}
+        if "error" in output or "exc_type" in output:
+            return True
+        # ERPNext sometimes returns {"exc": "..."} in the message field
+        if output.get("exc"):
+            return True
+        return False
+    if isinstance(output, str):
+        lower = output.strip().lower()
+        if lower.startswith("error:") or lower.startswith("argument parsing failed"):
+            return True
+        return False
+    return False
 
 
 def _summarise_tool_result(output: Any) -> str:
