@@ -75,6 +75,61 @@ async def delete_memory(
     await db.commit()
 
 
+async def update_memory(
+    db: AsyncSession,
+    memory_id: str,
+    user_id: str,
+    tenant_id: str,
+    key: str | None = None,
+    value: str | None = None,
+) -> Memory:
+    """Update a memory entry's key and/or value. Validates ownership."""
+    result = await db.execute(
+        select(Memory).where(Memory.id == memory_id)
+    )
+    memory = result.scalar_one_or_none()
+
+    if memory is None:
+        raise NotFoundError("Memory entry not found")
+    if memory.user_id != user_id or memory.tenant_id != tenant_id:
+        raise ForbiddenError("You do not own this memory entry")
+
+    if key is not None:
+        memory.key = key
+    if value is not None:
+        memory.value = value
+
+    await db.commit()
+    await db.refresh(memory)
+    return memory
+
+
+async def list_all_memories(
+    db: AsyncSession,
+    tenant_id: str | None = None,
+) -> list[Memory]:
+    """List all memory entries, optionally scoped to a tenant.  Admin use only."""
+    stmt = select(Memory)
+    if tenant_id is not None:
+        stmt = stmt.where(Memory.tenant_id == tenant_id)
+    stmt = stmt.order_by(Memory.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def admin_delete_memory(
+    db: AsyncSession,
+    memory_id: str,
+) -> None:
+    """Delete a memory entry by ID.  Admin use only — no ownership check."""
+    result = await db.execute(select(Memory).where(Memory.id == memory_id))
+    memory = result.scalar_one_or_none()
+    if memory is None:
+        raise NotFoundError("Memory entry not found")
+    await db.execute(delete(Memory).where(Memory.id == memory_id))
+    await db.commit()
+
+
 async def upsert_memory(
     db: AsyncSession,
     user_id: str,

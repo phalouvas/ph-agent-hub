@@ -28,6 +28,11 @@ class MemoryCreate(BaseModel):
     session_id: str | None = None
 
 
+class MemoryUpdate(BaseModel):
+    key: str | None = None
+    value: str | None = None
+
+
 class MemoryResponse(BaseModel):
     id: str
     tenant_id: str
@@ -81,6 +86,25 @@ async def create_memory(
         value=body.value,
         session_id=body.session_id,
         source="manual",
+    )
+    return MemoryResponse.model_validate(entry)
+
+
+@router.put("/{memory_id}", response_model=MemoryResponse)
+async def update_memory(
+    memory_id: str,
+    body: MemoryUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Update a memory entry's key and/or value.  Only the owner may update it."""
+    entry = await memory_service.update_memory(
+        db=db,
+        memory_id=memory_id,
+        user_id=current_user.id,
+        tenant_id=current_user.tenant_id,
+        key=body.key,
+        value=body.value,
     )
     return MemoryResponse.model_validate(entry)
 

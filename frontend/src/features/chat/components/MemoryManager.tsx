@@ -1,10 +1,11 @@
 // =============================================================================
 // PH Agent Hub — MemoryManager
 // =============================================================================
-// Ant Design Drawer+List; GET/POST/DELETE /memory; shows automatic vs manual entries.
+// Ant Design Drawer+List; CRUD on /memory; search/filter, edit, expandable
+// values; shows automatic vs manual entries.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Drawer,
   List,
@@ -22,9 +23,16 @@ import {
 import {
   PlusOutlined,
   DeleteOutlined,
+  EditOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listMemory, createMemory, deleteMemory } from "../services/chat";
+import {
+  listMemory,
+  createMemory,
+  deleteMemory,
+  updateMemory,
+} from "../services/chat";
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -41,6 +49,11 @@ export function MemoryManager({
   sessionId,
 }: MemoryManagerProps) {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editKey, setEditKey] = useState("");
+  const [editValue, setEditValue] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState("");
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
 
@@ -61,6 +74,16 @@ export function MemoryManager({
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { key?: string; value?: string } }) =>
+      updateMemory(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["memory", sessionId] });
+      message.success("Memory entry updated");
+      setEditing(null);
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteMemory(id),
     onSuccess: () => {
@@ -69,9 +92,35 @@ export function MemoryManager({
     },
   });
 
+  // Filter entries by search text (case-insensitive match on key or value)
+  const filteredEntries = useMemo(() => {
+    if (!entries) return [];
+    if (!searchText.trim()) return entries;
+    const lower = searchText.toLowerCase();
+    return entries.filter(
+      (e) =>
+        e.key.toLowerCase().includes(lower) ||
+        e.value.toLowerCase().includes(lower),
+    );
+  }, [entries, searchText]);
+
   const handleAdd = async () => {
     const values = await form.validateFields();
     await createMutation.mutateAsync(values);
+  };
+
+  const handleEdit = async () => {
+    if (!editKey.trim() || !editValue.trim()) return;
+    await updateMutation.mutateAsync({
+      id: editing!,
+      data: { key: editKey, value: editValue },
+    });
+  };
+
+  const openEdit = (item: { id: string; key: string; value: string }) => {
+    setEditing(item.id);
+    setEditKey(item.key);
+    setEditValue(item.value);
   };
 
   return (
@@ -81,62 +130,110 @@ export function MemoryManager({
       onClose={onClose}
       width={480}
       extra={
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setAdding(true)}
-        >
-          Add Entry
-        </Button>
+        <Space>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setAdding(true)}
+          >
+            Add Entry
+          </Button>
+        </Space>
       }
     >
-      <List
-        loading={isLoading}
-        dataSource={entries || []}
-        locale={{ emptyText: <Empty description="No memory entries" /> }}
-        renderItem={(item) => (
-          <List.Item
-            actions={[
-              <Popconfirm
-                title="Delete this entry?"
-                onConfirm={() => deleteMutation.mutate(item.id)}
-              >
-                <Button
-                  icon={<DeleteOutlined />}
-                  size="small"
-                  danger
-                />
-              </Popconfirm>,
-            ]}
-          >
-            <List.Item.Meta
-              title={
-                <Space>
-                  <Text strong>{item.key}</Text>
-                  <Tag
-                    color={
-                      item.source === "automatic"
-                        ? "blue"
-                        : "green"
-                    }
-                  >
-                    {item.source}
-                  </Tag>
-                </Space>
-              }
-              description={
-                <Paragraph
-                  ellipsis={{ rows: 2 }}
-                  style={{ margin: 0 }}
-                >
-                  {item.value}
-                </Paragraph>
-              }
-            />
-          </List.Item>
-        )}
+      {/* Search */}
+      <Input
+        placeholder="Search by key or value…"
+        prefix={<SearchOutlined />}
+        allowClear
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        style={{ marginBottom: 16 }}
       />
 
+      <List
+        loading={isLoading}
+        dataSource={filteredEntries}
+        locale={{ emptyText: <Empty description="No memory entries" /> }}
+        renderItem={(item) => {
+          const isExpanded = expandedId === item.id;
+          return (
+            <List.Item
+              actions={[
+                <Button
+                  icon={<EditOutlined />}
+                  size="small"
+                  onClick={() => openEdit(item)}
+                />,
+                <Popconfirm
+                  title="Delete this entry?"
+                  onConfirm={() => deleteMutation.mutate(item.id)}
+                >
+                  <Button
+                    icon={<DeleteOutlined />}
+                    size="small"
+                    danger
+                  />
+                </Popconfirm>,
+              ]}
+            >
+              <List.Item.Meta
+                title={
+                  <Space>
+                    <Text strong>{item.key}</Text>
+                    <Tag
+                      color={
+                        item.source === "automatic"
+                          ? "blue"
+                          : "green"
+                      }
+                    >
+                      {item.source}
+                    </Tag>
+                  </Space>
+                }
+                description={
+                  <div>
+                    <Paragraph
+                      ellipsis={isExpanded ? undefined : { rows: 2 }}
+                      style={{
+                        margin: 0,
+                        cursor: "pointer",
+                        whiteSpace: isExpanded ? "pre-wrap" : undefined,
+                      }}
+                      onClick={() =>
+                        setExpandedId(isExpanded ? null : item.id)
+                      }
+                    >
+                      {item.value}
+                    </Paragraph>
+                    {!isExpanded && item.value && item.value.length > 80 && (
+                      <Text
+                        type="secondary"
+                        style={{ fontSize: 11, cursor: "pointer" }}
+                        onClick={() => setExpandedId(item.id)}
+                      >
+                        Click to expand
+                      </Text>
+                    )}
+                    {isExpanded && (
+                      <Text
+                        type="secondary"
+                        style={{ fontSize: 11, cursor: "pointer" }}
+                        onClick={() => setExpandedId(null)}
+                      >
+                        Click to collapse
+                      </Text>
+                    )}
+                  </div>
+                }
+              />
+            </List.Item>
+          );
+        }}
+      />
+
+      {/* Add Modal */}
       <Modal
         title="Add Memory Entry"
         open={adding}
@@ -161,6 +258,36 @@ export function MemoryManager({
             rules={[{ required: true }]}
           >
             <TextArea rows={4} placeholder="Memory value..." />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        title="Edit Memory Entry"
+        open={editing !== null}
+        onOk={handleEdit}
+        onCancel={() => {
+          setEditing(null);
+        }}
+        confirmLoading={updateMutation.isPending}
+        okText="Save"
+      >
+        <Form layout="vertical">
+          <Form.Item label="Key">
+            <Input
+              value={editKey}
+              onChange={(e) => setEditKey(e.target.value)}
+              placeholder="e.g., user_preference"
+            />
+          </Form.Item>
+          <Form.Item label="Value">
+            <TextArea
+              rows={6}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              placeholder="Memory value..."
+            />
           </Form.Item>
         </Form>
       </Modal>

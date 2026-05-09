@@ -333,3 +333,13 @@ export function createMemory(data: {
 export function deleteMemory(id: string): Promise<void> {
   return api<void>(`/memory/${id}`, { method: "DELETE" });
 }
+
+export function updateMemory(
+  id: string,
+  data: { key?: string; value?: string },
+): Promise<MemoryEntry> {
+  return api<MemoryEntry>(`/memory/${id}`, {
+    method: "PUT",
+    body: data,
+  });
+}

@@ -9,6 +9,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -89,6 +90,7 @@ from ..services.group_service import (
     remove_tool_from_group as _svc_remove_tool_from_group,
     update_group as _svc_update_group,
 )
+from ..services import memory_service
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -1602,3 +1604,73 @@ async def list_tool_groups(
     if current_user.role == "manager":
         groups = [g for g in groups if g.tenant_id == current_user.tenant_id]
     return [GroupResponse.model_validate(g) for g in groups]
+
+
+# =============================================================================
+# Memory Admin Endpoints (admin or manager)
+# =============================================================================
+
+
+class AdminMemoryResponse(BaseModel):
+    id: str
+    tenant_id: str
+    user_id: str
+    session_id: str | None
+    key: str
+    value: str
+    source: str
+    created_at: datetime
+    updated_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/memories", response_model=list[AdminMemoryResponse])
+async def admin_list_memories(
+    tenant_id: str | None = None,
+    user_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List all memory entries.  Admin sees all (optionally filtered).
+    Manager sees own tenant only."""
+    if current_user.role == "manager":
+        tenant_id = current_user.tenant_id
+
+    entries = await memory_service.list_all_memories(
+        db, tenant_id=tenant_id
+    )
+    # Optional user_id filter applied in Python for simplicity
+    if user_id:
+        entries = [e for e in entries if e.user_id == user_id]
+    return [AdminMemoryResponse.model_validate(e) for e in entries]
+
+
+@router.delete("/memories/{memory_id}", status_code=204)
+async def admin_delete_memory(
+    memory_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Delete a memory entry.  Admin: any.  Manager: own tenant only."""
+    from ..db.orm.memory import Memory as MemoryORM
+    result = await db.execute(
+        select(MemoryORM).where(MemoryORM.id == memory_id)
+    )
+    entry = result.scalar_one_or_none()
+    if entry is None:
+        raise NotFoundError("Memory entry not found")
+    if current_user.role == "manager" and entry.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only delete memories in their own tenant")
+
+    await memory_service.admin_delete_memory(db, memory_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="memory.deleted",
+        target_type="memory",
+        target_id=memory_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )

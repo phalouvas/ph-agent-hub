@@ -384,3 +384,34 @@ export function listUserGroups(userId: string): Promise<GroupData[]> {
 export function listModelGroups(modelId: string): Promise<GroupData[]> {
   return api<GroupData[]>(`/admin/models/${modelId}/groups`);
 }
+
+// ---------------------------------------------------------------------------
+// Memory (admin)
+// ---------------------------------------------------------------------------
+
+export interface MemoryData {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  session_id: string | null;
+  key: string;
+  value: string;
+  source: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export function listAdminMemories(params?: {
+  tenant_id?: string;
+  user_id?: string;
+}): Promise<MemoryData[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.tenant_id) searchParams.set("tenant_id", params.tenant_id);
+  if (params?.user_id) searchParams.set("user_id", params.user_id);
+  const qs = searchParams.toString();
+  return api<MemoryData[]>(`/admin/memories${qs ? `?${qs}` : ""}`);
+}
+
+export function deleteAdminMemory(id: string): Promise<void> {
+  return api<void>(`/admin/memories/${id}`, { method: "DELETE" });
+}
