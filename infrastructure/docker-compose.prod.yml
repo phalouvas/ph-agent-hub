@@ -66,7 +66,7 @@ services:
 
   # ── Backend ──────────────────────────────────────────────────────────────
   backend:
-    build: ../backend
+    image: ${BACKEND_IMAGE:-phalouvas/ph-agent-hub-backend}:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: ./env
     command:
@@ -97,7 +97,7 @@ services:
 
   # ── Frontend ─────────────────────────────────────────────────────────────
   frontend:
-    build: ../frontend
+    image: ${FRONTEND_IMAGE:-phalouvas/ph-agent-hub-frontend}:${IMAGE_TAG:-latest}
     restart: unless-stopped
     env_file: ./env
     depends_on:

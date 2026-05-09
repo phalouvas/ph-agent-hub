@@ -17,7 +17,6 @@ import {
   RedoOutlined,
   BulbOutlined,
   FileOutlined,
-  DownloadOutlined,
   CopyOutlined,
   CompressOutlined,
   DollarOutlined,
@@ -108,7 +107,6 @@ export function MessageBubble({
           marginLeft: "auto",
           marginRight: "auto",
           textAlign: "center",
-          maxWidth: "90%",
         }
       : isUser
       ? {
