@@ -29,6 +29,10 @@ TAG="latest"
 PUSH=false
 NO_CACHE=""
 
+# ── Auto-detect version from package.json ──────────────────────────────────
+APP_VERSION="$(grep '"version"' "${PROJECT_DIR}/frontend/package.json" | head -1 | sed 's/.*"version": *"\(.*\)".*/\1/')"
+echo "Detected app version: ${APP_VERSION}"
+
 # ── Help ───────────────────────────────────────────────────────────────────
 usage() {
   cat <<EOF
@@ -60,6 +64,7 @@ echo " Building backend: ${BACKEND_IMAGE}:${TAG}"
 echo "========================================"
 docker build $NO_CACHE \
   -t "${BACKEND_IMAGE}:${TAG}" \
+  -t "${BACKEND_IMAGE}:${APP_VERSION}" \
   -f "${PROJECT_DIR}/backend/Dockerfile" \
   "${PROJECT_DIR}/backend"
 
@@ -70,6 +75,7 @@ echo " Building frontend: ${FRONTEND_IMAGE}:${TAG}"
 echo "========================================"
 docker build $NO_CACHE \
   -t "${FRONTEND_IMAGE}:${TAG}" \
+  -t "${FRONTEND_IMAGE}:${APP_VERSION}" \
   -f "${PROJECT_DIR}/frontend/Dockerfile.prod" \
   "${PROJECT_DIR}/frontend"
 
@@ -80,9 +86,11 @@ if $PUSH; then
   echo " Pushing images to ${REGISTRY} ..."
   echo "========================================"
   docker push "${BACKEND_IMAGE}:${TAG}"
+  docker push "${BACKEND_IMAGE}:${APP_VERSION}"
   docker push "${FRONTEND_IMAGE}:${TAG}"
+  docker push "${FRONTEND_IMAGE}:${APP_VERSION}"
   echo ""
-  echo "Done — both images pushed with tag '${TAG}'."
+  echo "Done — both images pushed with tags '${TAG}' and '${APP_VERSION}'."
 else
   echo ""
   echo "Done — images built with tag '${TAG}'. Use --push to push to registry."
