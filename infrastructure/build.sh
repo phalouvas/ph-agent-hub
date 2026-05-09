@@ -64,7 +64,7 @@ echo " Building backend: ${BACKEND_IMAGE}:${TAG}"
 echo "========================================"
 docker build $NO_CACHE \
   -t "${BACKEND_IMAGE}:${TAG}" \
-  -t "${BACKEND_IMAGE}:${APP_VERSION}" \
+  -t "${BACKEND_IMAGE}:latest" \
   -f "${PROJECT_DIR}/backend/Dockerfile" \
   "${PROJECT_DIR}/backend"
 
@@ -75,7 +75,7 @@ echo " Building frontend: ${FRONTEND_IMAGE}:${TAG}"
 echo "========================================"
 docker build $NO_CACHE \
   -t "${FRONTEND_IMAGE}:${TAG}" \
-  -t "${FRONTEND_IMAGE}:${APP_VERSION}" \
+  -t "${FRONTEND_IMAGE}:latest" \
   -f "${PROJECT_DIR}/frontend/Dockerfile.prod" \
   "${PROJECT_DIR}/frontend"
 
@@ -86,11 +86,17 @@ if $PUSH; then
   echo " Pushing images to ${REGISTRY} ..."
   echo "========================================"
   docker push "${BACKEND_IMAGE}:${TAG}"
-  docker push "${BACKEND_IMAGE}:${APP_VERSION}"
   docker push "${FRONTEND_IMAGE}:${TAG}"
-  docker push "${FRONTEND_IMAGE}:${APP_VERSION}"
-  echo ""
-  echo "Done — both images pushed with tags '${TAG}' and '${APP_VERSION}'."
+  # Also push :latest if the user specified a version tag
+  if [ "${TAG}" != "latest" ]; then
+    docker push "${BACKEND_IMAGE}:latest"
+    docker push "${FRONTEND_IMAGE}:latest"
+    echo ""
+    echo "Done — pushed tags '${TAG}' and 'latest' (app version: ${APP_VERSION})."
+  else
+    echo ""
+    echo "Done — pushed tag 'latest'."
+  fi
 else
   echo ""
   echo "Done — images built with tag '${TAG}'. Use --push to push to registry."
