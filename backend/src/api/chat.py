@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -806,7 +806,7 @@ async def delete_message(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Soft-delete a message (sets ``is_deleted=True``)."""
+    """Hard-delete a message and its feedback."""
     data = await _load_session(db, session_id)
     await _require_session_owner(data, current_user)
 
@@ -823,10 +823,18 @@ async def delete_message(
     if msg is None:
         raise NotFoundError("Message not found")
 
-    msg.is_deleted = True
+    # Delete feedback rows first (FK constraint)
+    await db.execute(
+        delete(MessageFeedback).where(
+            MessageFeedback.message_id == message_id
+        )
+    )
 
     # Cascade: delete attached file uploads (MinIO objects + DB rows)
     await upload_service.delete_uploads_for_message(db, message_id)
+
+    # Hard-delete the message
+    await db.delete(msg)
 
     await db.commit()
     return Response(status_code=204)

@@ -122,7 +122,7 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     Clears all FK references (message feedback, file uploads, messages,
     active tools), then deletes the session. Raises NotFoundError if missing.
     """
-    from sqlalchemy import delete as sa_delete, update as sa_update
+    from sqlalchemy import delete as sa_delete
     from ..db.orm.messages import Message, MessageFeedback
     from ..db.orm.sessions import SessionActiveTool
     from ..db.orm.file_uploads import FileUpload
@@ -165,13 +165,11 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 5. Null out session_id references in memory
+    # 5. Delete session-scoped memories
     from ..db.orm.memory import Memory
 
     await db.execute(
-        sa_update(Memory)
-        .where(Memory.session_id == session_id)
-        .values(session_id=None)
+        sa_delete(Memory).where(Memory.session_id == session_id)
     )
     await db.flush()
 
