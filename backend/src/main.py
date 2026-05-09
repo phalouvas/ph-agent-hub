@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="PH Agent Hub", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="PH Agent Hub", version="1.0.1", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
 # Middleware
@@ -71,15 +71,15 @@ app.add_exception_handler(RateLimitExceeded, lambda req, exc: __import__("starle
 # ---------------------------------------------------------------------------
 # API Routers
 # ---------------------------------------------------------------------------
-app.include_router(auth_router)
-app.include_router(chat_router)
-app.include_router(users_router)
-app.include_router(memory_router)
-app.include_router(models_router)
-app.include_router(admin_router)
-app.include_router(templates_router)
-app.include_router(prompts_router)
-app.include_router(skills_router)
+app.include_router(auth_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
+app.include_router(memory_router, prefix="/api")
+app.include_router(models_router, prefix="/api")
+app.include_router(admin_router, prefix="/api")
+app.include_router(templates_router, prefix="/api")
+app.include_router(prompts_router, prefix="/api")
+app.include_router(skills_router, prefix="/api")
 
 
 @app.get("/health")
