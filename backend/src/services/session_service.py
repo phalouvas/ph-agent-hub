@@ -151,15 +151,7 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
         )
         await db.flush()
 
-    # 2. Null out parent_message_id self-references
-    await db.execute(
-        sa_update(Message)
-        .where(Message.session_id == session_id)
-        .values(parent_message_id=None)
-    )
-    await db.flush()
-
-    # 3. Delete all messages in this session
+    # 2. Delete all messages in this session
     await db.execute(
         sa_delete(Message).where(Message.session_id == session_id)
     )
