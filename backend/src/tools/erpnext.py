@@ -74,12 +74,12 @@ def build_erpnext_tools(
     @tool
     async def get_list(
         doctype: str,
-        filters: dict | None = None,
+        filters: list | dict | None = None,
         fields: list[str] | None = None,
         limit_page_length: int | None = None,
         limit_start: int | None = None,
         order_by: str | None = None,
-        or_filters: dict | None = None,
+        or_filters: list | dict | None = None,
     ) -> list[dict]:
         """Retrieve a list of ERPNext documents.
 
@@ -227,18 +227,21 @@ def build_erpnext_tools(
         Args:
             doctype: The DocType name (e.g. "Purchase Invoice").
         """
-        params = {
-            "filters": json.dumps([["parent", "=", doctype]]),
-            "fields": json.dumps([
-                "fieldname", "fieldtype", "label", "reqd", "options", "default",
-            ]),
-            "limit_page_length": 300,
-        }
-        url = "/api/resource/DocField"
-        resp = await client.get(url, params=params)
+        url = f"/api/resource/DocType/{doctype}"
+        resp = await client.get(url)
         resp.raise_for_status()
         data: dict = resp.json()
-        results: list[dict] = data.get("data", [])
+        doc_data: dict = data.get("data", {})
+        all_fields: list[dict] = doc_data.get("fields", [])
+        # Return only the most relevant field attributes to keep output
+        # compact (full field objects can be large and contain circular refs).
+        relevant_keys = {
+            "fieldname", "fieldtype", "label", "reqd", "options", "default",
+        }
+        results: list[dict] = [
+            {k: v for k, v in field.items() if k in relevant_keys}
+            for field in all_fields
+        ]
         logger.debug("get_doctype_meta %s → %d fields", doctype, len(results))
         return results
 
