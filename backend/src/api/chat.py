@@ -702,6 +702,7 @@ async def edit_user_message(
     session_id: str,
     message_id: str,
     body: MessageCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
@@ -710,6 +711,10 @@ async def edit_user_message(
     Hard-deletes the original user message and its assistant response
     (if any), then runs the agent with the new text.  No branching —
     the conversation stays linear.
+
+    When the request includes ``Accept: text/event-stream`` the response
+    is a Server-Sent Events stream (same events as send_message).
+    Otherwise a plain JSON response is returned.
     """
     data = await _load_session(db, session_id)
     await _require_session_owner(data, current_user)
@@ -753,14 +758,29 @@ async def edit_user_message(
         next_msg = all_msgs[original_idx + 1]
         if next_msg.sender == "assistant":
             await db.delete(next_msg)
-            # Also delete attached file uploads for the assistant message
             await upload_service.delete_uploads_for_message(db, next_msg.id)
 
     # Hard-delete the original user message
     await upload_service.delete_uploads_for_message(db, message_id)
     await db.delete(original_msg)
+    await db.commit()
 
-    # Run agent with the new message (linear, no branching)
+    # Detect streaming request via Accept header
+    accept = request.headers.get("accept", "")
+    is_streaming = "text/event-stream" in accept.lower()
+
+    if is_streaming:
+        return await _handle_streaming_message(
+            session_id=session_id,
+            body=body,
+            data=data,
+            db=db,
+            current_user=current_user,
+            modified_message=body.content,
+            valid_file_ids=body.file_ids or [],
+        )
+
+    # ---- Non-streaming path ---------------------------------------------
     response_text, assistant_msg_id = await run_agent(
         session_data=data,
         user_message=body.content,

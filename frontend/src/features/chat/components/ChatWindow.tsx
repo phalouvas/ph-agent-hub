@@ -23,7 +23,6 @@ import { MessageBubble } from "./MessageBubble";
 import { useStream } from "../hooks/useStream";
 import {
   listMessages,
-  editMessage,
   deleteMessage,
   summarizeSession,
 } from "../services/chat";
@@ -97,10 +96,9 @@ export function ChatWindow({
   } | null>(null);
 
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
-  const [editingLoading, setEditingLoading] = useState(false);
   const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
 
-  const { streaming, startStream, startRegenerateStream, stopStream } = useStream();
+  const { streaming, startStream, startRegenerateStream, startEditStream, stopStream } = useStream();
 
   const { data: messages, isLoading: loadingMessages } = useQuery({
     queryKey: ["messages", sessionId],
@@ -135,6 +133,16 @@ export function ChatWindow({
       el.scrollTop = el.scrollHeight;
     });
   }, [messages, streamingContent, toolEvents, streaming]);
+
+  // Clear editing state once the edited message is confirmed gone from the list
+  useEffect(() => {
+    if (editingMsgId && messages) {
+      const stillExists = messages.some((m: any) => m.id === editingMsgId);
+      if (!stillExists) {
+        setEditingMsgId(null);
+      }
+    }
+  }, [messages, editingMsgId]);
 
   // Scroll event handler: detect when user manually scrolls away from the bottom
   const handleScroll = useCallback(() => {
@@ -172,31 +180,76 @@ export function ChatWindow({
     userScrolledUpRef.current = false;
     setShowScrollButton(false);
 
-    // ---- Edit mode: call edit API ----
+    // ---- Edit mode: streaming, like regenerate but on the user message ----
     if (editingMsgId) {
       const msgId = editingMsgId;
-      setEditingMsgId(null);
-      setEditingLoading(true);
 
-      // Optimistic: show the edited user message immediately
+      // Show the new user message + thinking dots, same as regenerate.
+      // Keep editingMsgId set so the old message stays hidden during streaming.
       setPendingUserMessage({
         id: `pending-edit-${Date.now()}`,
         content,
       });
 
-      try {
-        await editMessage(sessionId, msgId, content);
-        setPendingUserMessage(null);
-        setEditingLoading(false);
-        queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
-        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
-        queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      } catch (err: any) {
-        setPendingUserMessage(null);
-        setEditingLoading(false);
-        setStreamError(err?.message || "Edit failed");
-        message.error(err?.message || "Failed to edit message");
-      }
+      startEditStream(sessionId, msgId, content, {
+        onToken(token, msgId) {
+          setStreamingMessageId(msgId);
+          setStreamingContent((prev) => prev + token);
+        },
+        onReasoningToken(delta) {
+          setStreamingReasoningContent((prev) => prev + delta);
+        },
+        onToolStart(data) {
+          setToolEvents((prev) => [...prev, { type: "function_call", data }]);
+        },
+        onToolResult(data) {
+          setToolEvents((prev) => [...prev, { type: "function_result", data }]);
+        },
+        onMessageComplete(data) {
+          // Don't clear editingMsgId here — the refetch hasn't completed yet.
+          // It gets cleared by the useEffect below when messages update.
+          setPendingUserMessage(null);
+          setStreamingContent("");
+          setStreamingReasoningContent("");
+          setStreamingMessageId(null);
+          setToolEvents([]);
+          if (data.tokens_in || data.tokens_out) {
+            setStreamingTokens({ tokens_in: data.tokens_in || 0, tokens_out: data.tokens_out || 0 });
+          }
+          queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        },
+        onFollowUpQuestions(questions) {
+          setFollowUpQuestions(questions);
+        },
+        onSummarized(data) {
+          notification.info({
+            message: "Conversation Summarized",
+            description: `Compressed ${data.summarized_message_count} earlier messages to save context space.`,
+            placement: "topRight",
+            duration: 4,
+          });
+        },
+        onError(err) {
+          setEditingMsgId(null);
+          setPendingUserMessage(null);
+          setStreamingTokens(null);
+          setStreamError(err);
+          message.error(err || "Edit failed");
+        },
+        onClose() {
+          setPendingUserMessage(null);
+          setStreamingContent("");
+          setStreamingReasoningContent("");
+          setStreamingMessageId(null);
+          setToolEvents([]);
+          setStreamingTokens(null);
+          queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        },
+      });
       return;
     }
 
@@ -416,7 +469,7 @@ export function ChatWindow({
 
   // ---- Flat message list (linear, no branching) ----
   const displayMessages: Array<any> = (messages || []).filter(
-    (m) => m.id !== regeneratingMsgId,
+    (m) => m.id !== regeneratingMsgId && m.id !== editingMsgId,
   );
 
   // Show the user's message immediately at the bottom (optimistic UI)
@@ -610,7 +663,7 @@ export function ChatWindow({
                   ? handleRegenerate
                   : undefined
               }
-              disabled={streaming || editingLoading}
+              disabled={streaming}
               regenerating={regeneratingMsgId === msg.id}
             />
           ))
@@ -635,8 +688,8 @@ export function ChatWindow({
           />
         )}
 
-        {/* Thinking placeholder — shown while streaming but before first token */}
-        {streaming && !streamingContent && !streamingMessageId && (
+        {/* Thinking placeholder — shown while streaming/editing but before content */}
+        {(streaming) && !streamingContent && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
               <Space style={{ marginLeft: 4 }}>
@@ -807,10 +860,10 @@ export function ChatWindow({
                 : "Type a message... (Enter to send, Shift+Enter for new line)"
             }
             autoSize={{ minRows: 1, maxRows: 6 }}
-            disabled={streaming || editingLoading}
+            disabled={streaming}
             style={{ resize: "none" }}
           />
-          {streaming || editingLoading ? (
+          {streaming ? (
             <Space size={4}>
               {streaming ? (
                 <Button

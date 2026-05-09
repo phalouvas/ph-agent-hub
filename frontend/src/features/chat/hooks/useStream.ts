@@ -397,11 +397,129 @@ export function useStream() {
     [],
   );
 
+  const startEditStream = useCallback(
+    async (
+      sessionId: string,
+      messageId: string,
+      content: string,
+      handlers: {
+        onToken?: (token: string, messageId: string) => void;
+        onToolStart?: (data: ToolStartEvent["data"]) => void;
+        onToolResult?: (data: ToolResultEvent["data"]) => void;
+        onStepComplete?: (data: StepCompleteEvent["data"]) => void;
+        onMessageComplete?: (data: MessageCompleteEvent["data"]) => void;
+        onReasoningToken?: (delta: string, messageId: string) => void;
+        onFollowUpQuestions?: (questions: string[]) => void;
+        onSummarized?: (data: SummarizedEvent["data"]) => void;
+        onError?: (error: string, messageId: string) => void;
+        onClose?: () => void;
+      },
+    ) => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setStreaming(true);
+      setStreamingSessionId(sessionId);
+
+      const token = getToken();
+
+      try {
+        await fetchEventSource(
+          `${BASE_URL}/chat/session/${sessionId}/message/${messageId}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "text/event-stream",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ content }),
+            signal: controller.signal,
+            async onopen(response) {
+              if (
+                response.ok &&
+                response.headers
+                  .get("content-type")
+                  ?.includes(EventStreamContentType)
+              ) {
+                return;
+              }
+              throw new Error(
+                `Stream failed with status ${response.status}`,
+              );
+            },
+            onmessage(ev) {
+              try {
+                const parsed = JSON.parse(ev.data);
+                switch (ev.event) {
+                  case "token":
+                    handlers.onToken?.(parsed.delta, parsed.message_id);
+                    break;
+                  case "tool_start":
+                    handlers.onToolStart?.(parsed);
+                    break;
+                  case "tool_result":
+                    handlers.onToolResult?.(parsed);
+                    break;
+                  case "step_complete":
+                    handlers.onStepComplete?.(parsed);
+                    break;
+                  case "message_complete":
+                    handlers.onMessageComplete?.(parsed);
+                    break;
+                  case "reasoning_token":
+                    handlers.onReasoningToken?.(parsed.delta, parsed.message_id);
+                    break;
+                  case "follow_up_questions":
+                    handlers.onFollowUpQuestions?.(parsed.questions || []);
+                    break;
+                  case "summarized":
+                    handlers.onSummarized?.(parsed);
+                    break;
+                  case "error":
+                    handlers.onError?.(parsed.message || parsed.error || "Unknown error", parsed.message_id);
+                    break;
+                  case "heartbeat":
+                    break;
+                }
+              } catch {
+                // Ignore parse errors on individual events
+              }
+            },
+            onclose() {
+              setStreaming(false);
+              setStreamingSessionId(null);
+              handlers.onClose?.();
+            },
+            onerror(err) {
+              if (controller.signal.aborted) {
+                setStreaming(false);
+                setStreamingSessionId(null);
+                return;
+              }
+              setStreaming(false);
+              setStreamingSessionId(null);
+              handlers.onClose?.();
+              throw err;
+            },
+          },
+        );
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          handlers.onError?.(String(err), "");
+        }
+        setStreaming(false);
+        setStreamingSessionId(null);
+      }
+    },
+    [],
+  );
+
   return {
     streaming,
     streamingSessionId,
     startStream,
     startRegenerateStream,
+    startEditStream,
     stopStream,
   };
 }
