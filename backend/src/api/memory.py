@@ -37,6 +37,7 @@ class MemoryResponse(BaseModel):
     value: str
     source: str
     created_at: datetime
+    updated_at: datetime | None
 
     model_config = {"from_attributes": True}
 
