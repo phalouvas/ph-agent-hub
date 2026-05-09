@@ -5,8 +5,6 @@
 // Use `showText` to optionally display "PH Agent" next to the icon.
 // =============================================================================
 
-import React from "react";
-
 interface LogoProps {
   size?: number;
   showText?: boolean;
