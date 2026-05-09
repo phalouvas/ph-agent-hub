@@ -73,3 +73,79 @@ async def delete_memory(
 
     await db.execute(delete(Memory).where(Memory.id == memory_id))
     await db.commit()
+
+
+async def upsert_memory(
+    db: AsyncSession,
+    user_id: str,
+    tenant_id: str,
+    key: str,
+    value: str,
+    session_id: str | None = None,
+    source: str = "automatic",
+) -> Memory:
+    """Insert or update a memory entry by (user_id, tenant_id, key, session_id).
+
+    If an entry with the same user/tenant/key/session_id combo exists,
+    its value is updated.  Otherwise a new entry is created.
+
+    Returns the Memory ORM object.
+    """
+    result = await db.execute(
+        select(Memory).where(
+            Memory.user_id == user_id,
+            Memory.tenant_id == tenant_id,
+            Memory.key == key,
+            Memory.session_id.is_(None)
+            if session_id is None
+            else Memory.session_id == session_id,
+        )
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        existing.value = value
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+
+    memory = Memory(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        key=key,
+        value=value,
+        session_id=session_id,
+        source=source,
+    )
+    db.add(memory)
+    await db.commit()
+    await db.refresh(memory)
+    return memory
+
+
+async def delete_memory_by_key(
+    db: AsyncSession,
+    user_id: str,
+    tenant_id: str,
+    key: str,
+) -> bool:
+    """Delete a memory entry by key (global entries only — session_id IS NULL).
+
+    Returns True if an entry was deleted, False if none was found.
+    """
+    result = await db.execute(
+        select(Memory).where(
+            Memory.user_id == user_id,
+            Memory.tenant_id == tenant_id,
+            Memory.session_id.is_(None),
+            Memory.key == key,
+        )
+    )
+    memory = result.scalar_one_or_none()
+
+    if memory is None:
+        return False
+
+    await db.execute(delete(Memory).where(Memory.id == memory.id))
+    await db.commit()
+    return True

@@ -82,7 +82,7 @@ async def _resolve_session_config(
     model = await _resolve_model(db, session_data, user)
 
     # 2. Build system prompt
-    system_prompt = await _build_system_prompt(db, session_data)
+    system_prompt = await _build_system_prompt(db, session_data, user=user)
 
     # 3. Resolve skill
     skill = await _resolve_skill(db, session_data)
@@ -793,9 +793,9 @@ async def _resolve_model(
 
 
 async def _build_system_prompt(
-    db: AsyncSession, session_data: dict
+    db: AsyncSession, session_data: dict, user: User | None = None
 ) -> str:
-    """Build the system prompt from template + optional prompt."""
+    """Build the system prompt from template + optional prompt + agent memory."""
     template_id = session_data.get("selected_template_id")
     prompt_id = session_data.get("selected_prompt_id")
 
@@ -818,6 +818,42 @@ async def _build_system_prompt(
         prompt = result.scalar_one_or_none()
         if prompt:
             parts.append(prompt.content)
+
+    # ---- Agent memory injection -------------------------------------------
+    # Query global memory entries (session_id IS NULL) for the current user
+    # and append them as a persistent context block.
+    if user:
+        try:
+            from ..db.orm.memory import Memory as MemoryORM
+
+            result = await db.execute(
+                select(MemoryORM).where(
+                    MemoryORM.user_id == user.id,
+                    MemoryORM.tenant_id == user.tenant_id,
+                    MemoryORM.session_id.is_(None),
+                ).order_by(MemoryORM.created_at.desc())
+            )
+            memories = result.scalars().all()
+
+            if memories:
+                memory_lines: list[str] = [
+                    "## Persistent User Memory",
+                    "",
+                    "The following information has been saved about the user "
+                    "across conversations.  Use this context to personalise "
+                    "your responses, but do NOT mention these entries unless "
+                    "they are relevant to the current conversation:",
+                    "",
+                ]
+                for m in memories:
+                    source_tag = "[auto]" if m.source == "automatic" else "[user]"
+                    memory_lines.append(f"- {source_tag} **{m.key}**: {m.value}")
+
+                parts.append("\n".join(memory_lines))
+        except Exception:
+            logger.warning(
+                "Failed to load agent memory for user=%s", user.id, exc_info=True
+            )
 
     if parts:
         return "\n\n---\n\n".join(parts)
@@ -892,6 +928,19 @@ async def _resolve_tool_callables(
         logger.warning(
             "Failed to build file_list tool for session %s", session_id, exc_info=True
         )
+
+    # ---- Built-in tool: memory (always available) -----------------------
+    # Gives the agent persistent memory: save, delete, and list entries.
+    user_id = session_data.get("user_id", "")
+    if user_id:
+        try:
+            from ..tools.memory import build_memory_tools
+            memory_tools = build_memory_tools(db, user_id, tenant_id)
+            callables.extend(memory_tools)
+        except Exception:
+            logger.warning(
+                "Failed to build memory tools for user=%s", user_id, exc_info=True
+            )
 
     return callables
 
