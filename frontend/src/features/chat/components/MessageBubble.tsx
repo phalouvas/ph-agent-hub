@@ -2,8 +2,8 @@
 // PH Agent Hub — MessageBubble
 // =============================================================================
 // Renders user/assistant message; markdown via react-markdown+remark-gfm;
-// code blocks via react-syntax-highlighter; includes MessageFeedback +
-// MessageBranchNav; tool activity display for tool_start/tool_result events.
+// code blocks via react-syntax-highlighter; includes MessageFeedback;
+// tool activity display for tool_start/tool_result events.
 // =============================================================================
 
 import React from "react";
@@ -28,7 +28,6 @@ import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MessageFeedback } from "./MessageFeedback";
-import { MessageBranchNav } from "./MessageBranchNav";
 import type { MessageData } from "../services/chat";
 import { listMessageUploads } from "../services/chat";
 import { getToken } from "../../../services/api";
@@ -73,8 +72,6 @@ interface MessageBubbleProps {
   onEdit?: (messageId: string) => void;
   onDelete?: (messageId: string) => void;
   onRegenerate?: (messageId: string) => void;
-  branchInfo?: { currentIndex: number; totalBranches: number } | null;
-  onNavigateBranch?: (branchIndex: number) => void;
   disabled?: boolean;
   regenerating?: boolean;
 }
@@ -85,8 +82,6 @@ export function MessageBubble({
   onEdit,
   onDelete,
   onRegenerate,
-  branchInfo,
-  onNavigateBranch,
   disabled,
   regenerating,
 }: MessageBubbleProps) {
@@ -447,10 +442,6 @@ export function MessageBubble({
               />
             </Popconfirm>
           )}
-          <MessageBranchNav
-            branches={branchInfo}
-            onNavigate={(idx) => onNavigateBranch?.(idx)}
-          />
         </Space>
       )}
 
@@ -458,10 +449,6 @@ export function MessageBubble({
       {isUser && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
         <Space size="small">
-          <MessageBranchNav
-            branches={branchInfo}
-            onNavigate={(idx) => onNavigateBranch?.(idx)}
-          />
           <Button
             type="text"
             size="small"

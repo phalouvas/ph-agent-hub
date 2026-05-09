@@ -100,9 +100,6 @@ export function ChatWindow({
   const [editingLoading, setEditingLoading] = useState(false);
   const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
 
-  // Branch state: map of parent_message_id -> active branch_index
-  const [activeBranches, setActiveBranches] = useState<Record<string, number>>({});
-
   const { streaming, startStream, startRegenerateStream, stopStream } = useStream();
 
   const { data: messages, isLoading: loadingMessages } = useQuery({
@@ -175,7 +172,7 @@ export function ChatWindow({
     userScrolledUpRef.current = false;
     setShowScrollButton(false);
 
-    // ---- Edit mode: call branching edit API ----
+    // ---- Edit mode: call edit API ----
     if (editingMsgId) {
       const msgId = editingMsgId;
       setEditingMsgId(null);
@@ -188,23 +185,9 @@ export function ChatWindow({
       });
 
       try {
-        // Call the backend branching edit API
         await editMessage(sessionId, msgId, content);
         setPendingUserMessage(null);
         setEditingLoading(false);
-        // Auto-switch to the new branch (highest branch_index) after edit.
-        // Only works when the edited message has a non-null parent.
-        const originalMsg = (messages || []).find((m) => m.id === msgId);
-        if (originalMsg?.parent_message_id) {
-          const parentKey = originalMsg.parent_message_id;
-          setActiveBranches((prev) => {
-            const siblings = (messages || []).filter(
-              (m) => m.parent_message_id === parentKey,
-            );
-            const maxBranch = Math.max(...siblings.map((s) => s.branch_index ?? 0), 0) + 1;
-            return { ...prev, [parentKey]: maxBranch };
-          });
-        }
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -431,161 +414,55 @@ export function ChatWindow({
     }
   };
 
-  // ---- Branch tree: compute which messages have siblings ----
-  // Only compute for messages with non-null parents.  Root-level
-  // messages (parent_message_id=NULL) can mix sequential messages and
-  // edited branches; without explicit tracking of which was edited we
-  // cannot reliably tell them apart.  Child-level branching (regenerate)
-  // is unambiguous — all children of a parent are always branches.
-  const branchTree = useMemo(() => {
-    const byParent: Record<string, Set<number>> = {};
-    for (const m of messages || []) {
-      const parent = m.parent_message_id;
-      if (!parent) continue;
-      if (!byParent[parent]) byParent[parent] = new Set();
-      byParent[parent].add(m.branch_index ?? 0);
-    }
-    const tree: Record<string, { currentIndex: number; totalBranches: number }> = {};
-    for (const m of messages || []) {
-      const parent = m.parent_message_id;
-      if (!parent || !byParent[parent]) continue;
-      const siblings = byParent[parent];
-      if (siblings.size > 1) {
-        tree[m.id] = {
-          currentIndex: m.branch_index ?? 0,
-          totalBranches: siblings.size,
-        };
-      }
-    }
-    return tree;
-  }, [messages]);
+  // ---- Flat message list (linear, no branching) ----
+  const displayMessages: Array<any> = (messages || []).filter(
+    (m) => m.id !== regeneratingMsgId,
+  );
 
-  // ---- Branch-aware message list ----
-  // Filter out messages from inactive branches, then flatten
-  const displayMessages: Array<any> = useMemo(() => {
-    const msgs = (messages || []).filter(
-      (m) => m.id !== regeneratingMsgId,
-    );
-
-    // Build a set of message IDs that should be hidden (not on active branch)
-    const hiddenIds = new Set<string>();
-
-    for (const m of msgs) {
-      const parent = m.parent_message_id;
-      if (!parent) continue;
-
-      // Check if this parent has multiple branches
-      const allSiblings = msgs.filter(
-        (s) => s.parent_message_id === parent,
-      );
-      const branchIndices = [...new Set(allSiblings.map((s) => s.branch_index ?? 0))];
-
-      if (branchIndices.length > 1) {
-        const activeIdx = activeBranches[parent] ?? 0;
-        if ((m.branch_index ?? 0) !== activeIdx) {
-          hiddenIds.add(m.id);
-          // Also hide children of hidden messages recursively
-          const hideDescendants = (pid: string) => {
-            for (const child of msgs) {
-              if (child.parent_message_id === pid) {
-                hiddenIds.add(child.id);
-                hideDescendants(child.id);
-              }
-            }
-          };
-          hideDescendants(m.id);
-        }
-      }
-    }
-
-    // Build ordered display list, hiding inactive branches
-    const ordered: any[] = [];
-    const seen = new Set<string>();
-
-    // Walk the tree depth-first to preserve parent-child ordering
-    const walk = (msg: any) => {
-      if (!msg || seen.has(msg.id) || hiddenIds.has(msg.id)) return;
-      seen.add(msg.id);
-      ordered.push(msg);
-      // Find children ordered by branch_index, then created_at
-      const children = msgs
-        .filter((c) => c.parent_message_id === msg.id && !hiddenIds.has(c.id))
-        .sort((a, b) => (a.branch_index ?? 0) - (b.branch_index ?? 0) ||
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-      for (const child of children) {
-        walk(child);
-      }
-    };
-
-    // Start with root messages (parent_message_id is null)
-    const roots = msgs
-      .filter((m) => !m.parent_message_id && !hiddenIds.has(m.id))
-      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    for (const root of roots) {
-      walk(root);
-    }
-
-    // Add optimistic user message if present
-    if (pendingUserMessage) {
-      ordered.push({
-        id: pendingUserMessage.id,
-        session_id: sessionId,
-        parent_message_id: null,
-        branch_index: 0,
-        sender: "user" as const,
-        content: [{ type: "text", text: pendingUserMessage.content }],
-        model_id: null,
-        tool_calls: null,
-        is_deleted: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-    }
-    // Add streaming bubble if present
-    if (streamingContent && streamingMessageId) {
-      ordered.push({
-        id: streamingMessageId,
-        session_id: sessionId,
-        parent_message_id: null,
-        branch_index: 0,
-        sender: "assistant" as const,
-        content: [
-          ...(streamingReasoningContent
-            ? [{ type: "reasoning", text: streamingReasoningContent }]
-            : []),
-          ...(streamingContent
-            ? [{ type: "text", text: streamingContent }]
-            : []),
-          ...toolEvents.map((ev) => ({
-            type: ev.type,
-            name: (ev.data as Record<string, unknown>).tool_name,
-            arguments: (ev.data as Record<string, unknown>).arguments,
-            output: (ev.data as Record<string, unknown>).result_summary,
-            is_error: !(ev.data as Record<string, unknown>).success,
-            call_id: (ev.data as Record<string, unknown>).tool_call_id,
-          })),
-        ],
-        model_id: selectedModelId || null,
-        tool_calls: null,
-        tokens_in: streamingTokens?.tokens_in ?? null,
-        tokens_out: streamingTokens?.tokens_out ?? null,
-        is_deleted: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-    }
-    return ordered;
-  }, [messages, regeneratingMsgId, pendingUserMessage, streamingContent, streamingMessageId,
-      streamingReasoningContent, toolEvents, streamingTokens, selectedModelId, sessionId,
-      activeBranches]);
-
-  // ---- Branch navigation callback ----
-  const handleNavigateBranch = useCallback((messageId: string, branchIndex: number) => {
-    const msg = (messages || []).find((m) => m.id === messageId);
-    if (msg && msg.parent_message_id) {
-      setActiveBranches((prev) => ({ ...prev, [msg.parent_message_id!]: branchIndex }));
-    }
-  }, [messages]);
+  // Show the user's message immediately at the bottom (optimistic UI)
+  if (pendingUserMessage) {
+    displayMessages.push({
+      id: pendingUserMessage.id,
+      session_id: sessionId,
+      sender: "user" as const,
+      content: [{ type: "text", text: pendingUserMessage.content }],
+      model_id: null,
+      tool_calls: null,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+  if (streamingContent && streamingMessageId) {
+    displayMessages.push({
+      id: streamingMessageId,
+      session_id: sessionId,
+      sender: "assistant" as const,
+      content: [
+        ...(streamingReasoningContent
+          ? [{ type: "reasoning", text: streamingReasoningContent }]
+          : []),
+        ...(streamingContent
+          ? [{ type: "text", text: streamingContent }]
+          : []),
+        ...toolEvents.map((ev) => ({
+          type: ev.type,
+          name: (ev.data as Record<string, unknown>).tool_name,
+          arguments: (ev.data as Record<string, unknown>).arguments,
+          output: (ev.data as Record<string, unknown>).result_summary,
+          is_error: !(ev.data as Record<string, unknown>).success,
+          call_id: (ev.data as Record<string, unknown>).tool_call_id,
+        })),
+      ],
+      model_id: selectedModelId || null,
+      tool_calls: null,
+      tokens_in: streamingTokens?.tokens_in ?? null,
+      tokens_out: streamingTokens?.tokens_out ?? null,
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
 
   return (
     <div
@@ -733,8 +610,6 @@ export function ChatWindow({
                   ? handleRegenerate
                   : undefined
               }
-              branchInfo={branchTree[msg.id] ?? null}
-              onNavigateBranch={(idx) => handleNavigateBranch(msg.id, idx)}
               disabled={streaming || editingLoading}
               regenerating={regeneratingMsgId === msg.id}
             />

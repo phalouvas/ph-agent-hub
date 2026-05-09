@@ -11,7 +11,6 @@ export { SessionToolActivation } from "./SessionToolActivation";
 export { TemporaryChatBadge } from "./TemporaryChatBadge";
 export { FileUpload } from "./FileUpload";
 export { MessageFeedback } from "./MessageFeedback";
-export { MessageBranchNav } from "./MessageBranchNav";
 export { MessageBubble } from "./MessageBubble";
 export { ChatWindow } from "./ChatWindow";
 export { SessionSearch } from "./SessionSearch";
