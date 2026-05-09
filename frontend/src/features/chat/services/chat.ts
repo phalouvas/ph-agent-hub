@@ -29,8 +29,6 @@ export interface SessionData {
 export interface MessageData {
   id: string;
   session_id: string;
-  parent_message_id: string | null;
-  branch_index: number;
   sender: "user" | "assistant" | "system";
   content: unknown[] | null;
   model_id: string | null;

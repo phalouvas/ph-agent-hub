@@ -24,10 +24,6 @@ class Message(Base):
     session_id: Mapped[str] = mapped_column(
         CHAR(36), ForeignKey("sessions.id"), nullable=False
     )
-    parent_message_id: Mapped[str | None] = mapped_column(
-        CHAR(36), ForeignKey("messages.id"), nullable=True
-    )
-    branch_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sender: Mapped[str] = mapped_column(
         Enum("user", "assistant", "system", name="message_sender_enum"), nullable=False
     )

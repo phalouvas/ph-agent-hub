@@ -15,6 +15,8 @@ import {
   PaperClipOutlined,
   CompressOutlined,
   RobotOutlined,
+  EditOutlined,
+  CloseOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "./MessageBubble";
@@ -93,7 +95,10 @@ export function ChatWindow({
     content: string;
   } | null>(null);
 
-  const { streaming, startStream, startRegenerateStream, stopStream } = useStream();
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
+
+  const { streaming, startStream, startRegenerateStream, startEditStream, stopStream } = useStream();
 
   const { data: messages, isLoading: loadingMessages } = useQuery({
     queryKey: ["messages", sessionId],
@@ -128,6 +133,16 @@ export function ChatWindow({
       el.scrollTop = el.scrollHeight;
     });
   }, [messages, streamingContent, toolEvents, streaming]);
+
+  // Clear editing state once the edited message is confirmed gone from the list
+  useEffect(() => {
+    if (editingMsgId && messages) {
+      const stillExists = messages.some((m: any) => m.id === editingMsgId);
+      if (!stillExists) {
+        setEditingMsgId(null);
+      }
+    }
+  }, [messages, editingMsgId]);
 
   // Scroll event handler: detect when user manually scrolls away from the bottom
   const handleScroll = useCallback(() => {
@@ -165,6 +180,80 @@ export function ChatWindow({
     userScrolledUpRef.current = false;
     setShowScrollButton(false);
 
+    // ---- Edit mode: streaming, like regenerate but on the user message ----
+    if (editingMsgId) {
+      const msgId = editingMsgId;
+
+      // Show the new user message + thinking dots, same as regenerate.
+      // Keep editingMsgId set so the old message stays hidden during streaming.
+      setPendingUserMessage({
+        id: `pending-edit-${Date.now()}`,
+        content,
+      });
+
+      startEditStream(sessionId, msgId, content, {
+        onToken(token, msgId) {
+          setStreamingMessageId(msgId);
+          setStreamingContent((prev) => prev + token);
+        },
+        onReasoningToken(delta) {
+          setStreamingReasoningContent((prev) => prev + delta);
+        },
+        onToolStart(data) {
+          setToolEvents((prev) => [...prev, { type: "function_call", data }]);
+        },
+        onToolResult(data) {
+          setToolEvents((prev) => [...prev, { type: "function_result", data }]);
+        },
+        onMessageComplete(data) {
+          // Don't clear editingMsgId here — the refetch hasn't completed yet.
+          // It gets cleared by the useEffect below when messages update.
+          setPendingUserMessage(null);
+          setStreamingContent("");
+          setStreamingReasoningContent("");
+          setStreamingMessageId(null);
+          setToolEvents([]);
+          if (data.tokens_in || data.tokens_out) {
+            setStreamingTokens({ tokens_in: data.tokens_in || 0, tokens_out: data.tokens_out || 0 });
+          }
+          queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        },
+        onFollowUpQuestions(questions) {
+          setFollowUpQuestions(questions);
+        },
+        onSummarized(data) {
+          notification.info({
+            message: "Conversation Summarized",
+            description: `Compressed ${data.summarized_message_count} earlier messages to save context space.`,
+            placement: "topRight",
+            duration: 4,
+          });
+        },
+        onError(err) {
+          setEditingMsgId(null);
+          setPendingUserMessage(null);
+          setStreamingTokens(null);
+          setStreamError(err);
+          message.error(err || "Edit failed");
+        },
+        onClose() {
+          setPendingUserMessage(null);
+          setStreamingContent("");
+          setStreamingReasoningContent("");
+          setStreamingMessageId(null);
+          setToolEvents([]);
+          setStreamingTokens(null);
+          queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+          queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        },
+      });
+      return;
+    }
+
+    // ---- Normal send mode ----
     // Optimistic: show the user message immediately
     setPendingUserMessage({
       id: `pending-user-${Date.now()}`,
@@ -238,27 +327,30 @@ export function ChatWindow({
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
     });
-  }, [inputValue, streaming, sessionId, startStream, queryClient, pendingFiles]);
+  }, [inputValue, streaming, sessionId, startStream, queryClient, pendingFiles, editingMsgId]);
 
   const handleStop = async () => {
     await stopStream(sessionId);
   };
 
-  const handleEdit = async (messageId: string) => {
-    // Reload model to start edit flow — simple approach: prompt user
+  const handleEdit = useCallback((messageId: string) => {
     const msg = (messages || []).find((m) => m.id === messageId);
     if (msg) {
       const text = parseTextFromContent(msg.content);
       setInputValue(text);
+      setEditingMsgId(messageId);
     }
-  };
+  }, [messages]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingMsgId(null);
+    setInputValue("");
+  }, []);
 
   const handleDelete = async (messageId: string) => {
     await deleteMessage(sessionId, messageId);
     queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
   };
-
-  const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
 
   const handleRegenerate = useCallback((messageId: string) => {
     if (streaming) return;
@@ -375,10 +467,9 @@ export function ChatWindow({
     }
   };
 
-  // Build a flat display list: real messages + optimistic user message + streaming bubble
-  // Filter out the message being regenerated — the streaming bubble replaces it.
+  // ---- Flat message list (linear, no branching) ----
   const displayMessages: Array<any> = (messages || []).filter(
-    (m) => m.id !== regeneratingMsgId,
+    (m) => m.id !== regeneratingMsgId && m.id !== editingMsgId,
   );
 
   // Show the user's message immediately at the bottom (optimistic UI)
@@ -386,8 +477,6 @@ export function ChatWindow({
     displayMessages.push({
       id: pendingUserMessage.id,
       session_id: sessionId,
-      parent_message_id: null,
-      branch_index: 0,
       sender: "user" as const,
       content: [{ type: "text", text: pendingUserMessage.content }],
       model_id: null,
@@ -401,8 +490,6 @@ export function ChatWindow({
     displayMessages.push({
       id: streamingMessageId,
       session_id: sessionId,
-      parent_message_id: null,
-      branch_index: 0,
       sender: "assistant" as const,
       content: [
         ...(streamingReasoningContent
@@ -601,8 +688,8 @@ export function ChatWindow({
           />
         )}
 
-        {/* Thinking placeholder — shown while streaming but before first token */}
-        {streaming && !streamingContent && !streamingMessageId && (
+        {/* Thinking placeholder — shown while streaming/editing but before content */}
+        {(streaming) && !streamingContent && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
               <Space style={{ marginLeft: 4 }}>
@@ -712,6 +799,33 @@ export function ChatWindow({
           </div>
         )}
 
+        {/* Edit mode indicator */}
+        {editingMsgId && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 8,
+              padding: "4px 12px",
+              background: "#fff7e6",
+              border: "1px solid #ffd591",
+              borderRadius: 6,
+            }}
+          >
+            <EditOutlined style={{ color: "#fa8c16" }} />
+            <Text type="secondary" style={{ fontSize: 13, flex: 1 }}>
+              Editing message — a new branch will be created
+            </Text>
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={handleCancelEdit}
+            />
+          </div>
+        )}
+
         <Space.Compact style={{ width: "100%" }}>
           <Upload
             multiple
@@ -720,7 +834,7 @@ export function ChatWindow({
               await handleFileUpload(file);
               return false;
             }}
-            disabled={streaming || isTemporary}
+            disabled={streaming || isTemporary || !!editingMsgId}
             accept={
               ".pdf,.csv,.txt,.md,.json,.png,.jpg,.jpeg,.gif,.webp," +
               "application/pdf,text/csv,text/plain,text/markdown," +
@@ -729,7 +843,7 @@ export function ChatWindow({
           >
             <Button
               icon={<PaperClipOutlined />}
-              disabled={streaming || isTemporary}
+              disabled={streaming || isTemporary || !!editingMsgId}
               loading={uploading}
               title="Attach files"
             />
@@ -739,7 +853,9 @@ export function ChatWindow({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              isTemporary
+              editingMsgId
+                ? "Edit your message... (Enter to send)"
+                : isTemporary
                 ? "Type a message... (temporary session)"
                 : "Type a message... (Enter to send, Shift+Enter for new line)"
             }
@@ -749,23 +865,33 @@ export function ChatWindow({
           />
           {streaming ? (
             <Space size={4}>
-              <Button
-                danger
-                icon={<StopOutlined />}
-                onClick={handleStop}
-              >
-                Stop
-              </Button>
+              {streaming ? (
+                <Button
+                  danger
+                  icon={<StopOutlined />}
+                  onClick={handleStop}
+                >
+                  Stop
+                </Button>
+              ) : (
+                <Button
+                  type="primary"
+                  loading
+                  disabled
+                >
+                  Sending…
+                </Button>
+              )}
               <Spin size="small" />
             </Space>
           ) : (
             <Button
               type="primary"
-              icon={<SendOutlined />}
+              icon={editingMsgId ? <EditOutlined /> : <SendOutlined />}
               onClick={handleSend}
               disabled={!inputValue.trim()}
             >
-              Send
+              {editingMsgId ? "Edit & Send" : "Send"}
             </Button>
           )}
         </Space.Compact>

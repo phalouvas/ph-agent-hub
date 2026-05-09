@@ -22,12 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from ..agents.runner import (
-    _get_next_branch_index,
     _msg_get,
     run_agent,
-    run_agent_assistant_only,
     run_agent_stream,
-    run_agent_stream_assistant_only,
 )
 from ..core.config import settings
 from ..core.dependencies import get_current_user, get_db
@@ -108,8 +105,6 @@ class MessageCreate(BaseModel):
 class MessageResponse(BaseModel):
     id: str
     session_id: str
-    parent_message_id: str | None
-    branch_index: int
     sender: str
     content: list | None
     model_id: str | None
@@ -516,8 +511,6 @@ async def list_messages(
             MessageResponse(
                 id=m.get("id", ""),
                 session_id=session_id,
-                parent_message_id=m.get("parent_message_id"),
-                branch_index=m.get("branch_index", 0),
                 sender=m.get("sender", "user"),
                 content=m.get("content"),
                 model_id=m.get("model_id"),
@@ -709,19 +702,24 @@ async def edit_user_message(
     session_id: str,
     message_id: str,
     body: MessageCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Edit a user message and re-run the agent, creating a new branch.
+    """Edit a user message and re-run the agent.
 
-    The original user message remains in the DB; a new user message
-    with an incremented ``branch_index`` is created, and the agent
-    generates a new assistant response off that branch.
+    Hard-deletes the original user message and its assistant response
+    (if any), then runs the agent with the new text.  No branching —
+    the conversation stays linear.
+
+    When the request includes ``Accept: text/event-stream`` the response
+    is a Server-Sent Events stream (same events as send_message).
+    Otherwise a plain JSON response is returned.
     """
     data = await _load_session(db, session_id)
     await _require_session_owner(data, current_user)
 
-    # Reject temporary sessions (no proper message ID tree in Redis)
+    # Reject temporary sessions
     if data.get("is_temporary", False):
         raise ValidationError("Message editing is not supported for temporary sessions")
 
@@ -738,21 +736,56 @@ async def edit_user_message(
     if original_msg.sender != "user":
         raise ValidationError("Only user messages can be edited")
 
-    # Calculate next branch index at the same parent level
-    next_branch = await _get_next_branch_index(
-        db=db,
-        session_id=session_id,
-        parent_message_id=original_msg.parent_message_id,
+    # Find and hard-delete the assistant response that follows this user message
+    child_result = await db.execute(
+        select(Message).where(
+            Message.session_id == session_id,
+            Message.is_deleted == False,  # noqa: E712
+        )
+        .order_by(Message.created_at)
     )
+    all_msgs = list(child_result.scalars().all())
 
-    # Run agent with branching
+    # Find the assistant message immediately after this user message
+    original_idx = None
+    for i, m in enumerate(all_msgs):
+        if m.id == message_id:
+            original_idx = i
+            break
+
+    # Hard-delete the assistant response that belongs to this user message
+    if original_idx is not None and original_idx + 1 < len(all_msgs):
+        next_msg = all_msgs[original_idx + 1]
+        if next_msg.sender == "assistant":
+            await db.delete(next_msg)
+            await upload_service.delete_uploads_for_message(db, next_msg.id)
+
+    # Hard-delete the original user message
+    await upload_service.delete_uploads_for_message(db, message_id)
+    await db.delete(original_msg)
+    await db.commit()
+
+    # Detect streaming request via Accept header
+    accept = request.headers.get("accept", "")
+    is_streaming = "text/event-stream" in accept.lower()
+
+    if is_streaming:
+        return await _handle_streaming_message(
+            session_id=session_id,
+            body=body,
+            data=data,
+            db=db,
+            current_user=current_user,
+            modified_message=body.content,
+            valid_file_ids=body.file_ids or [],
+        )
+
+    # ---- Non-streaming path ---------------------------------------------
     response_text, assistant_msg_id = await run_agent(
         session_data=data,
         user_message=body.content,
         db=db,
         current_user=current_user,
-        parent_message_id=original_msg.parent_message_id,
-        user_branch_index=next_branch,
     )
 
     model_id = data.get("selected_model_id")
@@ -810,10 +843,11 @@ async def regenerate_assistant_message(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Regenerate an assistant response, creating a new branch.
+    """Regenerate an assistant response (no branching).
 
-    Uses the parent user message's text to re-run the agent, then
-    persists only the new assistant message (no duplicate user message).
+    Hard-deletes the old assistant message, then re-runs the agent
+    using the original user message's text.  The conversation stays
+    linear — the old response is gone and replaced.
 
     When the request includes ``Accept: text/event-stream`` the response
     is a Server-Sent Events stream (same events as send_message).
@@ -838,74 +872,72 @@ async def regenerate_assistant_message(
     if assistant_msg.sender != "assistant":
         raise ValidationError("Only assistant messages can be regenerated")
 
-    # Load the parent user message
-    if assistant_msg.parent_message_id is None:
-        raise ValidationError(
-            "Cannot regenerate: assistant message has no parent user message"
+    # Find the user message immediately before this assistant message
+    all_msgs_result = await db.execute(
+        select(Message)
+        .where(
+            Message.session_id == session_id,
+            Message.is_deleted == False,  # noqa: E712
         )
-
-    parent_result = await db.execute(
-        select(Message).where(Message.id == assistant_msg.parent_message_id)
+        .order_by(Message.created_at)
     )
-    parent_user_msg = parent_result.scalar_one_or_none()
-    if parent_user_msg is None or parent_user_msg.sender != "user":
-        raise ValidationError(
-            "Cannot regenerate: parent message not found or is not a user message"
-        )
+    all_msgs = list(all_msgs_result.scalars().all())
 
-    # Extract user text from the parent message content
+    # Find the index of this assistant message and get the preceding user message
     user_text = ""
-    if parent_user_msg.content and isinstance(parent_user_msg.content, list):
-        for item in parent_user_msg.content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                user_text = item.get("text", "")
-                break
+    user_msg_to_delete = None
+    for i, m in enumerate(all_msgs):
+        if m.id == message_id and i > 0:
+            prev = all_msgs[i - 1]
+            if prev.sender == "user":
+                user_msg_to_delete = prev
+                if prev.content and isinstance(prev.content, list):
+                    for item in prev.content:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            user_text = item.get("text", "")
+                            break
+            break
+
     if not user_text:
         raise ValidationError(
-            "Cannot regenerate: parent user message has no text content"
+            "Cannot regenerate: could not find the parent user message text"
         )
 
-    # Calculate next branch index at the parent level
-    next_branch = await _get_next_branch_index(
-        db=db,
-        session_id=session_id,
-        parent_message_id=parent_user_msg.id,
-    )
+    # Hard-delete both the old assistant and its user message
+    await upload_service.delete_uploads_for_message(db, message_id)
+    await db.delete(assistant_msg)
+    if user_msg_to_delete is not None:
+        await upload_service.delete_uploads_for_message(db, user_msg_to_delete.id)
+        await db.delete(user_msg_to_delete)
+    await db.commit()
 
     # Detect streaming request via Accept header
     accept = request.headers.get("accept", "")
     is_streaming = "text/event-stream" in accept.lower()
 
-    # Soft-delete the old assistant message so only the regenerated
-    # response is visible in the message list.
-    assistant_msg.is_deleted = True
-    await db.commit()
-
     if is_streaming:
+        # Reuse the standard streaming path: the user message already exists,
+        # we just need a new assistant response.  Streaming regenerate works
+        # the same as a normal send — run the agent and stream the response.
         return await _handle_streaming_regenerate(
             session_id=session_id,
             data=data,
             db=db,
             current_user=current_user,
             user_text=user_text,
-            parent_message_id=parent_user_msg.id,
-            branch_index=next_branch,
         )
 
     # ---- Non-streaming path ---------------------------------------------
-    response_text, new_assistant_msg_id = await run_agent_assistant_only(
+    response_text, assistant_msg_id = await run_agent(
         session_data=data,
-        user_message_text=user_text,
-        user_message_id=parent_user_msg.id,
+        user_message=user_text,
         db=db,
         current_user=current_user,
-        assistant_parent_message_id=parent_user_msg.id,
-        assistant_branch_index=next_branch,
     )
 
     model_id = data.get("selected_model_id")
     return SendMessageResponse(
-        message_id=new_assistant_msg_id,
+        message_id=assistant_msg_id,
         content=response_text,
         model_id=model_id,
     )
@@ -922,21 +954,21 @@ async def _handle_streaming_regenerate(
     db: AsyncSession,
     current_user: UserORM,
     user_text: str,
-    parent_message_id: str,
-    branch_index: int,
 ) -> EventSourceResponse:
-    """Assemble and return an SSE EventSourceResponse for a streaming regenerate."""
+    """Assemble and return an SSE EventSourceResponse for a streaming regenerate.
+    
+    Uses the standard run_agent_stream path — the user message already exists
+    in the DB, so a new user+assistant pair is persisted (same as send_message).
+    """
     message_id = str(uuid.uuid4())
 
     async def inner_gen() -> AsyncIterator[dict]:
-        async for event_dict in run_agent_stream_assistant_only(
+        async for event_dict in run_agent_stream(
             session_data=data,
             user_message=user_text,
             db=db,
             current_user=current_user,
             message_id=message_id,
-            parent_message_id=parent_message_id,
-            branch_index=branch_index,
         ):
             yield event_dict
 

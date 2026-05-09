@@ -606,8 +606,6 @@ async def run_agent(
     user_message: str,
     db: AsyncSession,
     current_user: User,
-    parent_message_id: str | None = None,
-    user_branch_index: int = 0,
     file_ids: list[str] | None = None,
 ) -> tuple[str, str]:
     """Assemble and run a MAF agent for a single user message.
@@ -617,10 +615,6 @@ async def run_agent(
         user_message: The text the user sent.
         db: Active async DB session.
         current_user: The authenticated user.
-        parent_message_id: If editing/regenerating, the parent message ID
-            for the branch point.
-        user_branch_index: Branch index for this user message (default 0
-            for the root of the conversation).
         file_ids: Optional list of FileUpload IDs to link to the user message.
 
     Returns:
@@ -678,8 +672,6 @@ async def run_agent(
         user_message=user_message,
         assistant_response=raw_response,
         model_id=cfg.model.id,
-        parent_message_id=parent_message_id,
-        user_branch_index=user_branch_index,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
     )
@@ -1125,8 +1117,6 @@ async def _persist_user_message(
     session_id: str,
     is_temporary: bool,
     user_message: str,
-    parent_message_id: str | None = None,
-    user_branch_index: int = 0,
 ) -> str:
     """Persist just the user message, returning its ID.
 
@@ -1143,8 +1133,6 @@ async def _persist_user_message(
                 "id": user_msg_id,
                 "sender": "user",
                 "content": content,
-                "parent_message_id": parent_message_id,
-                "branch_index": user_branch_index,
                 "created_at": now.isoformat(),
             },
         )
@@ -1154,8 +1142,6 @@ async def _persist_user_message(
             session_id=session_id,
             sender="user",
             content=content,
-            parent_message_id=parent_message_id,
-            branch_index=user_branch_index,
             created_at=now,
         )
         db.add(msg)
@@ -1170,11 +1156,9 @@ async def _persist_assistant_message(
     is_temporary: bool,
     assistant_response: str,
     model_id: str,
-    parent_message_id: str,
     tool_events: list[dict] | None = None,
     tokens_in: int = 0,
     tokens_out: int = 0,
-    branch_index: int = 0,
 ) -> str:
     """Persist just the assistant message, returning its ID."""
     content: list[dict] = []
@@ -1199,8 +1183,6 @@ async def _persist_assistant_message(
                 "sender": "assistant",
                 "content": content,
                 "model_id": model_id,
-                "parent_message_id": parent_message_id,
-                "branch_index": branch_index,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "created_at": now.isoformat(),
@@ -1213,8 +1195,6 @@ async def _persist_assistant_message(
             sender="assistant",
             content=content,
             model_id=model_id,
-            parent_message_id=parent_message_id,
-            branch_index=branch_index,
             tokens_in=tokens_in if tokens_in > 0 else None,
             tokens_out=tokens_out if tokens_out > 0 else None,
             created_at=now,
@@ -1232,8 +1212,6 @@ async def _persist_messages(
     user_message: str,
     assistant_response: str,
     model_id: str,
-    parent_message_id: str | None = None,
-    user_branch_index: int = 0,
     tokens_in: int = 0,
     tokens_out: int = 0,
 ) -> tuple[str, str]:
@@ -1256,8 +1234,6 @@ async def _persist_messages(
                 "id": user_msg_id,
                 "sender": "user",
                 "content": user_msg_content,
-                "parent_message_id": parent_message_id,
-                "branch_index": user_branch_index,
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -1268,8 +1244,6 @@ async def _persist_messages(
                 "sender": "assistant",
                 "content": assistant_msg_content,
                 "model_id": model_id,
-                "parent_message_id": user_msg_id,
-                "branch_index": 0,
                 "tokens_in": tokens_in,
                 "tokens_out": tokens_out,
                 "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1285,8 +1259,6 @@ async def _persist_messages(
             session_id=session_id,
             sender="user",
             content=user_msg_content,
-            parent_message_id=parent_message_id,
-            branch_index=user_branch_index,
             created_at=now,
         )
         db.add(user_msg)
@@ -1299,8 +1271,6 @@ async def _persist_messages(
             sender="assistant",
             content=assistant_msg_content,
             model_id=model_id,
-            parent_message_id=user_msg_id,
-            branch_index=0,
             tokens_in=tokens_in if tokens_in > 0 else None,
             tokens_out=tokens_out if tokens_out > 0 else None,
             created_at=datetime.now(timezone.utc),
@@ -1474,7 +1444,6 @@ async def run_agent_stream(
         is_temporary=is_temporary,
         assistant_response=accumulated_text,
         model_id=cfg.model.id,
-        parent_message_id=user_msg_id,
         tool_events=accumulated_tool_events,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
@@ -1499,7 +1468,6 @@ async def run_agent_stream(
         "data": json.dumps({
             "session_id": session_id,
             "message_id": message_id,
-            "branch_index": 0,
             "total_tokens": total_tokens,
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
@@ -1994,351 +1962,8 @@ async def _generate_follow_up_questions(
 
 
 # =============================================================================
-# Phase 8 — Branch-aware helpers
+# Token-count helpers
 # =============================================================================
-
-
-async def _get_next_branch_index(
-    db: AsyncSession,
-    session_id: str,
-    parent_message_id: str,
-) -> int:
-    """Return the next available branch index for messages under a parent.
-
-    Queries ``MAX(branch_index) + 1`` for messages where
-    ``session_id`` and ``parent_message_id`` match.  Returns 0 if the
-    parent has no existing children.
-    """
-    from sqlalchemy import func as sa_func
-
-    result = await db.execute(
-        select(sa_func.max(Message.branch_index)).where(
-            Message.session_id == session_id,
-            Message.parent_message_id == parent_message_id,
-        )
-    )
-    max_idx = result.scalar()
-    if max_idx is None:
-        return 0
-    return max_idx + 1
-
-
-async def run_agent_stream_assistant_only(
-    session_data: dict,
-    user_message: str,
-    db: AsyncSession,
-    current_user: User,
-    message_id: str,
-    parent_message_id: str,
-    branch_index: int,
-) -> AsyncIterator[dict]:
-    """Streaming version of ``run_agent_assistant_only``.
-
-    Runs the agent and yields SSE event dicts just like
-    ``run_agent_stream``, but does NOT persist a user message (the
-    parent already exists).  Used by the regenerate endpoint when
-    the client sends ``Accept: text/event-stream``.
-
-    Args:
-        session_data: Unified session dict (from DB or Redis).
-        user_message: The original user message text to re-run.
-        db: Active async DB session.
-        current_user: The authenticated user.
-        message_id: Pre-generated UUID for the new assistant message.
-        parent_message_id: The existing parent user message ID to link
-            the new assistant message to.
-        branch_index: The branch index for this assistant message.
-
-    Yields:
-        Dicts with ``event`` and ``data`` keys for
-        ``EventSourceResponse``.
-    """
-    tenant_id = current_user.tenant_id
-    session_id = session_data["id"]
-    is_temporary = session_data.get("is_temporary", False)
-
-    accumulated_text: str = ""
-    accumulated_tool_events: list[dict] = []
-    total_tokens: int = 0
-    _stream_token_info: dict = {}
-    cfg = None
-
-    try:
-        # ---- 1-6. Resolve session config --------------------------------
-        cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
-
-        # ---- Build contextualized message -------------------------------
-        contextualized_message, summary_info = await _maybe_summarize_and_build_context(
-            db=db,
-            session_data=session_data,
-            cfg=cfg,
-            user_message=user_message,
-        )
-
-        # Emit summarized event if auto-summarization happened
-        if summary_info:
-            yield {
-                "event": "summarized",
-                "data": json.dumps({
-                    "session_id": session_id,
-                    "message_id": message_id,
-                    "summary": summary_info["summary_text"],
-                    "summarized_message_count": summary_info["summarized_count"],
-                    "tokens_saved": summary_info["tokens_saved"],
-                }),
-            }
-
-        # ---- 7. Run agent or workflow (streaming) -----------------------
-        if cfg.execution_type == "workflow":
-            stream = _run_workflow_stream(
-                model=cfg.model,
-                skill=cfg.skill,
-                model_client=cfg.model_client,
-                system_prompt=cfg.system_prompt,
-                tools=cfg.active_tool_callables,
-                user_message=contextualized_message,
-                agent_name=cfg.agent_name,
-                session_id=session_id,
-                message_id=message_id,
-                token_counts=_stream_token_info,
-            )
-        else:
-            stream = _run_agent_stream(
-                model=cfg.model,
-                model_client=cfg.model_client,
-                system_prompt=cfg.system_prompt,
-                tools=cfg.active_tool_callables,
-                user_message=contextualized_message,
-                agent_name=cfg.agent_name,
-                session_id=session_id,
-                message_id=message_id,
-                token_counts=_stream_token_info,
-            )
-
-        async for event_dict in stream:
-            # Check for cancellation before each yield
-            if await check_stream_cancel(session_id):
-                await clear_stream_cancel(session_id)
-                logger.warning(
-                    "Stream cancelled for session %s (regenerate) — partial content will be persisted",
-                    session_id,
-                )
-                accumulated_text = _maybe_accumulate_text(
-                    event_dict, accumulated_text
-                )
-                break
-
-            accumulated_text = _maybe_accumulate_text(
-                event_dict, accumulated_text
-            )
-            accumulated_tool_events = _maybe_accumulate_tool_events(
-                event_dict, accumulated_tool_events
-            )
-
-            yield event_dict
-
-    except Exception as exc:
-        logger.exception("Agent stream (regenerate) failed for session %s", session_id)
-        yield {
-            "event": "error",
-            "data": json.dumps({
-                "session_id": session_id,
-                "message_id": message_id,
-                "code": _exc_to_error_code(exc),
-                "message": str(exc),
-            }),
-        }
-        return
-
-    # ---- 8. Extract token counts ----------------------------------------
-    tokens_in, tokens_out = _stream_token_info.get("in", 0), _stream_token_info.get("out", 0)
-
-    # ---- 9. Persist assistant message -----------------------------------
-    await _persist_assistant_message(
-        db=db,
-        session_id=session_id,
-        is_temporary=is_temporary,
-        assistant_response=accumulated_text,
-        model_id=cfg.model.id,
-        parent_message_id=parent_message_id,
-        tool_events=accumulated_tool_events,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-        branch_index=branch_index,
-    )
-
-    # ---- 10. Write usage log --------------------------------------------
-    try:
-        await write_usage_log(
-            db,
-            tenant_id=current_user.tenant_id,
-            user_id=current_user.id,
-            model_id=cfg.model.id,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-        )
-    except Exception:
-        logger.exception("Failed to write usage log (regenerate streaming)")
-
-    # ---- 11. Emit message_complete --------------------------------------
-    yield {
-        "event": "message_complete",
-        "data": json.dumps({
-            "session_id": session_id,
-            "message_id": message_id,
-            "branch_index": branch_index,
-            "total_tokens": total_tokens,
-            "tokens_in": tokens_in,
-            "tokens_out": tokens_out,
-            "model_id": cfg.model.id,
-        }),
-    }
-
-    # ---- 12. Generate follow-up questions (if enabled) ------------------
-    if getattr(cfg.model, "follow_up_questions_enabled", False):
-        try:
-            questions = await _generate_follow_up_questions(
-                model=cfg.model,
-                system_prompt=cfg.system_prompt,
-                user_message=user_message,
-                assistant_response=accumulated_text,
-            )
-            if questions:
-                yield {
-                    "event": "follow_up_questions",
-                    "data": json.dumps({
-                        "session_id": session_id,
-                        "message_id": message_id,
-                        "questions": questions,
-                    }),
-                }
-        except Exception:
-            logger.exception(
-                "Failed to generate follow-up questions for session %s (regenerate)",
-                session_id,
-            )
-
-
-async def run_agent_assistant_only(
-    session_data: dict,
-    user_message_text: str,
-    user_message_id: str,
-    db: AsyncSession,
-    current_user: User,
-    assistant_parent_message_id: str,
-    assistant_branch_index: int,
-) -> tuple[str, str]:
-    """Run the agent and persist ONLY an assistant message (no user message).
-
-    Used by the regenerate endpoint — the parent user message already
-    exists, and we only need a new assistant response branched from it.
-
-    Args:
-        session_data: Unified session dict (from DB or Redis).
-        user_message_text: The original user message text to re-run.
-        user_message_id: ID of the existing parent user message.
-        db: Active async DB session.
-        current_user: The authenticated user.
-        assistant_parent_message_id: The parent message ID to link the
-            new assistant message to (typically *user_message_id*).
-        assistant_branch_index: The branch index for this assistant
-            message.
-
-    Returns:
-        A tuple of (assistant response text, assistant message ID).
-    """
-    tenant_id = current_user.tenant_id
-    session_id = session_data["id"]
-    is_temporary = session_data.get("is_temporary", False)
-
-    # ---- 1-6. Resolve session config ------------------------------------
-    cfg = await _resolve_session_config(db, session_data, tenant_id, current_user)
-
-    # ---- Build contextualized message (history + auto-summarization) ----
-    contextualized_message, _ = await _maybe_summarize_and_build_context(
-        db=db,
-        session_data=session_data,
-        cfg=cfg,
-        user_message=user_message_text,
-    )
-
-    # ---- 7. Run agent or workflow ----------------------------------------
-    raw_response: str
-
-    try:
-        if cfg.execution_type == "workflow":
-            raw_response, tokens_in, tokens_out = await _run_workflow(
-                model=cfg.model,
-                skill=cfg.skill,
-                model_client=cfg.model_client,
-                system_prompt=cfg.system_prompt,
-                tools=cfg.active_tool_callables,
-                user_message=contextualized_message,
-                agent_name=cfg.agent_name,
-            )
-        else:
-            raw_response, tokens_in, tokens_out = await _run_agent(
-                model=cfg.model,
-                model_client=cfg.model_client,
-                system_prompt=cfg.system_prompt,
-                tools=cfg.active_tool_callables,
-                user_message=contextualized_message,
-                agent_name=cfg.agent_name,
-            )
-    except Exception as exc:
-        logger.error("Agent run (assistant-only) failed: %s", exc)
-        raise ValidationError(
-            f"Agent execution failed: {exc}"
-        ) from exc
-
-    # ---- 8. Persist ONLY the assistant message --------------------------
-    assistant_msg_content = [{"type": "text", "text": raw_response}]
-    assistant_msg_id = str(uuid.uuid4())
-
-    if is_temporary:
-        await append_temp_message(
-            session_id,
-            {
-                "id": assistant_msg_id,
-                "sender": "assistant",
-                "content": assistant_msg_content,
-                "model_id": cfg.model.id,
-                "parent_message_id": assistant_parent_message_id,
-                "branch_index": assistant_branch_index,
-                "tokens_in": tokens_in,
-                "tokens_out": tokens_out,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-    else:
-        assistant_msg = Message(
-            id=assistant_msg_id,
-            session_id=session_id,
-            sender="assistant",
-            content=assistant_msg_content,
-            model_id=cfg.model.id,
-            parent_message_id=assistant_parent_message_id,
-            branch_index=assistant_branch_index,
-            tokens_in=tokens_in if tokens_in > 0 else None,
-            tokens_out=tokens_out if tokens_out > 0 else None,
-        )
-        db.add(assistant_msg)
-        await db.commit()
-
-    # ---- 10. Write usage log --------------------------------------------
-    try:
-        await write_usage_log(
-            db,
-            tenant_id=current_user.tenant_id,
-            user_id=current_user.id,
-            model_id=cfg.model.id,
-            tokens_in=tokens_in,
-            tokens_out=tokens_out,
-        )
-    except Exception:
-        logger.exception("Failed to write usage log (assistant-only)")
-
-    return raw_response, assistant_msg_id
 
 
 # ---------------------------------------------------------------------------
