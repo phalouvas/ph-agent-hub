@@ -53,48 +53,59 @@ def build_memory_tools(
             A dict with ``key``, ``value``, and ``action`` ("created" or
             "updated") to confirm the operation.
         """
-        # Check if a global memory entry with this key already exists
-        result = await db.execute(
-            select(Memory).where(
-                Memory.user_id == user_id,
-                Memory.tenant_id == tenant_id,
-                Memory.session_id.is_(None),
-                Memory.key == key,
+        try:
+            # Check if a global memory entry with this key already exists
+            result = await db.execute(
+                select(Memory).where(
+                    Memory.user_id == user_id,
+                    Memory.tenant_id == tenant_id,
+                    Memory.session_id.is_(None),
+                    Memory.key == key,
+                )
             )
-        )
-        existing = result.scalar_one_or_none()
+            existing = result.scalar_one_or_none()
 
-        if existing:
-            existing.value = value
-            await db.commit()
+            if existing:
+                existing.value = value
+                await db.flush()
+                logger.debug(
+                    "save_memory updated key=%r for user=%s", key, user_id
+                )
+                return {
+                    "key": key,
+                    "value": value,
+                    "action": "updated",
+                }
+
+            # Create new global memory entry
+            memory = Memory(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                key=key,
+                value=value,
+                session_id=None,
+                source="automatic",
+            )
+            db.add(memory)
+            await db.flush()
             logger.debug(
-                "save_memory updated key=%r for user=%s", key, user_id
+                "save_memory created key=%r for user=%s", key, user_id
             )
             return {
                 "key": key,
                 "value": value,
-                "action": "updated",
+                "action": "created",
             }
-
-        # Create new global memory entry
-        memory = Memory(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            key=key,
-            value=value,
-            session_id=None,
-            source="automatic",
-        )
-        db.add(memory)
-        await db.commit()
-        logger.debug(
-            "save_memory created key=%r for user=%s", key, user_id
-        )
-        return {
-            "key": key,
-            "value": value,
-            "action": "created",
-        }
+        except Exception as exc:
+            logger.error(
+                "save_memory failed for key=%r user=%s: %s", key, user_id, exc
+            )
+            return {
+                "key": key,
+                "value": value,
+                "action": "error",
+                "message": f"Failed to save memory: {exc}",
+            }
 
     @tool
     async def delete_memory(key: str) -> dict[str, Any]:
@@ -110,36 +121,46 @@ def build_memory_tools(
             A dict with ``key``, ``action`` ("deleted" or "not_found"),
             and an optional ``message`` field.
         """
-        result = await db.execute(
-            select(Memory).where(
-                Memory.user_id == user_id,
-                Memory.tenant_id == tenant_id,
-                Memory.session_id.is_(None),
-                Memory.key == key,
-                Memory.source == "automatic",  # Only delete agent-created entries
+        try:
+            result = await db.execute(
+                select(Memory).where(
+                    Memory.user_id == user_id,
+                    Memory.tenant_id == tenant_id,
+                    Memory.session_id.is_(None),
+                    Memory.key == key,
+                    Memory.source == "automatic",  # Only delete agent-created entries
+                )
             )
-        )
-        existing = result.scalar_one_or_none()
+            existing = result.scalar_one_or_none()
 
-        if not existing:
+            if not existing:
+                return {
+                    "key": key,
+                    "action": "not_found",
+                    "message": f"No automatic memory entry found with key {key!r}",
+                }
+
+            await db.execute(
+                delete(Memory).where(Memory.id == existing.id)
+            )
+            await db.flush()
+            logger.debug(
+                "delete_memory deleted key=%r for user=%s", key, user_id
+            )
             return {
                 "key": key,
-                "action": "not_found",
-                "message": f"No automatic memory entry found with key {key!r}",
+                "action": "deleted",
+                "message": f"Memory entry {key!r} deleted",
             }
-
-        await db.execute(
-            delete(Memory).where(Memory.id == existing.id)
-        )
-        await db.commit()
-        logger.debug(
-            "delete_memory deleted key=%r for user=%s", key, user_id
-        )
-        return {
-            "key": key,
-            "action": "deleted",
-            "message": f"Memory entry {key!r} deleted",
-        }
+        except Exception as exc:
+            logger.error(
+                "delete_memory failed for key=%r user=%s: %s", key, user_id, exc
+            )
+            return {
+                "key": key,
+                "action": "error",
+                "message": f"Failed to delete memory: {exc}",
+            }
 
     @tool
     async def list_memory() -> list[dict[str, Any]]:
