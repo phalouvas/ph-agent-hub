@@ -22,7 +22,6 @@ import { useStream } from "../hooks/useStream";
 import {
   listMessages,
   deleteMessage,
-  regenerateMessage,
   summarizeSession,
 } from "../services/chat";
 import api from "../../../services/api";
@@ -94,7 +93,7 @@ export function ChatWindow({
     content: string;
   } | null>(null);
 
-  const { streaming, startStream, stopStream } = useStream();
+  const { streaming, startStream, startRegenerateStream, stopStream } = useStream();
 
   const { data: messages, isLoading: loadingMessages } = useQuery({
     queryKey: ["messages", sessionId],
@@ -261,20 +260,77 @@ export function ChatWindow({
 
   const [regeneratingMsgId, setRegeneratingMsgId] = useState<string | null>(null);
 
-  const handleRegenerate = async (messageId: string) => {
+  const handleRegenerate = useCallback((messageId: string) => {
+    if (streaming) return;
     setRegeneratingMsgId(messageId);
-    try {
-      await regenerateMessage(sessionId, messageId);
-      queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
-      message.success("Response regenerated");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Regenerate failed";
-      message.error(msg);
-      console.error("Regenerate error:", err);
-    } finally {
-      setRegeneratingMsgId(null);
-    }
-  };
+    setStreamingContent("");
+    setStreamingReasoningContent("");
+    setStreamError(null);
+    setToolEvents([]);
+    setFollowUpQuestions([]);
+    setStreamingTokens(null);
+
+    // Re-enable auto-scroll
+    userScrolledUpRef.current = false;
+    setShowScrollButton(false);
+
+    startRegenerateStream(sessionId, messageId, {
+      onToken(token, msgId) {
+        setStreamingMessageId(msgId);
+        setStreamingContent((prev) => prev + token);
+      },
+      onReasoningToken(delta) {
+        setStreamingReasoningContent((prev) => prev + delta);
+      },
+      onToolStart(data) {
+        setToolEvents((prev) => [...prev, { type: "function_call", data }]);
+      },
+      onToolResult(data) {
+        setToolEvents((prev) => [...prev, { type: "function_result", data }]);
+      },
+      onMessageComplete(data) {
+        setRegeneratingMsgId(null);
+        setStreamingContent("");
+        setStreamingReasoningContent("");
+        setStreamingMessageId(null);
+        setToolEvents([]);
+        if (data.tokens_in || data.tokens_out) {
+          setStreamingTokens({ tokens_in: data.tokens_in || 0, tokens_out: data.tokens_out || 0 });
+        }
+        queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      },
+      onFollowUpQuestions(questions) {
+        setFollowUpQuestions(questions);
+      },
+      onSummarized(data) {
+        notification.info({
+          message: "Conversation Summarized",
+          description: `Compressed ${data.summarized_message_count} earlier messages to save context space.`,
+          placement: "topRight",
+          duration: 4,
+        });
+      },
+      onError(err) {
+        setRegeneratingMsgId(null);
+        setStreamingTokens(null);
+        setStreamError(err);
+        message.error(err || "Regenerate failed");
+      },
+      onClose() {
+        setRegeneratingMsgId(null);
+        setStreamingContent("");
+        setStreamingReasoningContent("");
+        setStreamingMessageId(null);
+        setToolEvents([]);
+        setStreamingTokens(null);
+        queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      },
+    });
+  }, [streaming, sessionId, startRegenerateStream, queryClient]);
 
   // File upload handlers
   const handleFileUpload = useCallback(
@@ -320,7 +376,10 @@ export function ChatWindow({
   };
 
   // Build a flat display list: real messages + optimistic user message + streaming bubble
-  const displayMessages: Array<any> = [...(messages || [])];
+  // Filter out the message being regenerated — the streaming bubble replaces it.
+  const displayMessages: Array<any> = (messages || []).filter(
+    (m) => m.id !== regeneratingMsgId,
+  );
 
   // Show the user's message immediately at the bottom (optimistic UI)
   if (pendingUserMessage) {
