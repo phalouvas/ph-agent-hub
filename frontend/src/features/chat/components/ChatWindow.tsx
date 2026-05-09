@@ -7,13 +7,14 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Upload, message, notification } from "antd";
+import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Typography, Upload, message, notification } from "antd";
 import {
   SendOutlined,
   StopOutlined,
   DownOutlined,
   PaperClipOutlined,
   CompressOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "./MessageBubble";
@@ -35,6 +36,7 @@ import {
 } from "./";
 
 const { TextArea } = Input;
+const { Text } = Typography;
 
 // ---------------------------------------------------------------------------
 // Pending file info (stored after upload completes)
@@ -126,7 +128,7 @@ export function ChatWindow({
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
-  }, [messages, streamingContent, toolEvents]);
+  }, [messages, streamingContent, toolEvents, streaming]);
 
   // Scroll event handler: detect when user manually scrolls away from the bottom
   const handleScroll = useCallback(() => {
@@ -390,6 +392,12 @@ export function ChatWindow({
         }
       }}
     >
+      <style>{`
+        @keyframes thinkingDot {
+          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+          40% { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
       {/* Top bar */}
       <div
         style={{
@@ -534,6 +542,49 @@ export function ChatWindow({
           />
         )}
 
+        {/* Thinking placeholder — shown while streaming but before first token */}
+        {streaming && !streamingContent && !streamingMessageId && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
+              <Space style={{ marginLeft: 4 }}>
+                <RobotOutlined style={{ color: "#52c41a" }} />
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Assistant
+                </Text>
+              </Space>
+            </div>
+            <div
+              style={{
+                display: "inline-block",
+                maxWidth: "80%",
+                padding: "12px 16px",
+                borderRadius: 12,
+                borderBottomLeftRadius: 4,
+                background: "#f0f0f0",
+              }}
+            >
+              <Space size={4}>
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#bbb",
+                      animation: `thinkingDot 1.4s ease-in-out ${i * 0.2}s infinite`,
+                    }}
+                  />
+                ))}
+                <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>
+                  AI is thinking…
+                </Text>
+              </Space>
+            </div>
+          </div>
+        )}
+
         {/* Follow-up questions chips */}
         {!streaming && followUpQuestions.length > 0 && (
           <div
@@ -638,13 +689,16 @@ export function ChatWindow({
             style={{ resize: "none" }}
           />
           {streaming ? (
-            <Button
-              danger
-              icon={<StopOutlined />}
-              onClick={handleStop}
-            >
-              Stop
-            </Button>
+            <Space size={4}>
+              <Button
+                danger
+                icon={<StopOutlined />}
+                onClick={handleStop}
+              >
+                Stop
+              </Button>
+              <Spin size="small" />
+            </Space>
           ) : (
             <Button
               type="primary"
