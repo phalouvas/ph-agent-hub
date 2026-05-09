@@ -6,8 +6,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install Python dependencies
+# Use increased timeout (1000s) and retries for large packages like claude_agent_sdk (~75MB)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --timeout=1000 --retries=5 -r requirements.txt
 
 # Copy application code
 COPY . .
