@@ -1,0 +1,42 @@
+# =============================================================================
+# PH Agent Hub — Frontend Dockerfile (Production)
+# =============================================================================
+# Multi-stage build:
+#   1. deps — installs npm dependencies
+#   2. build — compiles TypeScript + Vite production bundle
+#   3. final — nginx serving the static files
+#
+# Built by: infrastructure/build.sh
+# =============================================================================
+
+# ── Dependencies stage ─────────────────────────────────────────────────────
+FROM node:20-alpine AS deps
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci --only=production
+
+# ── Build stage ────────────────────────────────────────────────────────────
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# ── Final stage (nginx) ────────────────────────────────────────────────────
+FROM nginx:alpine
+
+# Copy built assets from build stage
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 3000
+
+CMD ["nginx", "-g", "daemon off;"]
