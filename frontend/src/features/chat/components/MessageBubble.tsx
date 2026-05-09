@@ -458,6 +458,10 @@ export function MessageBubble({
       {isUser && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
         <Space size="small">
+          <MessageBranchNav
+            branches={branchInfo}
+            onNavigate={(idx) => onNavigateBranch?.(idx)}
+          />
           <Button
             type="text"
             size="small"
