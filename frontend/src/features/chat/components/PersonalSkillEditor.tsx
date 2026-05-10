@@ -61,10 +61,17 @@ export function PersonalSkillEditor({
   const [view, setView] = useState<"list" | "form">("list");
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
+  const executionType = Form.useWatch("execution_type", form);
 
   const { data: skills, isLoading } = useQuery({
     queryKey: ["skills"],
     queryFn: () => api<SkillData[]>("/skills"),
+    enabled: open,
+  });
+
+  const { data: templates } = useQuery({
+    queryKey: ["templates"],
+    queryFn: () => api<{ id: string; title: string }[]>("/templates"),
     enabled: open,
   });
 
@@ -235,10 +242,22 @@ export function PersonalSkillEditor({
             <Form.Item
               name="maf_target_key"
               label="MAF Target Key"
-              rules={[{ required: true }]}
+              extra="Auto-generated from title if left empty"
             >
-              <Input placeholder="e.g., erpnext_invoice_analyzer" />
+              <Input placeholder="auto-generated (e.g., sales_assistant)" />
             </Form.Item>
+            {executionType !== "workflow_based" && (
+              <Form.Item name="template_id" label="Template">
+                <Select
+                  allowClear
+                  placeholder="Select a template (provides system prompt)"
+                  options={(templates || []).map((t) => ({
+                    label: t.title,
+                    value: t.id,
+                  }))}
+                />
+              </Form.Item>
+            )}
             <Space>
               <Button onClick={() => setView("list")}>Cancel</Button>
               <Button

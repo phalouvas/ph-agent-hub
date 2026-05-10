@@ -2,11 +2,23 @@
 # PH Agent Hub — Skill Service (CRUD + join table management)
 # =============================================================================
 
+import re
+
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import NotFoundError
 from ..db.orm.skills import Skill, SkillAllowedTool
+
+
+def _slugify(title: str) -> str:
+    """Convert a skill title into a valid maf_target_key.
+
+    Lowercases, replaces non-alphanumeric runs with underscores,
+    and strips leading/trailing separators.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", title.lower().strip())
+    return slug.strip("_")
 
 
 async def list_skills(
@@ -65,7 +77,7 @@ async def create_skill(
     title: str,
     description: str,
     execution_type: str,
-    maf_target_key: str,
+    maf_target_key: str | None = None,
     visibility: str = "tenant",
     user_id: str | None = None,
     template_id: str | None = None,
@@ -74,7 +86,14 @@ async def create_skill(
     enabled: bool = True,
     tool_ids: list[str] | None = None,
 ) -> Skill:
-    """Create a new skill with optional tool associations."""
+    """Create a new skill with optional tool associations.
+
+    If ``maf_target_key`` is not provided it is auto-generated from
+    *title* via ``_slugify()``.
+    """
+    if not maf_target_key:
+        maf_target_key = _slugify(title)
+
     skill = Skill(
         tenant_id=tenant_id,
         user_id=user_id,

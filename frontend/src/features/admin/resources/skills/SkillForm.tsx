@@ -20,6 +20,7 @@ import {
   SkillData,
   listTools,
   listModels,
+  listTemplates,
 } from "../../services/admin";
 
 const { TextArea } = Input;
@@ -34,6 +35,7 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const isEdit = !!skill;
+  const executionType = Form.useWatch("execution_type", form);
 
   const { data: tools } = useQuery({
     queryKey: ["admin-tools"],
@@ -47,6 +49,12 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
     enabled: open,
   });
 
+  const { data: templates } = useQuery({
+    queryKey: ["admin-templates"],
+    queryFn: listTemplates,
+    enabled: open,
+  });
+
   React.useEffect(() => {
     if (open) {
       if (skill) {
@@ -56,6 +64,7 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
           execution_type: skill.execution_type,
           maf_target_key: skill.maf_target_key,
           visibility: skill.visibility,
+          template_id: skill.template_id,
           default_model_id: skill.default_model_id,
           enabled: skill.enabled,
           tool_ids: skill.tool_ids || [],
@@ -146,9 +155,9 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
         <Form.Item
           name="maf_target_key"
           label="MAF Target Key"
-          rules={[{ required: true }]}
+          extra="Auto-generated from title if left empty"
         >
-          <Input placeholder="e.g., erpnext_invoice_analyzer" />
+          <Input placeholder="auto-generated (e.g., sales_assistant)" />
         </Form.Item>
         <Form.Item name="visibility" label="Visibility">
           <Select
@@ -159,6 +168,18 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
             ]}
           />
         </Form.Item>
+        {executionType !== "workflow_based" && (
+          <Form.Item name="template_id" label="Template">
+            <Select
+              allowClear
+              placeholder="Select a template (provides system prompt)"
+              options={(templates || []).map((t) => ({
+                label: t.title,
+                value: t.id,
+              }))}
+            />
+          </Form.Item>
+        )}
         <Form.Item name="default_model_id" label="Default Model">
           <Select
             allowClear

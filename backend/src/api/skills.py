@@ -27,7 +27,7 @@ class SkillCreate(BaseModel):
     title: str
     description: str
     execution_type: str
-    maf_target_key: str
+    maf_target_key: str | None = None
     template_id: str | None = None
     default_prompt_id: str | None = None
     default_model_id: str | None = None
