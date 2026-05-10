@@ -136,7 +136,6 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
         <Form.Item
           name="description"
           label="Description"
-          rules={[{ required: true }]}
         >
           <TextArea rows={2} />
         </Form.Item>
@@ -152,13 +151,16 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
             ]}
           />
         </Form.Item>
-        <Form.Item
-          name="maf_target_key"
-          label="MAF Target Key"
-          extra="Auto-generated from title if left empty"
-        >
-          <Input placeholder="auto-generated (e.g., sales_assistant)" />
-        </Form.Item>
+        {executionType === "workflow_based" && (
+          <Form.Item
+            name="maf_target_key"
+            label="MAF Target Key"
+            rules={[{ required: true }]}
+            extra="Must match a registered workflow module"
+          >
+            <Input placeholder="e.g., invoice_processing" />
+          </Form.Item>
+        )}
         <Form.Item name="visibility" label="Visibility">
           <Select
             options={[

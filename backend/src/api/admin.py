@@ -991,7 +991,7 @@ async def admin_delete_template(
 
 class AdminSkillCreate(BaseModel):
     title: str
-    description: str
+    description: str | None = None
     execution_type: str
     maf_target_key: str | None = None
     visibility: str = "tenant"

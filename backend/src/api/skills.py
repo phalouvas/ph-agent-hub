@@ -25,7 +25,7 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 
 class SkillCreate(BaseModel):
     title: str
-    description: str
+    description: str | None = None
     execution_type: str
     maf_target_key: str | None = None
     template_id: str | None = None

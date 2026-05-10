@@ -75,7 +75,7 @@ async def create_skill(
     db: AsyncSession,
     tenant_id: str,
     title: str,
-    description: str,
+    description: str | None = None,
     execution_type: str,
     maf_target_key: str | None = None,
     visibility: str = "tenant",
