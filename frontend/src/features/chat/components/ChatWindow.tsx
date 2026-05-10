@@ -297,6 +297,9 @@ export function ChatWindow({
       onFollowUpQuestions(questions) {
         setFollowUpQuestions(questions);
       },
+      onTagsUpdated(_data) {
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      },
       onSummarized(data) {
         notification.info({
           message: "Conversation Summarized",
@@ -393,6 +396,9 @@ export function ChatWindow({
       },
       onFollowUpQuestions(questions) {
         setFollowUpQuestions(questions);
+      },
+      onTagsUpdated(_data) {
+        queryClient.invalidateQueries({ queryKey: ["sessions"] });
       },
       onSummarized(data) {
         notification.info({

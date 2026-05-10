@@ -77,6 +77,14 @@ class SessionUpdate(BaseModel):
     thinking_enabled: bool | None = None
 
 
+class TagResponse(BaseModel):
+    id: str
+    name: str
+    color: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class SessionResponse(BaseModel):
     id: str
     tenant_id: str
@@ -88,6 +96,7 @@ class SessionResponse(BaseModel):
     selected_skill_id: str | None
     selected_model_id: str | None
     thinking_enabled: bool | None
+    tags: list[TagResponse] = []
     created_at: datetime
     updated_at: datetime
 
@@ -338,6 +347,7 @@ async def create_session(
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
             "thinking_enabled": body.thinking_enabled,
+            "tags": [],
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
         }
@@ -410,6 +420,7 @@ async def get_session(
         "selected_skill_id": data.get("selected_skill_id"),
         "selected_model_id": data.get("selected_model_id"),
         "thinking_enabled": data.get("thinking_enabled"),
+        "tags": data.get("tags", []),
         "created_at": _parse_datetime(data.get("created_at")),
         "updated_at": _parse_datetime(data.get("updated_at")),
     }
@@ -446,6 +457,7 @@ async def update_session(
             "selected_skill_id": data.get("selected_skill_id"),
             "selected_model_id": data.get("selected_model_id"),
             "thinking_enabled": data.get("thinking_enabled"),
+            "tags": [],
             "created_at": _parse_datetime(data.get("created_at")),
             "updated_at": datetime.now(timezone.utc),
         }
@@ -1248,18 +1260,34 @@ async def search_sessions(
         )
     )
 
-    # Execute all three queries
+    # Search sessions via tag names
+    from ..db.orm.tags import Tag as TagORM, SessionTag as SessionTagORM
+    tag_stmt = (
+        select(Session)
+        .join(SessionTagORM, SessionTagORM.session_id == Session.id)
+        .join(TagORM, TagORM.id == SessionTagORM.tag_id)
+        .where(
+            Session.user_id == current_user.id,
+            Session.tenant_id == current_user.tenant_id,
+            Session.is_temporary == False,  # noqa: E712
+            TagORM.name.ilike(search_term),
+        )
+    )
+
+    # Execute all queries
     title_results = await db.execute(title_stmt)
     like_results = await db.execute(like_stmt)
     msg_results = await db.execute(msg_stmt)
+    tag_results = await db.execute(tag_stmt)
 
-    # Deduplicate by session ID (union of all three)
+    # Deduplicate by session ID (union of all four)
     seen: set[str] = set()
     sessions: list[Session] = []
     for s in (
         list(title_results.scalars().all())
         + list(like_results.scalars().all())
         + list(msg_results.scalars().all())
+        + list(tag_results.scalars().all())
     ):
         if s.id not in seen:
             seen.add(s.id)
@@ -1626,6 +1654,104 @@ async def remove_session_tool(
             session_id=session_id,
             tool_id=tool_id,
         )
+
+
+# =============================================================================
+# Session Tags
+# =============================================================================
+
+
+@router.get("/session/tags", response_model=list[TagResponse])
+async def list_tenant_tags(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Return all tags for the current user's tenant."""
+    tags = await session_service.list_tenant_tags(
+        db=db, tenant_id=current_user.tenant_id
+    )
+    return [TagResponse.model_validate(t) for t in tags]
+
+
+@router.post(
+    "/session/{session_id}/tags",
+    response_model=SessionResponse,
+    status_code=201,
+)
+async def add_tag(
+    session_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Add a tag to a session by tag name. Creates the tag if needed."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    if data.get("is_temporary", False):
+        raise ValidationError("Tags are not supported for temporary sessions")
+
+    tag_name = (body.get("name") or "").strip()
+    if not tag_name:
+        raise ValidationError("Tag name is required")
+
+    tag = await session_service.get_or_create_tag(
+        db=db,
+        tenant_id=current_user.tenant_id,
+        name=tag_name,
+    )
+    await session_service.add_tag_to_session(
+        db=db,
+        session_id=session_id,
+        tag_id=tag.id,
+    )
+
+    # Reload the session to get updated tags
+    session = await session_service.get_session_by_id(db, session_id)
+    return SessionResponse.model_validate(session)
+
+
+@router.delete(
+    "/session/{session_id}/tags/{tag_id}",
+    status_code=204,
+)
+async def remove_tag(
+    session_id: str,
+    tag_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Remove a tag from a session."""
+    data = await _load_session(db, session_id)
+    await _require_session_owner(data, current_user)
+
+    if data.get("is_temporary", False):
+        raise ValidationError("Tags are not supported for temporary sessions")
+
+    await session_service.remove_tag_from_session(
+        db=db,
+        session_id=session_id,
+        tag_id=tag_id,
+    )
+
+
+@router.get(
+    "/sessions/by-tag",
+    response_model=list[SessionResponse],
+)
+async def list_sessions_by_tag(
+    tag: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+):
+    """List user's sessions that have a specific tag."""
+    sessions = await session_service.list_sessions_by_tag(
+        db=db,
+        user_id=current_user.id,
+        tenant_id=current_user.tenant_id,
+        tag_name=tag,
+    )
+    return [SessionResponse.model_validate(s) for s in sessions]
 
 
 # =============================================================================

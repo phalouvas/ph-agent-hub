@@ -112,6 +112,14 @@ export interface SummarizedEvent {
   };
 }
 
+export interface TagsUpdatedEvent {
+  event: "tags_updated";
+  data: {
+    session_id: string;
+    tags: string[];
+  };
+}
+
 export interface HeartbeatEvent {
   event: "heartbeat";
   data: Record<string, never>;
@@ -126,6 +134,7 @@ export type StreamEvent =
   | ReasoningTokenEvent
   | FollowUpQuestionsEvent
   | SummarizedEvent
+  | TagsUpdatedEvent
   | ErrorEvent
   | HeartbeatEvent;
 
@@ -154,6 +163,7 @@ export function useStream() {
         onReasoningToken?: (delta: string, messageId: string) => void;
         onFollowUpQuestions?: (questions: string[]) => void;
         onSummarized?: (data: SummarizedEvent["data"]) => void;
+        onTagsUpdated?: (data: TagsUpdatedEvent["data"]) => void;
         onError?: (error: string, messageId: string) => void;
         onClose?: () => void;
       },
@@ -220,6 +230,9 @@ export function useStream() {
                     break;
                   case "summarized":
                     handlers.onSummarized?.(parsed);
+                    break;
+                  case "tags_updated":
+                    handlers.onTagsUpdated?.(parsed);
                     break;
                   case "error":
                     handlers.onError?.(parsed.message || parsed.error || "Unknown error", parsed.message_id);
@@ -295,6 +308,7 @@ export function useStream() {
         onReasoningToken?: (delta: string, messageId: string) => void;
         onFollowUpQuestions?: (questions: string[]) => void;
         onSummarized?: (data: SummarizedEvent["data"]) => void;
+        onTagsUpdated?: (data: TagsUpdatedEvent["data"]) => void;
         onError?: (error: string, messageId: string) => void;
         onClose?: () => void;
       },
@@ -357,6 +371,9 @@ export function useStream() {
                     break;
                   case "summarized":
                     handlers.onSummarized?.(parsed);
+                    break;
+                  case "tags_updated":
+                    handlers.onTagsUpdated?.(parsed);
                     break;
                   case "error":
                     handlers.onError?.(parsed.message || parsed.error || "Unknown error", parsed.message_id);

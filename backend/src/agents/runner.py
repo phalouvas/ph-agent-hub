@@ -1551,6 +1551,63 @@ async def run_agent_stream(
                 session_id,
             )
 
+    # ---- 13. Auto-tag session (first assistant response only) --------------
+    if not is_temporary and accumulated_text:
+        try:
+            # Check if this is the first assistant message
+            tag_count_result = await db.execute(
+                select(Message).where(
+                    Message.session_id == session_id,
+                    Message.sender == "assistant",
+                )
+            )
+            assistant_count = len(list(tag_count_result.scalars().all()))
+
+            if assistant_count == 1:
+                tag_names = await _auto_tag_session(
+                    model=cfg.model,
+                    system_prompt=cfg.system_prompt,
+                    user_message=user_message,
+                    assistant_response=accumulated_text,
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                )
+                if tag_names:
+                    # Open a fresh DB session for tag persistence
+                    from ..db.base import AsyncSessionLocal
+
+                    async with AsyncSessionLocal() as tag_db:
+                        from ..services import session_service as _tag_svc
+
+                        persisted_tags: list[str] = []
+                        for tag_name in tag_names:
+                            try:
+                                tag = await _tag_svc.get_or_create_tag(
+                                    tag_db, tenant_id, tag_name
+                                )
+                                await _tag_svc.add_tag_to_session(
+                                    tag_db, session_id, tag.id
+                                )
+                                persisted_tags.append(tag_name)
+                            except Exception:
+                                logger.warning(
+                                    "Failed to persist tag '%s' for session %s",
+                                    tag_name, session_id, exc_info=True,
+                                )
+
+                        if persisted_tags:
+                            yield {
+                                "event": "tags_updated",
+                                "data": json.dumps({
+                                    "session_id": session_id,
+                                    "tags": persisted_tags,
+                                }),
+                            }
+        except Exception:
+            logger.exception(
+                "Failed to auto-tag session %s", session_id
+            )
+
 
 # ---------------------------------------------------------------------------
 # Streaming agent / workflow execution helpers
@@ -2009,6 +2066,102 @@ async def _generate_follow_up_questions(
 
     except (json.JSONDecodeError, Exception) as exc:
         logger.warning("Failed to parse follow-up questions: %s", exc)
+
+    return []
+
+
+async def _auto_tag_session(
+    model: Model,
+    system_prompt: str,
+    user_message: str,
+    assistant_response: str,
+    session_id: str,
+    tenant_id: str,
+) -> list[str]:
+    """Generate 3–5 concise lowercase tags based on the conversation.
+
+    Creates a fresh non-thinking model client and makes a quick
+    non-streaming call. Returns a list of tag name strings (or []).
+    Never raises — failures are logged and swallowed.
+    """
+    prompt = (
+        "Based on the conversation above, generate 3-5 concise tags "
+        "that describe the main topics, tools used, or domain areas.\n\n"
+        "Rules:\n"
+        "- Return ONLY a JSON array of strings, nothing else.\n"
+        "- Each tag should be 1-3 words, lowercase, no special characters.\n"
+        "- Tags should capture the essence: e.g. programming, invoices, data analysis.\n"
+        '- Example format: ["invoice", "erpnext", "payment reconciliation"]'
+    )
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+        {"role": "assistant", "content": assistant_response},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        from ..models.base import get_chat_client
+
+        fresh_client = get_chat_client(model, thinking_enabled=False)
+        raw_client = getattr(fresh_client, "client", None)
+        if raw_client is None:
+            logger.warning("No client attribute on fresh model_client, skipping auto-tagging")
+            return []
+
+        model_name = getattr(fresh_client, "model", model.model_id)
+        response = await raw_client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            max_tokens=300,
+            temperature=0.5,
+        )
+        text = response.choices[0].message.content if response.choices else ""
+        text = (text or "").strip()
+
+        # Remove markdown code fences if present
+        if text.startswith("```"):
+            lines = text.split("\n")
+            text = "\n".join(lines[1:]) if len(lines) > 1 else text
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+
+        # Try standard JSON parse first
+        try:
+            tags = json.loads(text)
+            if isinstance(tags, list) and all(isinstance(t, str) for t in tags):
+                cleaned = []
+                seen = set()
+                for t in tags:
+                    t = t.strip().lower()
+                    if t and t not in seen and len(t) <= 50:
+                        cleaned.append(t)
+                        seen.add(t)
+                return cleaned[:5]
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback: try to salvage truncated JSON arrays
+        # e.g. ["tag1", "tag2", "tag3 — missing closing bracket
+        if not text.endswith("]") and "[" in text:
+            # Append "]" if it looks like a truncated array
+            text = text.rstrip().rstrip(",") + "]"
+
+        tags = json.loads(text)
+        if isinstance(tags, list) and all(isinstance(t, str) for t in tags):
+            cleaned = []
+            seen = set()
+            for t in tags:
+                t = t.strip().lower()
+                if t and t not in seen and len(t) <= 50:
+                    cleaned.append(t)
+                    seen.add(t)
+            return cleaned[:5]
+
+    except (json.JSONDecodeError, Exception) as exc:
+        logger.warning("Failed to auto-tag session %s: %s", session_id, exc)
 
     return []
 

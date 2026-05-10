@@ -11,6 +11,12 @@ import api from "../../../services/api";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface TagData {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 export interface SessionData {
   id: string;
   tenant_id: string;
@@ -21,6 +27,8 @@ export interface SessionData {
   selected_template_id: string | null;
   selected_skill_id: string | null;
   selected_model_id: string | null;
+  thinking_enabled?: boolean | null;
+  tags?: TagData[];
   created_at: string;
   updated_at: string;
 }
@@ -339,4 +347,37 @@ export function updateMemory(
     method: "PUT",
     body: data,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Session Tags
+// ---------------------------------------------------------------------------
+
+export function listTenantTags(): Promise<TagData[]> {
+  return api<TagData[]>("/chat/session/tags");
+}
+
+export function addTagToSession(
+  sessionId: string,
+  name: string,
+): Promise<SessionData> {
+  return api<SessionData>(`/chat/session/${sessionId}/tags`, {
+    method: "POST",
+    body: { name },
+  });
+}
+
+export function removeTagFromSession(
+  sessionId: string,
+  tagId: string,
+): Promise<void> {
+  return api<void>(`/chat/session/${sessionId}/tags/${tagId}`, {
+    method: "DELETE",
+  });
+}
+
+export function listSessionsByTag(tag: string): Promise<SessionData[]> {
+  return api<SessionData[]>(
+    `/chat/sessions/by-tag?tag=${encodeURIComponent(tag)}`,
+  );
 }

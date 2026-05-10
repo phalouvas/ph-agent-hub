@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { Input, List, Typography, Empty, Spin } from "antd";
 import { useNavigate } from "react-router-dom";
-import { searchSessions, SessionData } from "../services/chat";
+import { searchSessions, listSessionsByTag, SessionData } from "../services/chat";
 
 const { Text } = Typography;
 const { Search } = Input;
@@ -31,8 +31,20 @@ export function SessionSearch({ onClose }: SessionSearchProps) {
     setSearching(true);
     setSearched(true);
     try {
-      const data = await searchSessions(value);
-      setResults(data);
+      // #tag prefix → search by tag name
+      if (value.startsWith("#")) {
+        const tagName = value.slice(1).trim();
+        if (!tagName) {
+          setResults([]);
+          setSearching(false);
+          return;
+        }
+        const data = await listSessionsByTag(tagName);
+        setResults(data);
+      } else {
+        const data = await searchSessions(value);
+        setResults(data);
+      }
     } catch {
       setResults([]);
     }
