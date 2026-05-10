@@ -90,7 +90,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           is_public: model.is_public,
           max_tokens: model.max_tokens,
           temperature: model.temperature,
-          routing_priority: model.routing_priority,
+
           thinking_enabled: model.thinking_enabled,
           follow_up_questions_enabled: model.follow_up_questions_enabled,
           context_length: model.context_length,
@@ -103,7 +103,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           is_public: false,
           max_tokens: 4096,
           temperature: 0.7,
-          routing_priority: 0,
+
           thinking_enabled: false,
           follow_up_questions_enabled: false,
           context_length: undefined,
@@ -203,7 +203,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           <Input placeholder="e.g., https://api.openai.com/v1" />
         </Form.Item>
         <Form.Item name="max_tokens" label="Max Tokens">
-          <InputNumber min={1} max={128000} style={{ width: "100%" }} />
+          <InputNumber min={1} style={{ width: "100%" }} />
         </Form.Item>
         <Form.Item
           name="context_length"
@@ -215,9 +215,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         <Form.Item name="temperature" label="Temperature">
           <InputNumber min={0} max={2} step={0.1} style={{ width: "100%" }} />
         </Form.Item>
-        <Form.Item name="routing_priority" label="Routing Priority">
-          <InputNumber min={0} max={100} style={{ width: "100%" }} />
-        </Form.Item>
+
         <Form.Item shouldUpdate noStyle>
           {() =>
             form.getFieldValue("provider") === "deepseek" ? (

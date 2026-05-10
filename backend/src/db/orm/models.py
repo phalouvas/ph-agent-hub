@@ -32,7 +32,6 @@ class Model(Base):
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     temperature: Mapped[float] = mapped_column(Float, nullable=False)
-    routing_priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     thinking_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     follow_up_questions_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     context_length: Mapped[int | None] = mapped_column(Integer, nullable=True)

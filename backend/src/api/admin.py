@@ -188,7 +188,6 @@ class ModelCreate(BaseModel):
     is_public: bool = False
     max_tokens: int = 4096
     temperature: float = 0.7
-    routing_priority: int = 0
     thinking_enabled: bool = False
     follow_up_questions_enabled: bool = False
     context_length: int | None = None
@@ -204,7 +203,6 @@ class ModelUpdate(BaseModel):
     is_public: bool | None = None
     max_tokens: int | None = None
     temperature: float | None = None
-    routing_priority: int | None = None
     thinking_enabled: bool | None = None
     follow_up_questions_enabled: bool | None = None
     context_length: int | None = None
@@ -221,7 +219,6 @@ class ModelResponse(BaseModel):
     is_public: bool
     max_tokens: int
     temperature: float
-    routing_priority: int
     thinking_enabled: bool
     follow_up_questions_enabled: bool = False
     context_length: int | None = None
@@ -584,7 +581,6 @@ async def create_model(
         is_public=body.is_public,
         max_tokens=body.max_tokens,
         temperature=body.temperature,
-        routing_priority=body.routing_priority,
         thinking_enabled=body.thinking_enabled,
         context_length=body.context_length,
     )
@@ -635,8 +631,6 @@ async def update_model(
         update_kwargs["max_tokens"] = body.max_tokens
     if body.temperature is not None:
         update_kwargs["temperature"] = body.temperature
-    if body.routing_priority is not None:
-        update_kwargs["routing_priority"] = body.routing_priority
     if body.thinking_enabled is not None:
         update_kwargs["thinking_enabled"] = body.thinking_enabled
     if body.follow_up_questions_enabled is not None:

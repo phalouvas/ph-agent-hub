@@ -25,7 +25,6 @@ class ModelResponse(BaseModel):
     enabled: bool
     max_tokens: int
     temperature: float
-    routing_priority: int
     thinking_enabled: bool
     follow_up_questions_enabled: bool
     created_at: datetime
