@@ -19,7 +19,10 @@ import {
   TemplateData,
   listTools,
   listModels,
+  listTenants,
+  listUsers,
 } from "../../services/admin";
+import { useAuth } from "../../../../providers/AuthProvider";
 
 const { TextArea } = Input;
 
@@ -33,6 +36,9 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const isEdit = !!template;
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const scope = Form.useWatch("scope", form);
 
   const { data: tools } = useQuery({
     queryKey: ["admin-tools"],
@@ -46,20 +52,35 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
     enabled: open,
   });
 
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants"],
+    queryFn: listTenants,
+    enabled: open && isAdmin,
+  });
+
+  const { data: users } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: listUsers,
+    enabled: open,
+  });
+
   React.useEffect(() => {
     if (open) {
       if (template) {
         form.setFieldsValue({
+          tenant_id: template.tenant_id,
           title: template.title,
           description: template.description,
           system_prompt: template.system_prompt,
           scope: template.scope,
           default_model_id: template.default_model_id,
+          assigned_user_id: template.assigned_user_id,
           tool_ids: template.tool_ids || [],
         });
       } else {
         form.resetFields();
         form.setFieldsValue({
+          tenant_id: undefined,
           scope: "tenant",
           tool_ids: [],
         });
@@ -112,6 +133,22 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
       width={640}
     >
       <Form form={form} layout="vertical">
+        {isAdmin && (
+          <Form.Item
+            name="tenant_id"
+            label="Tenant"
+            extra="Leave empty to create in your own tenant"
+          >
+            <Select
+              allowClear
+              placeholder="Select tenant (optional)"
+              options={(tenants || []).map((t) => ({
+                label: t.name,
+                value: t.id,
+              }))}
+            />
+          </Form.Item>
+        )}
         <Form.Item
           name="title"
           label="Title"
@@ -140,6 +177,23 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
             ]}
           />
         </Form.Item>
+        {scope === "user" && (
+          <Form.Item
+            name="assigned_user_id"
+            label="Assign to User"
+            rules={[{ required: true, message: "Please select a user" }]}
+          >
+            <Select
+              placeholder="Select user"
+              showSearch
+              optionFilterProp="label"
+              options={(users || []).map((u) => ({
+                label: `${u.display_name || u.email} (${u.email})`,
+                value: u.id,
+              }))}
+            />
+          </Form.Item>
+        )}
         <Form.Item name="default_model_id" label="Default Model">
           <Select
             allowClear

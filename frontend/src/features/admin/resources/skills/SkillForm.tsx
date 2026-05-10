@@ -21,7 +21,10 @@ import {
   listTools,
   listModels,
   listTemplates,
+  listTenants,
+  listUsers,
 } from "../../services/admin";
+import { useAuth } from "../../../../providers/AuthProvider";
 
 const { TextArea } = Input;
 
@@ -36,6 +39,9 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
   const queryClient = useQueryClient();
   const isEdit = !!skill;
   const executionType = Form.useWatch("execution_type", form);
+  const visibility = Form.useWatch("visibility", form);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const { data: tools } = useQuery({
     queryKey: ["admin-tools"],
@@ -55,10 +61,24 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
     enabled: open,
   });
 
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants"],
+    queryFn: listTenants,
+    enabled: open && isAdmin,
+  });
+
+  const { data: users } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: listUsers,
+    enabled: open,
+  });
+
   React.useEffect(() => {
     if (open) {
       if (skill) {
         form.setFieldsValue({
+          tenant_id: skill.tenant_id,
+          user_id: skill.user_id,
           title: skill.title,
           description: skill.description,
           execution_type: skill.execution_type,
@@ -72,6 +92,8 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
       } else {
         form.resetFields();
         form.setFieldsValue({
+          tenant_id: undefined,
+          user_id: undefined,
           execution_type: "prompt_based",
           visibility: "tenant",
           enabled: true,
@@ -126,6 +148,22 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
       width={640}
     >
       <Form form={form} layout="vertical">
+        {isAdmin && (
+          <Form.Item
+            name="tenant_id"
+            label="Tenant"
+            extra="Leave empty to create in your own tenant"
+          >
+            <Select
+              allowClear
+              placeholder="Select tenant (optional)"
+              options={(tenants || []).map((t) => ({
+                label: t.name,
+                value: t.id,
+              }))}
+            />
+          </Form.Item>
+        )}
         <Form.Item
           name="title"
           label="Title"
@@ -165,11 +203,27 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
           <Select
             options={[
               { label: "Tenant", value: "tenant" },
-              { label: "Personal", value: "personal" },
-              { label: "Public", value: "public" },
+              { label: "User", value: "user" },
             ]}
           />
         </Form.Item>
+        {visibility === "user" && (
+          <Form.Item
+            name="user_id"
+            label="Assign to User"
+            rules={[{ required: true, message: "Please select a user" }]}
+          >
+            <Select
+              placeholder="Select user"
+              showSearch
+              optionFilterProp="label"
+              options={(users || []).map((u) => ({
+                label: `${u.display_name || u.email} (${u.email})`,
+                value: u.id,
+              }))}
+            />
+          </Form.Item>
+        )}
         {executionType !== "workflow_based" && (
           <Form.Item name="template_id" label="Template">
             <Select

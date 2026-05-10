@@ -815,6 +815,7 @@ async def delete_tool(
 
 
 class AdminTemplateCreate(BaseModel):
+    tenant_id: str | None = None  # admin only — fallback to current_user.tenant_id
     title: str
     description: str | None = None
     system_prompt: str
@@ -825,6 +826,7 @@ class AdminTemplateCreate(BaseModel):
 
 
 class AdminTemplateUpdate(BaseModel):
+    tenant_id: str | None = None  # admin only
     title: str | None = None
     description: str | None = None
     system_prompt: str | None = None
@@ -884,10 +886,13 @@ async def admin_create_template(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """Create a template. Manager scoped to own tenant."""
+    """Create a template. Admin can specify tenant_id; manager scoped to own tenant."""
+    tenant_id = body.tenant_id if current_user.role == "admin" and body.tenant_id else current_user.tenant_id
+    if current_user.role == "manager" and body.tenant_id and body.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only create templates in their own tenant")
     template = await _svc_create_template(
         db,
-        tenant_id=current_user.tenant_id,
+        tenant_id=tenant_id,
         title=body.title,
         description=body.description,
         system_prompt=body.system_prompt,
@@ -939,6 +944,10 @@ async def admin_update_template(
         update_kwargs["default_model_id"] = body.default_model_id
     if body.assigned_user_id is not None:
         update_kwargs["assigned_user_id"] = body.assigned_user_id
+    if body.tenant_id is not None:
+        if current_user.role == "manager" and body.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only assign templates to their own tenant")
+        update_kwargs["tenant_id"] = body.tenant_id
 
     template = await _svc_update_template(
         db, template_id, tool_ids=body.tool_ids, **update_kwargs
@@ -990,6 +999,8 @@ async def admin_delete_template(
 
 
 class AdminSkillCreate(BaseModel):
+    tenant_id: str | None = None  # admin only — fallback to current_user.tenant_id
+    user_id: str | None = None  # required when visibility=user
     title: str
     description: str | None = None
     execution_type: str
@@ -1003,6 +1014,8 @@ class AdminSkillCreate(BaseModel):
 
 
 class AdminSkillUpdate(BaseModel):
+    tenant_id: str | None = None  # admin only
+    user_id: str | None = None
     title: str | None = None
     description: str | None = None
     execution_type: str | None = None
@@ -1068,12 +1081,15 @@ async def admin_create_skill(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """Create a skill. Admin creates with specified visibility.
+    """Create a skill. Admin can specify tenant_id and user_id.
     Manager scoped to own tenant, creates tenant-shared skills."""
+    tenant_id = body.tenant_id if current_user.role == "admin" and body.tenant_id else current_user.tenant_id
+    if current_user.role == "manager" and body.tenant_id and body.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only create skills in their own tenant")
     skill = await _svc_create_skill(
         db,
-        tenant_id=current_user.tenant_id,
-        user_id=None,  # Admin-managed skills have no owner user
+        tenant_id=tenant_id,
+        user_id=body.user_id,  # None = tenant-shared; set for personal skills
         title=body.title,
         description=body.description,
         execution_type=body.execution_type,
@@ -1124,6 +1140,13 @@ async def admin_update_skill(
         val = getattr(body, field, None)
         if val is not None:
             update_kwargs[field] = val
+
+    if body.tenant_id is not None:
+        if current_user.role == "manager" and body.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only assign skills to their own tenant")
+        update_kwargs["tenant_id"] = body.tenant_id
+    if body.user_id is not None:
+        update_kwargs["user_id"] = body.user_id
 
     skill = await _svc_update_skill(
         db, skill_id, tool_ids=body.tool_ids, **update_kwargs
