@@ -12,7 +12,7 @@
 #   → template.default_model_id → ValidationError
 #
 # System prompt construction:
-#   template.system_prompt + "\\n\\n---\\n\\n" + prompt.content (when both exist)
+#   template.system_prompt + memory injection
 # =============================================================================
 
 import json
@@ -36,7 +36,6 @@ from ..core.redis import (
 )
 from ..db.orm.messages import Message
 from ..db.orm.models import Model
-from ..db.orm.prompts import Prompt
 from ..db.orm.sessions import Session, SessionActiveTool
 from ..db.orm.skills import Skill
 from ..db.orm.templates import Template
@@ -787,9 +786,8 @@ async def _resolve_model(
 async def _build_system_prompt(
     db: AsyncSession, session_data: dict, user: User | None = None
 ) -> str:
-    """Build the system prompt from template + optional prompt + agent memory."""
+    """Build the system prompt from template + agent memory."""
     template_id = session_data.get("selected_template_id")
-    prompt_id = session_data.get("selected_prompt_id")
 
     parts: list[str] = []
 
@@ -801,15 +799,6 @@ async def _build_system_prompt(
         template = result.scalar_one_or_none()
         if template:
             parts.append(template.system_prompt)
-
-    # Prompt content (appended if both exist)
-    if prompt_id:
-        result = await db.execute(
-            select(Prompt).where(Prompt.id == prompt_id)
-        )
-        prompt = result.scalar_one_or_none()
-        if prompt:
-            parts.append(prompt.content)
 
     # ---- Agent memory injection -------------------------------------------
     # Query global memory entries (session_id IS NULL) for the current user

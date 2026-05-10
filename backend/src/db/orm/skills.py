@@ -40,7 +40,7 @@ class Skill(Base):
         CHAR(36), ForeignKey("templates.id"), nullable=True
     )
     default_prompt_id: Mapped[str | None] = mapped_column(
-        CHAR(36), ForeignKey("prompts.id"), nullable=True
+        CHAR(36), ForeignKey("prompts.id", ondelete="SET NULL"), nullable=True
     )
     default_model_id: Mapped[str | None] = mapped_column(
         CHAR(36), ForeignKey("models.id"), nullable=True

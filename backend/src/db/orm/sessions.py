@@ -13,7 +13,6 @@ from ..base import Base
 from .tenants import Tenant
 from .users import User
 from .templates import Template
-from .prompts import Prompt
 from .skills import Skill
 from .tools import Tool
 
@@ -35,9 +34,6 @@ class Session(Base):
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     selected_template_id: Mapped[str | None] = mapped_column(
         CHAR(36), ForeignKey("templates.id"), nullable=True
-    )
-    selected_prompt_id: Mapped[str | None] = mapped_column(
-        CHAR(36), ForeignKey("prompts.id"), nullable=True
     )
     selected_skill_id: Mapped[str | None] = mapped_column(
         CHAR(36), ForeignKey("skills.id"), nullable=True

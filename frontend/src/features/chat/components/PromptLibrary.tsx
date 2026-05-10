@@ -2,9 +2,11 @@
 // PH Agent Hub — PromptLibrary
 // =============================================================================
 // Ant Design Drawer+List; GET/POST/PUT/DELETE /prompts; user-owned.
+// "Use" opens a variable-resolution modal — the resolved text is inserted
+// directly into the chat input (no backend involvement).
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Drawer,
   List,
@@ -13,10 +15,10 @@ import {
   Modal,
   Form,
   Input,
-  Select,
   Popconfirm,
   message,
   Empty,
+  Tag,
 } from "antd";
 import {
   PlusOutlined,
@@ -27,7 +29,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../../../services/api";
 
-const { Paragraph } = Typography;
+const { Paragraph, Text } = Typography;
 const { TextArea } = Input;
 
 interface PromptData {
@@ -38,24 +40,46 @@ interface PromptData {
   title: string;
   description: string;
   content: string;
-  visibility: string;
   created_at: string;
   updated_at: string;
 }
 
 interface PromptLibraryProps {
-  onSelect?: (promptId: string) => void;
-  selectedPromptId?: string;
+  /** Called when the user resolves a prompt and wants to insert it into the chat input. */
+  onUse?: (resolvedText: string) => void;
+}
+
+// Extract {{variable_name}} patterns from prompt content
+function extractVariables(content: string): string[] {
+  const re = /\{\{(\w+)\}\}/g;
+  const names = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    names.add(match[1]);
+  }
+  return Array.from(names);
+}
+
+// Replace {{variable}} placeholders with user-provided values
+function resolveTemplate(content: string, values: Record<string, string>): string {
+  return content.replace(/\{\{(\w+)\}\}/g, (_, name) => values[name] ?? `{{${name}}}`);
 }
 
 export function PromptLibrary({
-  onSelect,
-  selectedPromptId,
+  onUse,
 }: PromptLibraryProps) {
   const [open, setOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<PromptData | null>(null);
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
+
+  // ---- Use / variable modal state ----
+  const [usingPrompt, setUsingPrompt] = useState<PromptData | null>(null);
+  const [variableForm] = Form.useForm();
+  const variables = useMemo(
+    () => (usingPrompt ? extractVariables(usingPrompt.content) : []),
+    [usingPrompt],
+  );
 
   const { data: prompts, isLoading } = useQuery({
     queryKey: ["prompts"],
@@ -68,7 +92,6 @@ export function PromptLibrary({
       title: string;
       description: string;
       content: string;
-      visibility: string;
     }) => api<PromptData>("/prompts", { method: "POST", body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["prompts"] });
@@ -124,6 +147,18 @@ export function PromptLibrary({
     form.resetFields();
   };
 
+  const handleUse = (prompt: PromptData) => {
+    setUsingPrompt(prompt);
+    variableForm.resetFields();
+  };
+
+  const handleUseConfirm = async () => {
+    const values = await variableForm.validateFields();
+    const resolved = resolveTemplate(usingPrompt!.content, values);
+    onUse?.(resolved);
+    setUsingPrompt(null);
+  };
+
   return (
     <>
       <Button
@@ -159,13 +194,11 @@ export function PromptLibrary({
           renderItem={(item) => (
             <List.Item
               actions={[
-                onSelect && (
+                onUse && (
                   <Button
-                    type={
-                      selectedPromptId === item.id ? "primary" : "default"
-                    }
+                    type="primary"
                     size="small"
-                    onClick={() => onSelect(item.id)}
+                    onClick={() => handleUse(item)}
                   >
                     Use
                   </Button>
@@ -232,21 +265,66 @@ export function PromptLibrary({
               name="content"
               label="Content"
               rules={[{ required: true }]}
+              extra={
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  Use <Tag style={{ fontSize: 11 }}>{"{{variable_name}}"}</Tag>{" "}
+                  for placeholders the user fills in when applying the prompt.
+                </Text>
+              }
             >
               <TextArea rows={8} />
-            </Form.Item>
-            <Form.Item name="visibility" label="Visibility" initialValue="private">
-              <Select
-                options={[
-                  { label: "Private", value: "private" },
-                  { label: "Shared", value: "shared" },
-                  { label: "Public", value: "public" },
-                ]}
-              />
             </Form.Item>
           </Form>
         </Modal>
       </Drawer>
+
+      {/* Use / Variable Resolution Modal */}
+      <Modal
+        title={`Use: ${usingPrompt?.title ?? ""}`}
+        open={!!usingPrompt}
+        onOk={handleUseConfirm}
+        onCancel={() => setUsingPrompt(null)}
+        okText="Insert"
+        width={640}
+      >
+        {usingPrompt && (
+          <>
+            <Paragraph
+              style={{
+                background: "#f5f5f5",
+                padding: 12,
+                borderRadius: 6,
+                whiteSpace: "pre-wrap",
+                fontFamily: "monospace",
+                fontSize: 13,
+                maxHeight: 200,
+                overflow: "auto",
+              }}
+            >
+              {usingPrompt.content}
+            </Paragraph>
+
+            {variables.length > 0 ? (
+              <Form form={variableForm} layout="vertical" style={{ marginTop: 16 }}>
+                {variables.map((name) => (
+                  <Form.Item
+                    key={name}
+                    name={name}
+                    label={name}
+                    rules={[{ required: true, message: `Enter a value for ${name}` }]}
+                  >
+                    <Input placeholder={`Value for ${name}`} />
+                  </Form.Item>
+                ))}
+              </Form>
+            ) : (
+              <Text type="secondary">
+                This prompt has no variables. Click Insert to add it to the message input.
+              </Text>
+            )}
+          </>
+        )}
+      </Modal>
     </>
   );
 }

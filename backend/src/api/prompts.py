@@ -26,7 +26,6 @@ class PromptCreate(BaseModel):
     title: str
     description: str
     content: str
-    visibility: str = "private"
     template_id: str | None = None
 
 
@@ -34,7 +33,6 @@ class PromptUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     content: str | None = None
-    visibility: str | None = None
     template_id: str | None = None
 
 
@@ -46,7 +44,6 @@ class PromptResponse(BaseModel):
     title: str
     description: str
     content: str
-    visibility: str
     created_at: datetime
     updated_at: datetime
 
@@ -58,10 +55,8 @@ async def list_prompts(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Return user's own private prompts + tenant-shared prompts."""
-    prompts = await _svc_list_prompts(
-        db, tenant_id=current_user.tenant_id, user_id=current_user.id
-    )
+    """Return all prompts owned by the current user."""
+    prompts = await _svc_list_prompts(db, user_id=current_user.id)
     return [PromptResponse.model_validate(p) for p in prompts]
 
 
@@ -79,7 +74,6 @@ async def create_prompt(
         title=body.title,
         description=body.description,
         content=body.content,
-        visibility=body.visibility,
         template_id=body.template_id,
     )
     return PromptResponse.model_validate(prompt)
@@ -107,8 +101,6 @@ async def update_prompt(
         update_kwargs["description"] = body.description
     if body.content is not None:
         update_kwargs["content"] = body.content
-    if body.visibility is not None:
-        update_kwargs["visibility"] = body.visibility
     if body.template_id is not None:
         update_kwargs["template_id"] = body.template_id
 
