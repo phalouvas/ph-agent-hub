@@ -16,8 +16,10 @@ import {
   addGroupMember,
   removeGroupMember,
   listGroups,
+  listTenants,
   UserData,
   GroupData,
+  TenantData,
 } from "../../services/admin";
 
 interface UserFormProps {
@@ -41,6 +43,12 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
     queryKey: ["admin-groups"],
     queryFn: listGroups,
     enabled: open,
+  });
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants"],
+    queryFn: listTenants,
+    enabled: open && isAdmin,
   });
 
   const { data: userGroups, isLoading: groupsLoading } = useQuery({
@@ -207,8 +215,17 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
           </Form.Item>
         )}
         {isAdmin && (
-          <Form.Item name="tenant_id" label="Tenant ID">
-            <Input placeholder="Tenant ID (admin only)" />
+          <Form.Item name="tenant_id" label="Tenant">
+            <Select
+              showSearch
+              placeholder="Select tenant..."
+              optionFilterProp="label"
+              allowClear
+              options={(tenants || []).map((t: TenantData) => ({
+                label: t.name,
+                value: t.id,
+              }))}
+            />
           </Form.Item>
         )}
       </Form>
