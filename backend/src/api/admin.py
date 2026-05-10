@@ -816,7 +816,7 @@ async def delete_tool(
 
 class AdminTemplateCreate(BaseModel):
     title: str
-    description: str
+    description: str | None = None
     system_prompt: str
     scope: str = "tenant"
     default_model_id: str | None = None
@@ -838,7 +838,7 @@ class AdminTemplateResponse(BaseModel):
     id: str
     tenant_id: str
     title: str
-    description: str
+    description: str | None
     system_prompt: str
     scope: str
     default_model_id: str | None
@@ -1020,9 +1020,9 @@ class AdminSkillResponse(BaseModel):
     tenant_id: str
     user_id: str | None
     title: str
-    description: str
+    description: str | None
     execution_type: str
-    maf_target_key: str
+    maf_target_key: str | None
     visibility: str
     template_id: str | None
     default_prompt_id: str | None

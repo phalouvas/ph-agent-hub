@@ -26,7 +26,7 @@ class Template(Base):
         CHAR(36), ForeignKey("tenants.id"), nullable=False
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(String(1024), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     default_model_id: Mapped[str | None] = mapped_column(
         CHAR(36), ForeignKey("models.id"), nullable=True
