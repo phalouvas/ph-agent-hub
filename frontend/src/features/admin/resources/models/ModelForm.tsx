@@ -23,9 +23,12 @@ import {
   assignModelToGroup,
   removeModelFromGroup,
   listGroups,
+  listTenants,
   ModelData,
   GroupData,
+  TenantData,
 } from "../../services/admin";
+import { useAuth } from "../../../../providers/AuthProvider";
 
 interface ModelFormProps {
   open: boolean;
@@ -37,10 +40,18 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const isEdit = !!model;
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   // Groups state
   const [initialGroupIds, setInitialGroupIds] = React.useState<string[]>([]);
   const [isPublic, setIsPublic] = React.useState(model?.is_public ?? false);
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants"],
+    queryFn: listTenants,
+    enabled: open && isAdmin,
+  });
 
   const { data: allGroups } = useQuery({
     queryKey: ["admin-groups"],
@@ -82,6 +93,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
     if (open) {
       if (model) {
         form.setFieldsValue({
+          tenant_id: model.tenant_id,
           name: model.name,
           model_id: model.model_id,
           provider: model.provider,
@@ -173,6 +185,22 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
       width={520}
     >
       <Form form={form} layout="vertical">
+        {isAdmin && (
+          <Form.Item
+            name="tenant_id"
+            label="Tenant"
+            extra="Leave empty to create in your own tenant"
+          >
+            <Select
+              allowClear
+              placeholder="Select tenant (optional)"
+              options={(tenants || []).map((t: TenantData) => ({
+                label: t.name,
+                value: t.id,
+              }))}
+            />
+          </Form.Item>
+        )}
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
           <Input placeholder="Display name (e.g., Production DeepSeek)" />
         </Form.Item>

@@ -179,6 +179,7 @@ class UserResponse(BaseModel):
 
 
 class ModelCreate(BaseModel):
+    tenant_id: str | None = None  # admin only — fallback to current_user.tenant_id
     name: str
     model_id: str
     provider: str
@@ -194,6 +195,7 @@ class ModelCreate(BaseModel):
 
 
 class ModelUpdate(BaseModel):
+    tenant_id: str | None = None  # admin only
     name: str | None = None
     model_id: str | None = None
     provider: str | None = None
@@ -229,6 +231,7 @@ class ModelResponse(BaseModel):
 
 
 class ToolCreate(BaseModel):
+    tenant_id: str | None = None  # admin only — fallback to current_user.tenant_id
     name: str
     type: str
     config: dict | None = None
@@ -237,6 +240,7 @@ class ToolCreate(BaseModel):
 
 
 class ToolUpdate(BaseModel):
+    tenant_id: str | None = None  # admin only
     name: str | None = None
     type: str | None = None
     config: dict | None = None
@@ -568,10 +572,13 @@ async def create_model(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """Create a model. Manager always scoped to own tenant."""
+    """Create a model. Admin can specify tenant_id; manager scoped to own tenant."""
+    if current_user.role == "manager" and body.tenant_id and body.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only create models in their own tenant")
+    tenant_id = body.tenant_id if current_user.role == "admin" and body.tenant_id else current_user.tenant_id
     model = await _svc_create_model(
         db,
-        tenant_id=current_user.tenant_id,
+        tenant_id=tenant_id,
         name=body.name,
         model_id=body.model_id,
         provider=body.provider,
@@ -637,6 +644,10 @@ async def update_model(
         update_kwargs["follow_up_questions_enabled"] = body.follow_up_questions_enabled
     if body.context_length is not None:
         update_kwargs["context_length"] = body.context_length
+    if body.tenant_id is not None:
+        if current_user.role == "manager" and body.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only assign models to their own tenant")
+        update_kwargs["tenant_id"] = body.tenant_id
 
     # Pop model_id from kwargs to avoid conflict with the route parameter
     new_api_model_id = update_kwargs.pop("model_id", None)
@@ -714,10 +725,13 @@ async def create_tool(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """Create a tool. Manager always scoped to own tenant."""
+    """Create a tool. Admin can specify tenant_id; manager scoped to own tenant."""
+    if current_user.role == "manager" and body.tenant_id and body.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only create tools in their own tenant")
+    tenant_id = body.tenant_id if current_user.role == "admin" and body.tenant_id else current_user.tenant_id
     tool = await _svc_create_tool(
         db,
-        tenant_id=current_user.tenant_id,
+        tenant_id=tenant_id,
         name=body.name,
         type=body.type,
         config=body.config,
@@ -762,6 +776,10 @@ async def update_tool(
         update_kwargs["enabled"] = body.enabled
     if body.is_public is not None:
         update_kwargs["is_public"] = body.is_public
+    if body.tenant_id is not None:
+        if current_user.role == "manager" and body.tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only assign tools to their own tenant")
+        update_kwargs["tenant_id"] = body.tenant_id
 
     tool = await _svc_update_tool(db, tool_id, **update_kwargs)
 

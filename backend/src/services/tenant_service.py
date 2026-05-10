@@ -2,8 +2,7 @@
 # PH Agent Hub — Tenant Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import ConflictError, NotFoundError
@@ -55,17 +54,71 @@ async def update_tenant(db: AsyncSession, tenant_id: str, name: str) -> Tenant:
 
 async def delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     """Delete a tenant by ID. Raises NotFoundError if missing, ConflictError
-    if the tenant still has users assigned to it."""
+    if the tenant still has active resources (users, models, sessions, etc.).
+    Audit/usage logs are auto-cleaned up (they are historical records)."""
     tenant = await get_tenant_by_id(db, tenant_id)
     if tenant is None:
         raise NotFoundError("Tenant not found")
 
-    db.add(tenant)
-    await db.delete(tenant)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise ConflictError(
-            "Cannot delete tenant that still has users. Remove all users first."
+    # ------------------------------------------------------------------
+    # Auto-cleanup: historical records that shouldn't block deletion
+    # ------------------------------------------------------------------
+    from ..db.orm.audit_logs import AuditLog
+    from ..db.orm.usage_logs import UsageLog
+
+    await db.execute(delete(AuditLog).where(AuditLog.tenant_id == tenant_id))
+    await db.execute(delete(UsageLog).where(UsageLog.tenant_id == tenant_id))
+    await db.flush()
+
+    # ------------------------------------------------------------------
+    # Blocker check: active resources that must be handled manually
+    # ------------------------------------------------------------------
+    blockers: list[str] = []
+
+    from ..db.orm.users import User
+    from ..db.orm.sessions import Session as SessionORM
+    from ..db.orm.tools import Tool
+    from ..db.orm.templates import Template
+    from ..db.orm.skills import Skill
+    from ..db.orm.tags import Tag as TagORM
+    from ..db.orm.memory import Memory
+    from ..db.orm.file_uploads import FileUpload
+    from ..db.orm.models import Model as ModelORM
+    from ..db.orm.groups import UserGroup
+    from ..db.orm.prompts import Prompt
+    from ..db.orm.rag import RAGDocument
+
+    checks: list[tuple[str, type]] = [
+        ("users", User),
+        ("models", ModelORM),
+        ("sessions", SessionORM),
+        ("tools", Tool),
+        ("templates", Template),
+        ("skills", Skill),
+        ("tags", TagORM),
+        ("memories", Memory),
+        ("file uploads", FileUpload),
+        ("user groups", UserGroup),
+        ("prompts", Prompt),
+        ("RAG documents", RAGDocument),
+    ]
+
+    for label, model in checks:
+        result = await db.execute(
+            select(func.count()).select_from(model).where(
+                getattr(model, "tenant_id") == tenant_id
+            )
         )
+        count = result.scalar() or 0
+        if count > 0:
+            blockers.append(f"{count} {label}")
+
+    if blockers:
+        raise ConflictError(
+            "Cannot delete this tenant — it still has related data: "
+            + ", ".join(blockers)
+            + ". Remove or reassign all related resources first."
+        )
+
+    await db.delete(tenant)
+    await db.commit()

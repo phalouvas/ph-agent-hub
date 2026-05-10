@@ -46,6 +46,9 @@ export function TenantList() {
       queryClient.invalidateQueries({ queryKey: ["admin-tenants"] });
       message.success("Tenant deleted");
     },
+    onError: (error: Error) => {
+      message.error(error.message || "Failed to delete tenant");
+    },
   });
 
   const columns = [
