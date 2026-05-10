@@ -160,5 +160,22 @@ async def delete_skill(db: AsyncSession, skill_id: str) -> None:
     if skill is None:
         raise NotFoundError("Skill not found")
 
+    # Clear FK references in sessions that point to this skill
+    from ..db.orm.sessions import Session as SessionORM
+    from sqlalchemy import update as sa_update
+
+    await db.execute(
+        sa_update(SessionORM)
+        .where(SessionORM.selected_skill_id == skill_id)
+        .values(selected_skill_id=None)
+    )
+
+    # Delete join table rows (skill_allowed_tools)
+    await db.execute(
+        delete(SkillAllowedTool).where(
+            SkillAllowedTool.skill_id == skill_id
+        )
+    )
+
     await db.delete(skill)
     await db.commit()

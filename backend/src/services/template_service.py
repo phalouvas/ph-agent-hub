@@ -147,5 +147,21 @@ async def delete_template(db: AsyncSession, template_id: str) -> None:
         .values(selected_template_id=None)
     )
 
+    # Clear FK references in skills that point to this template
+    from ..db.orm.skills import Skill as SkillORM
+
+    await db.execute(
+        sa_update(SkillORM)
+        .where(SkillORM.template_id == template_id)
+        .values(template_id=None)
+    )
+
+    # Delete join table rows (template_allowed_tools)
+    await db.execute(
+        delete(TemplateAllowedTool).where(
+            TemplateAllowedTool.template_id == template_id
+        )
+    )
+
     await db.delete(template)
     await db.commit()

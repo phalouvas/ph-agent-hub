@@ -22,7 +22,7 @@ class TemplateResponse(BaseModel):
     id: str
     tenant_id: str
     title: str
-    description: str
+    description: str | None
     system_prompt: str
     scope: str
     default_model_id: str | None

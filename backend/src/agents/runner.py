@@ -786,8 +786,23 @@ async def _resolve_model(
 async def _build_system_prompt(
     db: AsyncSession, session_data: dict, user: User | None = None
 ) -> str:
-    """Build the system prompt from template + agent memory."""
+    """Build the system prompt from template + agent memory.
+
+    Resolution chain:
+    1. session.selected_template_id (manual override in chat)
+    2. skill.template_id (from the selected skill's config)
+    3. "You are a helpful assistant." (hardcoded fallback)
+    """
     template_id = session_data.get("selected_template_id")
+
+    # Fall back to the skill's template if no session-level template is set
+    if not template_id:
+        skill_id = session_data.get("selected_skill_id")
+        if skill_id:
+            result = await db.execute(select(Skill).where(Skill.id == skill_id))
+            skill = result.scalar_one_or_none()
+            if skill and skill.template_id:
+                template_id = skill.template_id
 
     parts: list[str] = []
 
