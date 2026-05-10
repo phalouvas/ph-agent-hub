@@ -37,7 +37,7 @@ from ..core.redis import (
 from ..db.orm.messages import Message
 from ..db.orm.models import Model
 from ..db.orm.sessions import Session, SessionActiveTool
-from ..db.orm.skills import Skill
+from ..db.orm.skills import Skill, SkillAllowedTool
 from ..db.orm.templates import Template
 from ..db.orm.tools import Tool
 from ..db.orm.users import User
@@ -875,7 +875,12 @@ async def _resolve_tool_callables(
     tenant_id: str,
     file_ids: list[str] | None = None,
 ) -> list:
-    """Resolve active tools into MAF tool callables."""
+    """Resolve active tools into MAF tool callables.
+
+    Resolution chain:
+    1. session_active_tools (manually activated by user in chat)
+    2. skill.tool_ids (from the selected skill's config, if no session tools)
+    """
     session_id = session_data["id"]
     is_temporary = session_data.get("is_temporary", False)
 
@@ -906,6 +911,30 @@ async def _resolve_tool_callables(
             )
         )
         tools = list(result.scalars().all())
+
+    # ---- Fall back to skill's tools if no session tools are active ----
+    if not tools:
+        skill_id = session_data.get("selected_skill_id")
+        if skill_id:
+            skill = await db.execute(select(Skill).where(Skill.id == skill_id))
+            skill = skill.scalar_one_or_none()
+            if skill:
+                # Load tools from skill_allowed_tools join table
+                skill_tool_result = await db.execute(
+                    select(Tool)
+                    .join(SkillAllowedTool, SkillAllowedTool.tool_id == Tool.id)
+                    .where(
+                        SkillAllowedTool.skill_id == skill_id,
+                        Tool.tenant_id == tenant_id,
+                        Tool.enabled == True,  # noqa: E712
+                    )
+                )
+                tools = list(skill_tool_result.scalars().all())
+                if tools:
+                    logger.info(
+                        "Using %d tool(s) from skill '%s' (no session tools active)",
+                        len(tools), skill.title,
+                    )
 
     # Build callables for each tool
     callables: list = []
