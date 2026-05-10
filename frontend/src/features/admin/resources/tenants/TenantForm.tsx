@@ -37,6 +37,9 @@ export function TenantForm({ open, tenant, onClose }: TenantFormProps) {
       message.success("Tenant created");
       onClose();
     },
+    onError: (error: Error) => {
+      message.error(error.message || "Failed to create tenant");
+    },
   });
 
   const updateMutation = useMutation({
@@ -47,6 +50,9 @@ export function TenantForm({ open, tenant, onClose }: TenantFormProps) {
       message.success("Tenant updated");
       onClose();
     },
+    onError: (error: Error) => {
+      message.error(error.message || "Failed to update tenant");
+    },
   });
 
   return (
@@ -55,10 +61,14 @@ export function TenantForm({ open, tenant, onClose }: TenantFormProps) {
       open={open}
       onOk={async () => {
         const values = await form.validateFields();
-        if (isEdit) {
-          await updateMutation.mutateAsync({ id: tenant!.id, data: values });
-        } else {
-          await createMutation.mutateAsync(values);
+        try {
+          if (isEdit) {
+            await updateMutation.mutateAsync({ id: tenant!.id, data: values });
+          } else {
+            await createMutation.mutateAsync(values);
+          }
+        } catch {
+          // Error already handled by onError callbacks
         }
       }}
       onCancel={onClose}

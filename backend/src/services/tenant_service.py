@@ -2,8 +2,7 @@
 # PH Agent Hub — Tenant Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import ConflictError, NotFoundError
@@ -55,17 +54,51 @@ async def update_tenant(db: AsyncSession, tenant_id: str, name: str) -> Tenant:
 
 async def delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     """Delete a tenant by ID. Raises NotFoundError if missing, ConflictError
-    if the tenant still has users assigned to it."""
+    if the tenant still has related data (users, sessions, tools, etc.)."""
     tenant = await get_tenant_by_id(db, tenant_id)
     if tenant is None:
         raise NotFoundError("Tenant not found")
 
-    db.add(tenant)
-    await db.delete(tenant)
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        raise ConflictError(
-            "Cannot delete tenant that still has users. Remove all users first."
+    # Check all tables that reference tenants via FK before attempting delete,
+    # so we can give a specific, actionable error message.
+    blockers: list[str] = []
+
+    from ..db.orm.users import User
+    from ..db.orm.sessions import Session as SessionORM
+    from ..db.orm.tools import Tool
+    from ..db.orm.templates import Template
+    from ..db.orm.skills import Skill
+    from ..db.orm.tags import Tag as TagORM
+    from ..db.orm.memory import Memory
+    from ..db.orm.file_uploads import FileUpload
+
+    checks: list[tuple[str, type]] = [
+        ("users", User),
+        ("sessions", SessionORM),
+        ("tools", Tool),
+        ("templates", Template),
+        ("skills", Skill),
+        ("tags", TagORM),
+        ("memories", Memory),
+        ("file uploads", FileUpload),
+    ]
+
+    for label, model in checks:
+        result = await db.execute(
+            select(func.count()).select_from(model).where(
+                getattr(model, "tenant_id") == tenant_id
+            )
         )
+        count = result.scalar() or 0
+        if count > 0:
+            blockers.append(f"{count} {label}")
+
+    if blockers:
+        raise ConflictError(
+            "Cannot delete this tenant — it still has related data: "
+            + ", ".join(blockers)
+            + ". Remove or reassign all related resources first."
+        )
+
+    await db.delete(tenant)
+    await db.commit()
