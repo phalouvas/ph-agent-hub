@@ -171,6 +171,10 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
+    # Expire the tags relationship so the ORM doesn't try to delete the
+    # already-removed association rows when db.delete(session) is called.
+    db.expire(session, ["tags"])
+
     # 6. Delete session-scoped memories
     from ..db.orm.memory import Memory
 
