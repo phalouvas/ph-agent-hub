@@ -10,16 +10,10 @@ from ..db.orm.prompts import Prompt
 
 
 async def list_prompts(
-    db: AsyncSession, tenant_id: str, user_id: str
+    db: AsyncSession, user_id: str
 ) -> list[Prompt]:
-    """Return prompts visible to the user:
-    - Their own private prompts
-    - Tenant-shared prompts within their tenant
-    """
-    stmt = select(Prompt).where(
-        Prompt.tenant_id == tenant_id,
-        (Prompt.visibility == "tenant") | (Prompt.user_id == user_id),
-    )
+    """Return all prompts owned by the user."""
+    stmt = select(Prompt).where(Prompt.user_id == user_id)
     stmt = stmt.order_by(Prompt.created_at)
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -38,7 +32,6 @@ async def create_prompt(
     title: str,
     description: str,
     content: str,
-    visibility: str = "private",
     template_id: str | None = None,
 ) -> Prompt:
     """Create a new prompt owned by the given user."""
@@ -48,7 +41,6 @@ async def create_prompt(
         title=title,
         description=description,
         content=content,
-        visibility=visibility,
         template_id=template_id,
     )
     db.add(prompt)
@@ -73,7 +65,11 @@ async def update_prompt(db: AsyncSession, prompt_id: str, **fields) -> Prompt:
 
 
 async def delete_prompt(db: AsyncSession, prompt_id: str) -> None:
-    """Delete a prompt by ID. Raises NotFoundError if missing."""
+    """Delete a prompt by ID. Raises NotFoundError if missing.
+
+    Any sessions or skills that referenced this prompt will have their
+    reference set to NULL (handled by ON DELETE SET NULL FK).
+    """
     prompt = await get_prompt_by_id(db, prompt_id)
     if prompt is None:
         raise NotFoundError("Prompt not found")

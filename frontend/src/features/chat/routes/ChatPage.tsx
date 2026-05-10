@@ -89,7 +89,6 @@ export function ChatPage() {
             selectedModelId={session.selected_model_id ?? undefined}
             selectedTemplateId={session.selected_template_id ?? undefined}
             selectedSkillId={session.selected_skill_id ?? undefined}
-            selectedPromptId={session.selected_prompt_id ?? undefined}
             onSessionUpdate={handleSessionUpdate}
           />
         ) : (

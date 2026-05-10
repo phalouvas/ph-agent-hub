@@ -54,7 +54,6 @@ interface ChatWindowProps {
   selectedModelId?: string;
   selectedTemplateId?: string;
   selectedSkillId?: string;
-  selectedPromptId?: string;
   onSessionUpdate?: (data: Record<string, unknown>) => void;
 }
 
@@ -64,7 +63,6 @@ export function ChatWindow({
   selectedModelId,
   selectedTemplateId,
   selectedSkillId,
-  selectedPromptId,
   onSessionUpdate,
 }: ChatWindowProps) {
   const [inputValue, setInputValue] = useState("");
@@ -571,8 +569,7 @@ export function ChatWindow({
           onChange={(id) => onSessionUpdate?.({ selected_skill_id: id })}
         />
         <PromptLibrary
-          selectedPromptId={selectedPromptId}
-          onSelect={(id) => onSessionUpdate?.({ selected_prompt_id: id })}
+          onUse={(resolvedText) => setInputValue(resolvedText)}
         />
         <Button
           size="small"

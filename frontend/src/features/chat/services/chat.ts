@@ -19,7 +19,6 @@ export interface SessionData {
   is_temporary: boolean;
   is_pinned: boolean;
   selected_template_id: string | null;
-  selected_prompt_id: string | null;
   selected_skill_id: string | null;
   selected_model_id: string | null;
   created_at: string;
@@ -89,7 +88,6 @@ export function createSession(data: {
   is_temporary?: boolean;
   is_pinned?: boolean;
   selected_template_id?: string;
-  selected_prompt_id?: string;
   selected_skill_id?: string;
   selected_model_id?: string;
   active_tool_ids?: string[];
@@ -114,7 +112,6 @@ export function updateSession(
     title?: string;
     is_pinned?: boolean;
     selected_template_id?: string | null;
-    selected_prompt_id?: string | null;
     selected_skill_id?: string | null;
     selected_model_id?: string | null;
   },

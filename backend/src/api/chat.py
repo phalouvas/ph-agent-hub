@@ -62,7 +62,6 @@ class SessionCreate(BaseModel):
     is_temporary: bool = False
     is_pinned: bool = False
     selected_template_id: str | None = None
-    selected_prompt_id: str | None = None
     selected_skill_id: str | None = None
     selected_model_id: str | None = None
     active_tool_ids: list[str] | None = None
@@ -73,7 +72,6 @@ class SessionUpdate(BaseModel):
     title: str | None = None
     is_pinned: bool | None = None
     selected_template_id: str | None = None
-    selected_prompt_id: str | None = None
     selected_skill_id: str | None = None
     selected_model_id: str | None = None
     thinking_enabled: bool | None = None
@@ -87,7 +85,6 @@ class SessionResponse(BaseModel):
     is_temporary: bool
     is_pinned: bool
     selected_template_id: str | None
-    selected_prompt_id: str | None
     selected_skill_id: str | None
     selected_model_id: str | None
     thinking_enabled: bool | None
@@ -179,7 +176,6 @@ def _session_to_dict(session: Session) -> dict[str, Any]:
         "is_temporary": session.is_temporary,
         "is_pinned": session.is_pinned,
         "selected_template_id": session.selected_template_id,
-        "selected_prompt_id": session.selected_prompt_id,
         "selected_skill_id": session.selected_skill_id,
         "selected_model_id": session.selected_model_id,
         "thinking_enabled": session.thinking_enabled,
@@ -321,7 +317,6 @@ async def create_session(
             "is_temporary": True,
             "is_pinned": body.is_pinned,
             "selected_template_id": body.selected_template_id,
-            "selected_prompt_id": body.selected_prompt_id,
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
             "thinking_enabled": body.thinking_enabled,
@@ -340,7 +335,6 @@ async def create_session(
             "is_temporary": True,
             "is_pinned": body.is_pinned,
             "selected_template_id": body.selected_template_id,
-            "selected_prompt_id": body.selected_prompt_id,
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
             "thinking_enabled": body.thinking_enabled,
@@ -357,7 +351,6 @@ async def create_session(
             is_temporary=False,
             is_pinned=body.is_pinned,
             selected_template_id=body.selected_template_id,
-            selected_prompt_id=body.selected_prompt_id,
             selected_skill_id=body.selected_skill_id,
             selected_model_id=body.selected_model_id,
             thinking_enabled=body.thinking_enabled,
@@ -414,7 +407,6 @@ async def get_session(
         "is_temporary": data.get("is_temporary", False),
         "is_pinned": data.get("is_pinned", False),
         "selected_template_id": data.get("selected_template_id"),
-        "selected_prompt_id": data.get("selected_prompt_id"),
         "selected_skill_id": data.get("selected_skill_id"),
         "selected_model_id": data.get("selected_model_id"),
         "thinking_enabled": data.get("thinking_enabled"),
@@ -451,7 +443,6 @@ async def update_session(
             "is_temporary": True,
             "is_pinned": data.get("is_pinned", False),
             "selected_template_id": data.get("selected_template_id"),
-            "selected_prompt_id": data.get("selected_prompt_id"),
             "selected_skill_id": data.get("selected_skill_id"),
             "selected_model_id": data.get("selected_model_id"),
             "thinking_enabled": data.get("thinking_enabled"),
