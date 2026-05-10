@@ -192,16 +192,31 @@ Users select templates when creating or configuring chat sessions.
 
 ### 7.2 Skills
 
-Skills are named agent execution profiles mapped to MAF agent skills or workflows. Each skill has:
-- A **MAF target key** that links to registered agent framework code
-- An **execution type** (`agent` or `workflow`)
-- Allowed tools
+Skills are named agent execution profiles that bundle model, template, and tool defaults. There are two types:
+
+**Prompt Based** (`execution_type = prompt_based`):
+- Runs a single conversational agent using the MAF `Agent` class.
+- Requires a **Template** (provides the system prompt that defines the agent's behavior).
+- Optionally link a **Default Model** and **Tools**.
+- MAF Target Key is hidden — not used at runtime for this type.
+
+**Workflow Based** (`execution_type = workflow_based`):
+- Delegates to a registered MAF Workflow module for multi-step orchestration.
+- Requires a **MAF Target Key** that matches a registered workflow module in the backend (`src/agents/workflows/`).
+- Template is hidden — workflows carry their own orchestration logic.
+
+Both types share:
+- **Title** (required) and **Description** (optional)
+- **Visibility**: `tenant` (available to all users in the tenant) or `personal` (owned by the creating user)
+- **Enabled** toggle
 
 **Tenant skills** (created in Admin Area, `visibility=tenant`) are available to all users in the tenant. **Personal skills** (created by users in the chat area) are owned by the creating user.
 
 ### 7.3 MAF Target Keys
 
-When creating a skill, the `maf_target_key` must match a registered MAF agent or workflow in the backend codebase (`src/agents/skills/` or `src/agents/workflows/`). If the key doesn't match any registered target, the backend logs a warning on startup but does not crash.
+The `maf_target_key` is only required for **Workflow Based** skills. It must match a registered workflow module in the backend codebase (`src/agents/workflows/`). If the key doesn't match any registered target, the backend logs a warning on startup but does not crash.
+
+For Prompt Based skills, the key is auto-generated from the title if left empty (e.g., "Sales Assistant" → `sales_assistant`). It is not used at runtime for this execution type.
 
 ---
 

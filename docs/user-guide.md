@@ -97,13 +97,20 @@ Your prompts are private — only you can see and use them.
 
 ### 5.3 Skills
 
-Skills are specialized agent capabilities defined by administrators (tenant skills) or created by you (personal skills). Selecting a skill changes how the agent behaves — it might switch to a different workflow or gain domain-specific knowledge.
+Skills are reusable execution profiles that bundle model, template, and tool defaults. Selecting a skill changes how the agent behaves — it might switch to a specialized persona or a multi-step workflow.
+
+There are two types of skills:
+- **Prompt Based** — A conversational agent with a specific system prompt (from a template), tools, and model. Best for domain-specific assistants like "Tax Advisor" or "Code Reviewer".
+- **Workflow Based** — A multi-step orchestration that can coordinate multiple agents, branch on conditions, and wait for human approval. Best for business processes like invoice processing or multi-agent research.
 
 **Create a personal skill:**
-1. Click the skills menu
+1. Click the skills menu (gear icon next to the skill selector)
 2. Click **New Skill**
-3. Configure your skill
-4. Save
+3. Choose the execution type:
+   - **Prompt Based**: Select a Template (provides the system prompt), optionally pick a default model
+   - **Workflow Based**: Enter the MAF Target Key that matches a registered workflow
+4. Optionally add a description
+5. Save
 
 Tenant skills (created by admins) are available to everyone in your tenant. You can view and select them but cannot edit or delete them.
 
