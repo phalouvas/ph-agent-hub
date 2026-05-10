@@ -16,6 +16,7 @@ import {
   Grid,
   List,
   Card,
+  Typography,
 } from "antd";
 import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -64,6 +65,15 @@ export function ToolList() {
       dataIndex: "type",
       key: "type",
       render: (v: string) => <Tag color="purple">{v}</Tag>,
+    },
+    {
+      title: "Tenant",
+      dataIndex: "tenant_id",
+      key: "tenant_id",
+      width: 130,
+      ellipsis: true,
+      responsive: ["lg" as const],
+      render: (v: string) => <Typography.Text code style={{ fontSize: 11 }}>{v.slice(0, 8)}…</Typography.Text>,
     },
     {
       title: "Enabled",

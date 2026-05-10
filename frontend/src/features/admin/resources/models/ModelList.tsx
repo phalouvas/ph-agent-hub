@@ -128,6 +128,15 @@ export function ModelList() {
       ),
     },
     {
+      title: "Tenant",
+      dataIndex: "tenant_id",
+      key: "tenant_id",
+      width: 130,
+      ellipsis: true,
+      responsive: ["lg" as const],
+      render: (v: string) => <Text code style={{ fontSize: 11 }}>{v.slice(0, 8)}…</Text>,
+    },
+    {
       title: "Actions",
       key: "actions",
       render: (_: unknown, record: ModelData) => (

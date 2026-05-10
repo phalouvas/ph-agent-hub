@@ -2,7 +2,7 @@
 # PH Agent Hub — Tenant Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import ConflictError, NotFoundError
@@ -54,13 +54,25 @@ async def update_tenant(db: AsyncSession, tenant_id: str, name: str) -> Tenant:
 
 async def delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     """Delete a tenant by ID. Raises NotFoundError if missing, ConflictError
-    if the tenant still has related data (users, sessions, tools, etc.)."""
+    if the tenant still has active resources (users, models, sessions, etc.).
+    Audit/usage logs are auto-cleaned up (they are historical records)."""
     tenant = await get_tenant_by_id(db, tenant_id)
     if tenant is None:
         raise NotFoundError("Tenant not found")
 
-    # Check all tables that reference tenants via FK before attempting delete,
-    # so we can give a specific, actionable error message.
+    # ------------------------------------------------------------------
+    # Auto-cleanup: historical records that shouldn't block deletion
+    # ------------------------------------------------------------------
+    from ..db.orm.audit_logs import AuditLog
+    from ..db.orm.usage_logs import UsageLog
+
+    await db.execute(delete(AuditLog).where(AuditLog.tenant_id == tenant_id))
+    await db.execute(delete(UsageLog).where(UsageLog.tenant_id == tenant_id))
+    await db.flush()
+
+    # ------------------------------------------------------------------
+    # Blocker check: active resources that must be handled manually
+    # ------------------------------------------------------------------
     blockers: list[str] = []
 
     from ..db.orm.users import User
@@ -71,9 +83,14 @@ async def delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     from ..db.orm.tags import Tag as TagORM
     from ..db.orm.memory import Memory
     from ..db.orm.file_uploads import FileUpload
+    from ..db.orm.models import Model as ModelORM
+    from ..db.orm.groups import UserGroup
+    from ..db.orm.prompts import Prompt
+    from ..db.orm.rag import RAGDocument
 
     checks: list[tuple[str, type]] = [
         ("users", User),
+        ("models", ModelORM),
         ("sessions", SessionORM),
         ("tools", Tool),
         ("templates", Template),
@@ -81,6 +98,9 @@ async def delete_tenant(db: AsyncSession, tenant_id: str) -> None:
         ("tags", TagORM),
         ("memories", Memory),
         ("file uploads", FileUpload),
+        ("user groups", UserGroup),
+        ("prompts", Prompt),
+        ("RAG documents", RAGDocument),
     ]
 
     for label, model in checks:

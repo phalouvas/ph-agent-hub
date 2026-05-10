@@ -13,8 +13,9 @@ import {
   Switch,
   message,
 } from "antd";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createTool, updateTool, ToolData } from "../../services/admin";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { createTool, updateTool, listTenants, ToolData, TenantData } from "../../services/admin";
+import { useAuth } from "../../../../providers/AuthProvider";
 
 const { TextArea } = Input;
 
@@ -29,11 +30,20 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
   const queryClient = useQueryClient();
   const isEdit = !!tool;
   const [toolType, setToolType] = React.useState(tool?.type ?? "custom");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants"],
+    queryFn: listTenants,
+    enabled: open && isAdmin,
+  });
 
   React.useEffect(() => {
     if (open) {
       if (tool) {
         const fields: Record<string, unknown> = {
+          tenant_id: tool.tenant_id,
           name: tool.name,
           type: tool.type,
           enabled: tool.enabled,
@@ -151,6 +161,22 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
       width={520}
     >
       <Form form={form} layout="vertical">
+        {isAdmin && (
+          <Form.Item
+            name="tenant_id"
+            label="Tenant"
+            extra="Leave empty to create in your own tenant"
+          >
+            <Select
+              allowClear
+              placeholder="Select tenant (optional)"
+              options={(tenants || []).map((t: TenantData) => ({
+                label: t.name,
+                value: t.id,
+              }))}
+            />
+          </Form.Item>
+        )}
         <Form.Item name="name" label="Name" rules={[{ required: true }]}>
           <Input />
         </Form.Item>
