@@ -60,9 +60,10 @@ function extractVariables(content: string): string[] {
   return Array.from(names);
 }
 
-// Replace {{variable}} placeholders with user-provided values
+// Replace {{variable}} placeholders with user-provided values.
+// Unfilled variables are replaced with an empty string.
 function resolveTemplate(content: string, values: Record<string, string>): string {
-  return content.replace(/\{\{(\w+)\}\}/g, (_, name) => values[name] ?? `{{${name}}}`);
+  return content.replace(/\{\{(\w+)\}\}/g, (_, name) => values[name] ?? "");
 }
 
 export function PromptLibrary({
@@ -311,9 +312,8 @@ export function PromptLibrary({
                     key={name}
                     name={name}
                     label={name}
-                    rules={[{ required: true, message: `Enter a value for ${name}` }]}
                   >
-                    <Input placeholder={`Value for ${name}`} />
+                    <Input placeholder={`Value for ${name} (optional)`} />
                   </Form.Item>
                 ))}
               </Form>
