@@ -41,7 +41,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="PH Agent Hub", version="1.0.2", lifespan=lifespan)
+app = FastAPI(title="PH Agent Hub", version="1.1.0", lifespan=lifespan)
 
 # ---------------------------------------------------------------------------
 # Middleware
