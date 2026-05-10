@@ -19,6 +19,7 @@ import {
   Input,
   Dropdown,
   message,
+  Tag,
 } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -44,6 +45,8 @@ import {
   deleteSession,
   updateSession,
   SessionData,
+  addTagToSession,
+  removeTagFromSession,
 } from "../services/chat";
 import { MemoryManager } from "./MemoryManager";
 import { SessionSearch } from "./SessionSearch";
@@ -120,8 +123,9 @@ export function SessionSidebar() {
     },
   });
 
-  // Sort: pinned first, then by updated_at
-  const sortedSessions = [...(sessions || [])].sort((a, b) => {
+  // Sort: pinned first, then by updated_at.
+  const sortedSessions = [...(sessions || [])]
+    .sort((a, b) => {
     if (a.is_pinned && !b.is_pinned) return -1;
     if (!a.is_pinned && b.is_pinned) return 1;
     return (
@@ -301,12 +305,27 @@ export function SessionSidebar() {
                 }
                 description={
                   !collapsed ? (
-                    <Text
-                      type="secondary"
-                      style={{ fontSize: 11 }}
-                    >
-                      {new Date(item.updated_at).toLocaleDateString()}
-                    </Text>
+                    <div>
+                      <Text
+                        type="secondary"
+                        style={{ fontSize: 11 }}
+                      >
+                        {new Date(item.updated_at).toLocaleDateString()}
+                      </Text>
+                      {(item.tags || []).length > 0 && (
+                        <div style={{ marginTop: 2 }}>
+                          {(item.tags || []).slice(0, 3).map((t) => (
+                            <Tag
+                              key={t.id}
+                              style={{ fontSize: 10, lineHeight: "14px", marginBottom: 2 }}
+                              color={t.color || "default"}
+                            >
+                              {t.name}
+                            </Tag>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ) : null
                 }
               />
@@ -378,6 +397,49 @@ export function SessionSidebar() {
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
           />
+          <div>
+            <Text type="secondary" style={{ fontSize: 12, marginBottom: 4, display: "block" }}>
+              Tags
+            </Text>
+            <Space wrap style={{ marginBottom: 8 }}>
+              {(editingSession?.tags || []).map((t) => (
+                <Tag
+                  key={t.id}
+                  closable
+                  color={t.color || "default"}
+                  onClose={() => {
+                    if (!editingSession) return;
+                    removeTagFromSession(editingSession.id, t.id).then(() => {
+                      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+                      queryClient.invalidateQueries({ queryKey: ["session", editingSession.id] });
+                      // Refresh the editing session
+                      setEditingSession((prev) =>
+                        prev
+                          ? { ...prev, tags: (prev.tags || []).filter((x) => x.id !== t.id) }
+                          : null,
+                      );
+                    }).catch(() => message.error("Failed to remove tag"));
+                  }}
+                >
+                  {t.name}
+                </Tag>
+              ))}
+            </Space>
+            <Input.Search
+              placeholder="Add tag..."
+              enterButton="Add"
+              size="small"
+              onSearch={(val) => {
+                if (!editingSession || !val.trim()) return;
+                addTagToSession(editingSession.id, val.trim()).then((updated) => {
+                  queryClient.invalidateQueries({ queryKey: ["sessions"] });
+                  queryClient.invalidateQueries({ queryKey: ["session", editingSession.id] });
+                  queryClient.invalidateQueries({ queryKey: ["tenant-tags"] });
+                  setEditingSession(updated);
+                }).catch(() => message.error("Failed to add tag"));
+              }}
+            />
+          </div>
         </Space>
       </Modal>
     </div>

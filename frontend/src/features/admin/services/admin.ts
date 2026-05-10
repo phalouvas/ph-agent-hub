@@ -415,3 +415,34 @@ export function listAdminMemories(params?: {
 export function deleteAdminMemory(id: string): Promise<void> {
   return api<void>(`/admin/memories/${id}`, { method: "DELETE" });
 }
+
+// ---------------------------------------------------------------------------
+// Sessions (admin)
+// ---------------------------------------------------------------------------
+
+export interface AdminSessionData {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  title: string;
+  is_pinned: boolean;
+  is_temporary: boolean;
+  tags: { id: string; name: string; color: string | null }[];
+  created_at: string;
+  updated_at: string;
+}
+
+export function listAdminSessions(params?: {
+  tenant_id?: string;
+  tag?: string;
+}): Promise<AdminSessionData[]> {
+  const searchParams = new URLSearchParams();
+  if (params?.tenant_id) searchParams.set("tenant_id", params.tenant_id);
+  if (params?.tag) searchParams.set("tag", params.tag);
+  const qs = searchParams.toString();
+  return api<AdminSessionData[]>(`/admin/sessions${qs ? `?${qs}` : ""}`);
+}
+
+export function deleteAdminSession(id: string): Promise<void> {
+  return api<void>(`/admin/sessions/${id}`, { method: "DELETE" });
+}

@@ -21,6 +21,7 @@ import {
   MenuOutlined,
   GroupOutlined,
   DatabaseOutlined,
+  CommentOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../../../providers/AuthProvider";
@@ -66,6 +67,11 @@ export function AdminLayout() {
       key: "/admin/memories",
       icon: <DatabaseOutlined />,
       label: "Memories",
+    },
+    {
+      key: "/admin/sessions",
+      icon: <CommentOutlined />,
+      label: "Sessions",
     },
     {
       key: "/admin/analytics",

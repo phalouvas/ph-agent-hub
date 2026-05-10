@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import String, Boolean, DateTime, ForeignKey, func
 from sqlalchemy.dialects.mysql import CHAR
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
 from .tenants import Tenant
@@ -15,6 +15,7 @@ from .users import User
 from .templates import Template
 from .skills import Skill
 from .tools import Tool
+from .tags import Tag
 
 
 class Session(Base):
@@ -47,6 +48,11 @@ class Session(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Many-to-many: tags via session_tags join table
+    tags: Mapped[list["Tag"]] = relationship(
+        "Tag", secondary="session_tags", lazy="selectin"
     )
 
 

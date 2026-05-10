@@ -1703,3 +1703,114 @@ async def admin_delete_memory(
         tenant_id=current_user.tenant_id,
         ip_address=_get_client_ip(request),
     )
+
+
+# =============================================================================
+# Admin Session Management
+# =============================================================================
+
+
+class AdminSessionResponse(BaseModel):
+    id: str
+    tenant_id: str
+    user_id: str
+    title: str
+    is_pinned: bool
+    is_temporary: bool
+    tags: list[dict] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/sessions", response_model=list[AdminSessionResponse])
+async def admin_list_sessions(
+    tenant_id: str | None = None,
+    tag: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List sessions with optional tenant_id and tag filters.
+
+    Admin: can see all tenants. Manager: only own tenant.
+    """
+    from ..db.orm.sessions import Session as SessionORM
+    from ..db.orm.tags import Tag as TagORM, SessionTag as SessionTagORM
+    from sqlalchemy.orm import selectinload
+
+    # Manager scope check
+    if current_user.role == "manager":
+        if tenant_id and tenant_id != current_user.tenant_id:
+            raise ForbiddenError("Managers can only view sessions in their own tenant")
+        tenant_id = current_user.tenant_id
+
+    stmt = select(SessionORM).options(selectinload(SessionORM.tags))
+
+    if tenant_id:
+        stmt = stmt.where(SessionORM.tenant_id == tenant_id)
+    elif current_user.role == "manager":
+        stmt = stmt.where(SessionORM.tenant_id == current_user.tenant_id)
+
+    if tag:
+        stmt = (
+            stmt
+            .join(SessionTagORM, SessionTagORM.session_id == SessionORM.id)
+            .join(TagORM, TagORM.id == SessionTagORM.tag_id)
+            .where(TagORM.name == tag.strip().lower())
+        )
+
+    stmt = stmt.order_by(SessionORM.updated_at.desc()).limit(200)
+
+    result = await db.execute(stmt)
+    sessions = list(result.unique().scalars().all())
+
+    return [
+        AdminSessionResponse(
+            id=s.id,
+            tenant_id=s.tenant_id,
+            user_id=s.user_id,
+            title=s.title,
+            is_pinned=s.is_pinned,
+            is_temporary=s.is_temporary,
+            tags=[
+                {"id": t.id, "name": t.name, "color": t.color}
+                for t in (s.tags or [])
+            ],
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+        )
+        for s in sessions
+    ]
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def admin_delete_session(
+    session_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """Delete a session. Admin: any. Manager: own tenant only."""
+    from ..db.orm.sessions import Session as SessionORM
+
+    result = await db.execute(
+        select(SessionORM).where(SessionORM.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if session is None:
+        raise NotFoundError("Session not found")
+
+    if current_user.role == "manager" and session.tenant_id != current_user.tenant_id:
+        raise ForbiddenError("Managers can only delete sessions in their own tenant")
+
+    await session_service.delete_session(db, session_id)
+    await write_audit_log(
+        db,
+        actor=current_user,
+        action="session.deleted",
+        target_type="session",
+        target_id=session_id,
+        tenant_id=current_user.tenant_id,
+        ip_address=_get_client_ip(request),
+    )

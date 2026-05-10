@@ -16,6 +16,7 @@ from .templates import Template, TemplateAllowedTool
 from .prompts import Prompt
 from .skills import Skill, SkillAllowedTool
 from .sessions import Session, SessionActiveTool
+from .tags import Tag, SessionTag
 from .messages import Message, MessageFeedback
 from .memory import Memory
 from .file_uploads import FileUpload
@@ -38,6 +39,8 @@ __all__ = [
     "SkillAllowedTool",
     "Session",
     "SessionActiveTool",
+    "Tag",
+    "SessionTag",
     "Message",
     "MessageFeedback",
     "Memory",

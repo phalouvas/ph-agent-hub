@@ -163,7 +163,15 @@ async def delete_session(db: AsyncSession, session_id: str) -> None:
     )
     await db.flush()
 
-    # 5. Delete session-scoped memories
+    # 5. Delete session tags
+    from ..db.orm.tags import SessionTag
+
+    await db.execute(
+        sa_delete(SessionTag).where(SessionTag.session_id == session_id)
+    )
+    await db.flush()
+
+    # 6. Delete session-scoped memories
     from ..db.orm.memory import Memory
 
     await db.execute(
@@ -266,4 +274,138 @@ async def remove_session_tool(
     result = await db.execute(stmt)
     if result.rowcount == 0:
         raise NotFoundError("Tool not active for this session")
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Session tag management
+# ---------------------------------------------------------------------------
+
+
+async def get_or_create_tag(
+    db: AsyncSession, tenant_id: str, name: str
+) -> "Tag":
+    """Get an existing tag by (tenant_id, name) or create it.
+
+    Tag names are lower-cased and stripped before lookup/insert.
+    """
+    from ..db.orm.tags import Tag
+
+    name = name.strip().lower()
+    if not name:
+        raise ValidationError("Tag name cannot be empty")
+
+    result = await db.execute(
+        select(Tag).where(Tag.tenant_id == tenant_id, Tag.name == name)
+    )
+    tag = result.scalar_one_or_none()
+    if tag:
+        return tag
+
+    tag = Tag(tenant_id=tenant_id, name=name)
+    db.add(tag)
+    await db.commit()
+    await db.refresh(tag)
+    return tag
+
+
+async def list_tenant_tags(
+    db: AsyncSession, tenant_id: str
+) -> list["Tag"]:
+    """Return all tags for a tenant, ordered by name."""
+    from ..db.orm.tags import Tag
+
+    result = await db.execute(
+        select(Tag)
+        .where(Tag.tenant_id == tenant_id)
+        .order_by(Tag.name)
+    )
+    return list(result.scalars().all())
+
+
+async def get_session_tags(
+    db: AsyncSession, session_id: str
+) -> list["Tag"]:
+    """Return all tags associated with a session."""
+    from ..db.orm.tags import Tag, SessionTag
+
+    result = await db.execute(
+        select(Tag)
+        .join(SessionTag, SessionTag.tag_id == Tag.id)
+        .where(SessionTag.session_id == session_id)
+        .order_by(Tag.name)
+    )
+    return list(result.scalars().all())
+
+
+async def add_tag_to_session(
+    db: AsyncSession, session_id: str, tag_id: str
+) -> bool:
+    """Add a tag to a session. Returns True if added, False if already present."""
+    from ..db.orm.tags import SessionTag
+
+    # Check for existing association
+    existing = await db.execute(
+        select(SessionTag).where(
+            SessionTag.session_id == session_id,
+            SessionTag.tag_id == tag_id,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return False
+
+    st = SessionTag(session_id=session_id, tag_id=tag_id)
+    db.add(st)
+    await db.commit()
+    return True
+
+
+async def remove_tag_from_session(
+    db: AsyncSession, session_id: str, tag_id: str
+) -> None:
+    """Remove a tag from a session. Silently succeeds if not present."""
+    from ..db.orm.tags import SessionTag
+
+    await db.execute(
+        delete(SessionTag).where(
+            SessionTag.session_id == session_id,
+            SessionTag.tag_id == tag_id,
+        )
+    )
+    await db.commit()
+
+
+async def list_sessions_by_tag(
+    db: AsyncSession,
+    user_id: str,
+    tenant_id: str,
+    tag_name: str,
+) -> list["Session"]:
+    """Return sessions for a user that have the given tag name."""
+    from ..db.orm.tags import Tag, SessionTag
+
+    result = await db.execute(
+        select(Session)
+        .join(SessionTag, SessionTag.session_id == Session.id)
+        .join(Tag, Tag.id == SessionTag.tag_id)
+        .where(
+            Session.user_id == user_id,
+            Session.tenant_id == tenant_id,
+            Tag.name == tag_name.strip().lower(),
+            Session.is_temporary == False,  # noqa: E712
+        )
+        .order_by(Session.updated_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def delete_session_tags(
+    db: AsyncSession, session_id: str
+) -> None:
+    """Delete all tag associations for a session (used during session deletion)."""
+    from ..db.orm.tags import SessionTag
+
+    await db.execute(
+        delete(SessionTag).where(SessionTag.session_id == session_id)
+    )
     await db.commit()
