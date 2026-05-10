@@ -22,6 +22,7 @@ import {
   GroupOutlined,
   DatabaseOutlined,
   CommentOutlined,
+  MessageOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "../../../providers/AuthProvider";
@@ -152,6 +153,11 @@ export function AdminLayout() {
               onClick={() => setMobileMenuOpen(true)}
             />
             <Space>
+              <Button
+                type="text"
+                icon={<MessageOutlined style={{ color: "#fff" }} />}
+                onClick={() => navigate("/chat")}
+              />
               <Tag color={isAdmin ? "red" : "blue"}>
                 {user?.role}
               </Tag>
