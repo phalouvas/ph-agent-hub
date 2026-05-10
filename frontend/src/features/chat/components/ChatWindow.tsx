@@ -558,7 +558,7 @@ export function ChatWindow({
       {isMobile ? (
         <div
           style={{
-            padding: "8px 16px",
+            padding: "8px 16px 8px 56px",
             borderBottom: "1px solid #f0f0f0",
             display: "flex",
             alignItems: "center",
@@ -948,21 +948,25 @@ export function ChatWindow({
               title="Attach files"
             />
           </Upload>
-          <TextArea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              editingMsgId
-                ? "Edit your message... (Enter to send)"
-                : isTemporary
-                ? "Type a message... (temporary session)"
-                : "Type a message... (Enter to send, Shift+Enter for new line)"
-            }
-            autoSize={{ minRows: 1, maxRows: 6 }}
-            disabled={streaming}
-            style={{ resize: "none", flex: 1 }}
-          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <TextArea
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                editingMsgId
+                  ? "Edit message…"
+                  : isTemporary
+                  ? "Type a message…"
+                  : isMobile
+                  ? "Type a message…"
+                  : "Type a message… (Enter to send, Shift+Enter for new line)"
+              }
+              autoSize={{ minRows: 1, maxRows: 6 }}
+              disabled={streaming}
+              style={{ resize: "none", width: "100%" }}
+            />
+          </div>
           {streaming ? (
             <Space size={4}>
               {streaming ? (
