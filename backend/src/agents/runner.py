@@ -921,10 +921,11 @@ async def _resolve_tool_callables(
             "Failed to build file_list tool for session %s", session_id, exc_info=True
         )
 
-    # ---- Built-in tool: memory (always available) -----------------------
+    # ---- Built-in tool: memory (always available, except temp) ----------
     # Gives the agent persistent memory: save, delete, and list entries.
+    # Skipped for temporary sessions — they should leave no DB trace.
     user_id = session_data.get("user_id", "")
-    if user_id:
+    if user_id and not is_temporary:
         try:
             from ..tools.memory import build_memory_tools
             memory_tools = build_memory_tools(db, user_id, tenant_id)
