@@ -619,6 +619,8 @@ async def update_model(
     update_kwargs: dict = {}
     if body.name is not None:
         update_kwargs["name"] = body.name
+    if body.model_id is not None:
+        update_kwargs["model_id"] = body.model_id
     if body.provider is not None:
         update_kwargs["provider"] = body.provider
     if body.api_key is not None:
@@ -637,6 +639,8 @@ async def update_model(
         update_kwargs["routing_priority"] = body.routing_priority
     if body.thinking_enabled is not None:
         update_kwargs["thinking_enabled"] = body.thinking_enabled
+    if body.follow_up_questions_enabled is not None:
+        update_kwargs["follow_up_questions_enabled"] = body.follow_up_questions_enabled
     if body.context_length is not None:
         update_kwargs["context_length"] = body.context_length
 
