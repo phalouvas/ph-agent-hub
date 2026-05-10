@@ -7,9 +7,10 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
-import { Button, Input, Space, Spin, Empty, Alert, Switch, Tag, Typography, Upload, message, notification } from "antd";
+import { Button, Drawer, Grid, Input, Space, Spin, Empty, Alert, Switch, Tag, Typography, Upload, message, notification } from "antd";
 import {
   SendOutlined,
+  SettingOutlined,
   StopOutlined,
   DownOutlined,
   PaperClipOutlined,
@@ -17,6 +18,7 @@ import {
   RobotOutlined,
   EditOutlined,
   CloseOutlined,
+  ToolOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "./MessageBubble";
@@ -38,6 +40,7 @@ import {
 
 const { TextArea } = Input;
 const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 // ---------------------------------------------------------------------------
 // Pending file info (stored after upload completes)
@@ -76,7 +79,10 @@ export function ChatWindow({
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [uploading, setUploading] = useState(false);
 
@@ -549,75 +555,166 @@ export function ChatWindow({
         }
       `}</style>
       {/* Top bar */}
-      <div
-        style={{
-          padding: "8px 16px",
-          borderBottom: "1px solid #f0f0f0",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          flexWrap: "wrap",
-        }}
-      >
-        {isTemporary !== undefined && (
-          <TemporaryChatBadge isTemporary={isTemporary} />
-        )}
-        <ModelSelector
-          value={selectedModelId}
-          onChange={(id) => onSessionUpdate?.({ selected_model_id: id })}
-        />
-        <TemplateSelector
-          value={selectedTemplateId}
-          onChange={(id) => onSessionUpdate?.({ selected_template_id: id })}
-        />
-        <SkillSelector
-          value={selectedSkillId}
-          onChange={(id) => onSessionUpdate?.({ selected_skill_id: id })}
-        />
-        <PromptLibrary
-          onUse={(resolvedText) => setInputValue(resolvedText)}
-        />
-        <Button
-          size="small"
-          onClick={() => setToolsOpen(true)}
-        >
-          Tools
-        </Button>
-        <Button
-          size="small"
-          icon={<CompressOutlined />}
-          onClick={async () => {
-            try {
-              const result = await summarizeSession(sessionId);
-              notification.success({
-                message: "Conversation Summarized",
-                description: `Compressed ${result.summarized_message_count} messages. Saved ~${result.tokens_saved} tokens.`,
-                placement: "topRight",
-                duration: 5,
-              });
-              queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
-            } catch (err: any) {
-              message.error(err?.message || "Summarization failed");
-            }
+      {isMobile ? (
+        <div
+          style={{
+            padding: "8px 16px 8px 56px",
+            borderBottom: "1px solid #f0f0f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
-          title="Summarize conversation"
         >
-          Summarize
-        </Button>
-        {modelSupportsThinking && (
-          <Switch
+          {isTemporary !== undefined && (
+            <TemporaryChatBadge isTemporary={isTemporary} />
+          )}
+          <Button
             size="small"
-            checked={thinkingEnabled ?? true}
-            checkedChildren="🧠"
-            unCheckedChildren="🧠"
-            title="Thinking Mode"
-            onChange={(v) => {
-              setThinkingEnabled(v);
-              onSessionUpdate?.({ thinking_enabled: v });
-            }}
+            icon={<SettingOutlined />}
+            onClick={() => setSettingsOpen(true)}
+          >
+            Options
+          </Button>
+        </div>
+      ) : (
+        <div
+          style={{
+            padding: "8px 16px",
+            borderBottom: "1px solid #f0f0f0",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          {isTemporary !== undefined && (
+            <TemporaryChatBadge isTemporary={isTemporary} />
+          )}
+          <ModelSelector
+            value={selectedModelId}
+            onChange={(id) => onSessionUpdate?.({ selected_model_id: id })}
           />
-        )}
-      </div>
+          <TemplateSelector
+            value={selectedTemplateId}
+            onChange={(id) => onSessionUpdate?.({ selected_template_id: id })}
+          />
+          <SkillSelector
+            value={selectedSkillId}
+            onChange={(id) => onSessionUpdate?.({ selected_skill_id: id })}
+          />
+          <PromptLibrary
+            onUse={(resolvedText) => setInputValue(resolvedText)}
+          />
+          <Button
+            size="small"
+            onClick={() => setToolsOpen(true)}
+          >
+            Tools
+          </Button>
+          <Button
+            size="small"
+            icon={<CompressOutlined />}
+            onClick={async () => {
+              try {
+                const result = await summarizeSession(sessionId);
+                notification.success({
+                  message: "Conversation Summarized",
+                  description: `Compressed ${result.summarized_message_count} messages. Saved ~${result.tokens_saved} tokens.`,
+                  placement: "topRight",
+                  duration: 5,
+                });
+                queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+              } catch (err: any) {
+                message.error(err?.message || "Summarization failed");
+              }
+            }}
+            title="Summarize conversation"
+          >
+            Summarize
+          </Button>
+          {modelSupportsThinking && (
+            <Switch
+              size="small"
+              checked={thinkingEnabled ?? true}
+              checkedChildren="🧠"
+              unCheckedChildren="🧠"
+              title="Thinking Mode"
+              onChange={(v) => {
+                setThinkingEnabled(v);
+                onSessionUpdate?.({ thinking_enabled: v });
+              }}
+            />
+          )}
+        </div>
+      )}
+      <Drawer
+        placement="bottom"
+        title="Chat Options"
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        height="auto"
+        styles={{ body: { paddingBottom: 32 } }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <ModelSelector
+            value={selectedModelId}
+            onChange={(id) => onSessionUpdate?.({ selected_model_id: id })}
+          />
+          <TemplateSelector
+            value={selectedTemplateId}
+            onChange={(id) => onSessionUpdate?.({ selected_template_id: id })}
+          />
+          <SkillSelector
+            value={selectedSkillId}
+            onChange={(id) => onSessionUpdate?.({ selected_skill_id: id })}
+          />
+          <PromptLibrary
+            onUse={(resolvedText) => setInputValue(resolvedText)}
+          />
+          <Button
+            icon={<ToolOutlined />}
+            onClick={() => {
+              setSettingsOpen(false);
+              setToolsOpen(true);
+            }}
+          >
+            Tools
+          </Button>
+          <Button
+            icon={<CompressOutlined />}
+            onClick={async () => {
+              try {
+                const result = await summarizeSession(sessionId);
+                notification.success({
+                  message: "Conversation Summarized",
+                  description: `Compressed ${result.summarized_message_count} messages. Saved ~${result.tokens_saved} tokens.`,
+                  placement: "topRight",
+                  duration: 5,
+                });
+                queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
+              } catch (err: any) {
+                message.error(err?.message || "Summarization failed");
+              }
+            }}
+            title="Summarize conversation"
+          >
+            Summarize
+          </Button>
+          {modelSupportsThinking && (
+            <Switch
+              size="small"
+              checked={thinkingEnabled ?? true}
+              checkedChildren="🧠"
+              unCheckedChildren="🧠"
+              title="Thinking Mode"
+              onChange={(v) => {
+                setThinkingEnabled(v);
+                onSessionUpdate?.({ thinking_enabled: v });
+              }}
+            />
+          )}
+        </div>
+      </Drawer>
 
       {/* Messages area */}
       <div
@@ -829,7 +926,7 @@ export function ChatWindow({
           </div>
         )}
 
-        <Space.Compact style={{ width: "100%" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 8, width: "100%" }}>
           <Upload
             multiple
             showUploadList={false}
@@ -851,21 +948,25 @@ export function ChatWindow({
               title="Attach files"
             />
           </Upload>
-          <TextArea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              editingMsgId
-                ? "Edit your message... (Enter to send)"
-                : isTemporary
-                ? "Type a message... (temporary session)"
-                : "Type a message... (Enter to send, Shift+Enter for new line)"
-            }
-            autoSize={{ minRows: 1, maxRows: 6 }}
-            disabled={streaming}
-            style={{ resize: "none" }}
-          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <TextArea
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                editingMsgId
+                  ? "Edit message…"
+                  : isTemporary
+                  ? "Type a message…"
+                  : isMobile
+                  ? "Type a message…"
+                  : "Type a message… (Enter to send, Shift+Enter for new line)"
+              }
+              autoSize={{ minRows: 1, maxRows: 6 }}
+              disabled={streaming}
+              style={{ resize: "none", width: "100%" }}
+            />
+          </div>
           {streaming ? (
             <Space size={4}>
               {streaming ? (
@@ -897,7 +998,7 @@ export function ChatWindow({
               {editingMsgId ? "Edit & Send" : "Send"}
             </Button>
           )}
-        </Space.Compact>
+        </div>
       </div>
 
       {/* Tools drawer */}
