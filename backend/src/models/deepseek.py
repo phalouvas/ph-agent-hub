@@ -65,7 +65,87 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
         response: ChatCompletion,
         options: Mapping[str, Any],
     ) -> Any:  # ChatResponse
-        """Extract ``reasoning_content`` from non-streaming response."""
+        """Extract ``reasoning_content`` and stabilise tool calls from DeepSeek response.
+
+        DeepSeek models sometimes output tool calls as text markers
+        (``🔧 function_name``) instead of proper OpenAI tool_calls.
+        The stabiliser extracts these and injects them as proper
+        function call objects that MAF can process.
+        """
+        # ---- Stabiliser: detect & inject tool calls from text content ----
+        from ..agents.stabilizer import (
+            strip_reasoning,
+            extract_json,
+            repair_json,
+        )
+        from ..agents.deepseek_patch import extract_json_block
+
+        for choice in response.choices:
+            msg = choice.message
+            content = msg.content or ""
+            # Only intervene when there are no native tool_calls AND the
+            # content looks like it contains tool-call syntax.
+            if (
+                not msg.tool_calls
+                and content
+                and ("🔧" in content or "```json" in content or '"name"' in content)
+            ):
+                # Step 1: strip reasoning traces
+                cleaned = strip_reasoning(content)
+
+                # Step 2: try to extract JSON tool call blocks
+                json_block = extract_json_block(cleaned)
+                if json_block and json_block != cleaned:
+                    try:
+                        repaired = repair_json(json_block)
+                        import json as _json
+                        parsed = _json.loads(repaired)
+
+                        # Wrap single tool call into list form
+                        tool_calls_list = parsed if isinstance(parsed, list) else [parsed]
+                        if isinstance(tool_calls_list, list) and tool_calls_list:
+                            # Inject tool calls into the OpenAI response message
+                            from openai.types.chat import (
+                                ChatCompletionMessageToolCall,
+                            )
+                            from openai.types.chat.chat_completion_message_tool_call import Function
+
+                            injected: list = []
+                            for tc in tool_calls_list:
+                                if not isinstance(tc, dict):
+                                    continue
+                                fn_name = tc.get("name") or tc.get("function") or tc.get("tool", "")
+                                fn_args = tc.get("arguments") or tc.get("input") or {}
+                                if not fn_name:
+                                    continue
+                                if isinstance(fn_args, dict):
+                                    fn_args = _json.dumps(fn_args)
+                                injected.append(
+                                    ChatCompletionMessageToolCall(
+                                        id=f"call_deepseek_{len(injected)}",
+                                        function=Function(
+                                            name=str(fn_name),
+                                            arguments=str(fn_args),
+                                        ),
+                                        type="function",
+                                    )
+                                )
+
+                            if injected:
+                                # Build a new message with injected tool_calls
+                                msg.tool_calls = injected
+                                msg.content = cleaned  # preserve cleaned text
+                                logger.info(
+                                    "Stabiliser injected %d tool call(s) from DeepSeek text response",
+                                    len(injected),
+                                )
+                    except Exception:
+                        logger.debug(
+                            "Stabiliser could not extract JSON tool calls from response",
+                            exc_info=True,
+                        )
+
+        # ---- Original reasoning_content extraction ----
         chat_response = super()._parse_response_from_openai(response, options)
         for choice, msg in zip(response.choices, chat_response.messages):
             rc = getattr(choice.message, "reasoning_content", None)

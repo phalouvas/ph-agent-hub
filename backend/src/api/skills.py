@@ -25,9 +25,9 @@ router = APIRouter(prefix="/skills", tags=["skills"])
 
 class SkillCreate(BaseModel):
     title: str
-    description: str
+    description: str | None = None
     execution_type: str
-    maf_target_key: str
+    maf_target_key: str | None = None
     template_id: str | None = None
     default_prompt_id: str | None = None
     default_model_id: str | None = None
@@ -52,9 +52,9 @@ class SkillResponse(BaseModel):
     tenant_id: str
     user_id: str | None
     title: str
-    description: str
+    description: str | None
     execution_type: str
-    maf_target_key: str
+    maf_target_key: str | None
     visibility: str
     template_id: str | None
     default_prompt_id: str | None

@@ -61,10 +61,17 @@ export function PersonalSkillEditor({
   const [view, setView] = useState<"list" | "form">("list");
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
+  const executionType = Form.useWatch("execution_type", form);
 
   const { data: skills, isLoading } = useQuery({
     queryKey: ["skills"],
     queryFn: () => api<SkillData[]>("/skills"),
+    enabled: open,
+  });
+
+  const { data: templates } = useQuery({
+    queryKey: ["templates"],
+    queryFn: () => api<{ id: string; title: string }[]>("/templates"),
     enabled: open,
   });
 
@@ -216,7 +223,6 @@ export function PersonalSkillEditor({
             <Form.Item
               name="description"
               label="Description"
-              rules={[{ required: true }]}
             >
               <TextArea rows={2} />
             </Form.Item>
@@ -232,13 +238,28 @@ export function PersonalSkillEditor({
                 ]}
               />
             </Form.Item>
-            <Form.Item
-              name="maf_target_key"
-              label="MAF Target Key"
-              rules={[{ required: true }]}
-            >
-              <Input placeholder="e.g., erpnext_invoice_analyzer" />
-            </Form.Item>
+            {executionType === "workflow_based" && (
+              <Form.Item
+                name="maf_target_key"
+                label="MAF Target Key"
+                rules={[{ required: true }]}
+                extra="Must match a registered workflow module"
+              >
+                <Input placeholder="e.g., invoice_processing" />
+              </Form.Item>
+            )}
+            {executionType !== "workflow_based" && (
+              <Form.Item name="template_id" label="Template">
+                <Select
+                  allowClear
+                  placeholder="Select a template (provides system prompt)"
+                  options={(templates || []).map((t) => ({
+                    label: t.title,
+                    value: t.id,
+                  }))}
+                />
+              </Form.Item>
+            )}
             <Space>
               <Button onClick={() => setView("list")}>Cancel</Button>
               <Button

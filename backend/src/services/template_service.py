@@ -67,9 +67,9 @@ async def create_template(
     db: AsyncSession,
     tenant_id: str,
     title: str,
-    description: str,
     system_prompt: str,
     scope: str,
+    description: str | None = None,
     default_model_id: str | None = None,
     assigned_user_id: str | None = None,
     tool_ids: list[str] | None = None,
@@ -145,6 +145,22 @@ async def delete_template(db: AsyncSession, template_id: str) -> None:
         sa_update(SessionORM)
         .where(SessionORM.selected_template_id == template_id)
         .values(selected_template_id=None)
+    )
+
+    # Clear FK references in skills that point to this template
+    from ..db.orm.skills import Skill as SkillORM
+
+    await db.execute(
+        sa_update(SkillORM)
+        .where(SkillORM.template_id == template_id)
+        .values(template_id=None)
+    )
+
+    # Delete join table rows (template_allowed_tools)
+    await db.execute(
+        delete(TemplateAllowedTool).where(
+            TemplateAllowedTool.template_id == template_id
+        )
     )
 
     await db.delete(template)
