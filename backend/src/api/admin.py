@@ -644,7 +644,15 @@ async def update_model(
     if body.context_length is not None:
         update_kwargs["context_length"] = body.context_length
 
+    # Pop model_id from kwargs to avoid conflict with the route parameter
+    new_api_model_id = update_kwargs.pop("model_id", None)
+
     model = await _svc_update_model(db, model_id, **update_kwargs)
+
+    if new_api_model_id is not None:
+        model.model_id = new_api_model_id
+        await db.commit()
+        await db.refresh(model)
 
     action = "model.api_key_updated" if body.api_key is not None else "model.updated"
     await write_audit_log(

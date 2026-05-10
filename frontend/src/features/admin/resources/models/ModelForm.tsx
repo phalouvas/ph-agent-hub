@@ -122,6 +122,9 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
       message.success("Model created");
       onClose();
     },
+    onError: (err: Error) => {
+      message.error(err.message || "Failed to create model");
+    },
   });
 
   const updateMutation = useMutation({
@@ -136,6 +139,9 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
       queryClient.invalidateQueries({ queryKey: ["admin-models"] });
       message.success("Model updated");
       onClose();
+    },
+    onError: (err: Error) => {
+      message.error(err.message || "Failed to update model");
     },
   });
 
