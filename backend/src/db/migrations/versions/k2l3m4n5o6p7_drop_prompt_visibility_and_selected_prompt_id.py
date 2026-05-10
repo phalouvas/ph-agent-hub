@@ -6,7 +6,7 @@ Create Date: 2026-05-10
 
 1. Drop selected_prompt_id column (and its FK) from sessions table.
    Prompts are now a frontend-only feature — no backend involvement.
-2. Drop visibility column (and its enum) from prompts table.
+2. Drop visibility column from prompts table.
    All prompts are now private to each user.
 3. Alter the FK on skills.default_prompt_id to ON DELETE SET NULL
    so deleting a prompt doesn't break referenced skills.
@@ -24,42 +24,28 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _drop_fk_if_exists(table: str, column: str) -> str | None:
+    """Find and drop a foreign key on *table*.*column*.  Returns the old
+    FK name so it can be recreated in a downgrade, or None if none found."""
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    for fk in inspector.get_foreign_keys(table):
+        if column in fk["constrained_columns"]:
+            op.drop_constraint(fk["name"], table, type_="foreignkey")
+            return fk["name"]
+    return None
+
+
 def upgrade() -> None:
-    # 1. Drop the FK and column on sessions.selected_prompt_id
-    # MySQL auto-names constraints; use raw SQL to find and drop it.
-    op.execute("""
-        SET @fk_name = (
-            SELECT CONSTRAINT_NAME
-            FROM information_schema.KEY_COLUMN_USAGE
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = 'sessions'
-              AND COLUMN_NAME = 'selected_prompt_id'
-              AND REFERENCED_TABLE_NAME IS NOT NULL
-        );
-        SET @drop_sql = IF(@fk_name IS NOT NULL,
-            CONCAT('ALTER TABLE sessions DROP FOREIGN KEY ', @fk_name), 'SELECT 1');
-        PREPARE stmt FROM @drop_sql;
-        EXECUTE stmt;
-        DEALLOCATE PREPARE stmt;
-    """)
+    # 1. Drop FK + column on sessions.selected_prompt_id.
+    #    In MariaDB dropping the column also drops the FK, but we explicitly
+    #    drop the FK first for clarity and portability.
+    _drop_fk_if_exists("sessions", "selected_prompt_id")
     op.drop_column("sessions", "selected_prompt_id")
 
-    # 2. Drop the FK on skills.default_prompt_id and recreate with ON DELETE SET NULL
-    op.execute("""
-        SET @fk_name = (
-            SELECT CONSTRAINT_NAME
-            FROM information_schema.KEY_COLUMN_USAGE
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = 'skills'
-              AND COLUMN_NAME = 'default_prompt_id'
-              AND REFERENCED_TABLE_NAME IS NOT NULL
-        );
-        SET @drop_sql = IF(@fk_name IS NOT NULL,
-            CONCAT('ALTER TABLE skills DROP FOREIGN KEY ', @fk_name), 'SELECT 1');
-        PREPARE stmt FROM @drop_sql;
-        EXECUTE stmt;
-        DEALLOCATE PREPARE stmt;
-    """)
+    # 2. Drop the FK on skills.default_prompt_id and recreate with
+    #    ON DELETE SET NULL so deleting a prompt nullifies the reference.
+    _drop_fk_if_exists("skills", "default_prompt_id")
     op.create_foreign_key(
         None,
         "skills",
@@ -69,8 +55,9 @@ def upgrade() -> None:
         ondelete="SET NULL",
     )
 
-    # 3. Drop the visibility column (the enum type is auto-dropped by MySQL)
-    op.execute("ALTER TABLE prompts DROP COLUMN visibility")
+    # 3. Drop the visibility column from prompts.
+    #    MySQL ENUM is column-level, so dropping the column removes it.
+    op.drop_column("prompts", "visibility")
 
 
 def downgrade() -> None:
@@ -90,21 +77,7 @@ def downgrade() -> None:
     )
 
     # Revert skills FK to NO ACTION (remove ON DELETE SET NULL)
-    op.execute("""
-        SET @fk_name = (
-            SELECT CONSTRAINT_NAME
-            FROM information_schema.KEY_COLUMN_USAGE
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = 'skills'
-              AND COLUMN_NAME = 'default_prompt_id'
-              AND REFERENCED_TABLE_NAME IS NOT NULL
-        );
-        SET @drop_sql = IF(@fk_name IS NOT NULL,
-            CONCAT('ALTER TABLE skills DROP FOREIGN KEY ', @fk_name), 'SELECT 1');
-        PREPARE stmt FROM @drop_sql;
-        EXECUTE stmt;
-        DEALLOCATE PREPARE stmt;
-    """)
+    _drop_fk_if_exists("skills", "default_prompt_id")
     op.create_foreign_key(
         None,
         "skills",
