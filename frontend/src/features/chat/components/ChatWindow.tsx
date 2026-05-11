@@ -361,6 +361,16 @@ export function ChatWindow({
   }, [inputValue, streaming, sessionId, startStream, queryClient, pendingFiles, editingMsgId]);
 
   const handleStop = async () => {
+    // Clear the streaming ghost bubble immediately for instant UX.
+    // The backend will persist the partial response (stopStream sends
+    // the cancel signal first), and when the stream ends naturally the
+    // onClose handler refetches messages → the partial response becomes
+    // a permanent message bubble.
+    setStreamingContent("");
+    setStreamingReasoningContent("");
+    setStreamingMessageId(null);
+    setStreamingTokens(null);
+    setToolEvents([]);
     await stopStream(sessionId);
   };
 
