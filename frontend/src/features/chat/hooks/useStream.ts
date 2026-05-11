@@ -7,7 +7,7 @@
 // POST to /chat/session/:id/message with Accept: text/event-stream.
 // =============================================================================
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   fetchEventSource,
   EventStreamContentType,
@@ -149,6 +149,15 @@ export function useStream() {
   );
   const abortRef = useRef<AbortController | null>(null);
 
+  // Abort any in-flight SSE stream when the hook unmounts. Without this,
+  // @microsoft/fetch-event-source reconnects on document visibility change
+  // after navigation, re-POSTing the message (Issue #124).
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   const startStream = useCallback(
     async (
       sessionId: string,
@@ -189,6 +198,7 @@ export function useStream() {
               content,
               file_ids: fileIds || [],
             }),
+            openWhenHidden: true,
             signal: controller.signal,
             async onopen(response) {
               if (
@@ -251,10 +261,13 @@ export function useStream() {
               handlers.onClose?.();
             },
             onerror(err) {
-              // Don't throw on abort
+              // Don't throw on abort — but still run onClose so the
+              // ChatWindow can refetch messages (the backend may have
+              // persisted a partial response).
               if (controller.signal.aborted) {
                 setStreaming(false);
                 setStreamingSessionId(null);
+                handlers.onClose?.();
                 return; // stops the retry
               }
               // Don't throw — let onclose fire to clean up state and refresh messages
@@ -278,8 +291,9 @@ export function useStream() {
 
   const stopStream = useCallback(
     async (sessionId: string) => {
-      abortRef.current?.abort();
-      // Also call backend cancel
+      // 1. Tell the backend to cancel via Redis flag — the agent runner
+      //    checks this on every token yield, breaks, persists the partial
+      //    response, and ends the stream normally.
       try {
         const token = getToken();
         await fetch(`${BASE_URL}/chat/session/${sessionId}/stream`, {
@@ -289,8 +303,23 @@ export function useStream() {
       } catch {
         // Best effort
       }
-      setStreaming(false);
-      setStreamingSessionId(null);
+      // 2. Schedule a safety-net abort in case the backend doesn't finish
+      //    within 2 s (e.g. stuck in a long tool call).  When the backend
+      //    shuts down cleanly the onclose handler fires and does the final
+      //    setStreaming(false) + setStreamingSessionId(null).
+      const controller = abortRef.current;
+      if (controller) {
+        setTimeout(() => {
+          if (!controller.signal.aborted) {
+            controller.abort();
+            setStreaming(false);
+            setStreamingSessionId(null);
+          }
+        }, 2000);
+      } else {
+        setStreaming(false);
+        setStreamingSessionId(null);
+      }
     },
     [],
   );
@@ -330,6 +359,7 @@ export function useStream() {
               Accept: "text/event-stream",
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
+            openWhenHidden: true,
             signal: controller.signal,
             async onopen(response) {
               if (
@@ -394,6 +424,7 @@ export function useStream() {
               if (controller.signal.aborted) {
                 setStreaming(false);
                 setStreamingSessionId(null);
+                handlers.onClose?.();
                 return;
               }
               setStreaming(false);
@@ -450,6 +481,7 @@ export function useStream() {
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({ content }),
+            openWhenHidden: true,
             signal: controller.signal,
             async onopen(response) {
               if (
@@ -511,6 +543,7 @@ export function useStream() {
               if (controller.signal.aborted) {
                 setStreaming(false);
                 setStreamingSessionId(null);
+                handlers.onClose?.();
                 return;
               }
               setStreaming(false);
