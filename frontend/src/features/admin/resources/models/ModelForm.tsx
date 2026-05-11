@@ -251,21 +251,21 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         </Form.Item>
         <Form.Item
           name="input_price_per_1m"
-          label="Input Price ($/1M tokens)"
+          label="Input Price (per 1M tokens)"
           tooltip="Price per 1 million input tokens. Used for cost calculation."
         >
           <InputNumber min={0} step={0.0001} style={{ width: "100%" }} placeholder="e.g., 0.14" />
         </Form.Item>
         <Form.Item
           name="output_price_per_1m"
-          label="Output Price ($/1M tokens)"
+          label="Output Price (per 1M tokens)"
           tooltip="Price per 1 million output tokens. Used for cost calculation."
         >
           <InputNumber min={0} step={0.0001} style={{ width: "100%" }} placeholder="e.g., 0.28" />
         </Form.Item>
         <Form.Item
           name="cache_hit_price_per_1m"
-          label="Cache Hit Price ($/1M tokens)"
+          label="Cache Hit Price (per 1M tokens)"
           tooltip="Price per 1 million cached input tokens. Defaults to input price if not set."
         >
           <InputNumber min={0} step={0.0001} style={{ width: "100%" }} placeholder="e.g., 0.0028" />

@@ -22,7 +22,7 @@ import {
   BarChartOutlined,
   ApiOutlined,
   TeamOutlined,
-  DollarOutlined,
+  BankOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../../../providers/AuthProvider";
@@ -185,7 +185,7 @@ export function AnalyticsPage() {
             <Statistic
               title="Total Cost"
               value={formatCurrency(totalCost)}
-              prefix={<DollarOutlined />}
+              prefix={<BankOutlined />}
             />
           </Card>
         </Col>
