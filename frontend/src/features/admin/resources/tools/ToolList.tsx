@@ -25,6 +25,7 @@ import {
   listTools,
   deleteTool,
   updateTool,
+  listTenants,
   ToolData,
 } from "../../services/admin";
 import { ToolForm } from "./ToolForm";
@@ -45,6 +46,13 @@ export function ToolList() {
     queryKey: ["admin-tools", tenantId],
     queryFn: () => listTools({ tenant_id: tenantId }),
   });
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-tool-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteTool,
@@ -77,7 +85,14 @@ export function ToolList() {
       width: 130,
       ellipsis: true,
       responsive: ["lg" as const],
-      render: (v: string) => <Typography.Text code style={{ fontSize: 11 }}>{v.slice(0, 8)}…</Typography.Text>,
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? (
+          <Typography.Text>{tenantName}</Typography.Text>
+        ) : (
+          <Typography.Text type="secondary">Unknown tenant</Typography.Text>
+        );
+      },
     },
     {
       title: "Enabled",

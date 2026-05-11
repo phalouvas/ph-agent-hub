@@ -25,6 +25,7 @@ import {
   listModels,
   deleteModel,
   updateModel,
+  listTenants,
   ModelData,
 } from "../../services/admin";
 import { ModelForm } from "./ModelForm";
@@ -46,6 +47,13 @@ export function ModelList() {
     queryKey: ["admin-models", tenantId],
     queryFn: () => listModels({ tenant_id: tenantId }),
   });
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-model-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteModel,
@@ -138,7 +146,10 @@ export function ModelList() {
       width: 130,
       ellipsis: true,
       responsive: ["lg" as const],
-      render: (v: string) => <Text code style={{ fontSize: 11 }}>{v.slice(0, 8)}…</Text>,
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? <Text>{tenantName}</Text> : <Text type="secondary">Unknown tenant</Text>;
+      },
     },
     {
       title: "Actions",
