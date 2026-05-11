@@ -81,7 +81,6 @@ export interface TemplateData {
   assigned_user_id: string | null;
   created_at: string;
   updated_at: string;
-  tool_ids: string[];
 }
 
 export interface SkillData {

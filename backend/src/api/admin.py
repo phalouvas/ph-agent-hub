@@ -61,7 +61,6 @@ from ..services.template_service import (
     create_template as _svc_create_template,
     delete_template as _svc_delete_template,
     get_template_by_id,
-    list_template_tools as _svc_list_template_tools,
     list_templates as _svc_list_templates,
     update_template as _svc_update_template,
 )
@@ -923,7 +922,6 @@ class AdminTemplateCreate(BaseModel):
     scope: str = "tenant"
     default_model_id: str | None = None
     assigned_user_id: str | None = None
-    tool_ids: list[str] | None = None
 
 
 class AdminTemplateUpdate(BaseModel):
@@ -934,7 +932,6 @@ class AdminTemplateUpdate(BaseModel):
     scope: str | None = None
     default_model_id: str | None = None
     assigned_user_id: str | None = None
-    tool_ids: list[str] | None = None
 
 
 class AdminTemplateResponse(BaseModel):
@@ -948,7 +945,6 @@ class AdminTemplateResponse(BaseModel):
     assigned_user_id: str | None
     created_at: datetime
     updated_at: datetime
-    tool_ids: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -975,14 +971,7 @@ async def admin_list_templates(
             db, tenant_id=current_user.tenant_id, current_user=current_user
         )
 
-    resp_list: list[AdminTemplateResponse] = []
-    for t in templates:
-        tools = await _svc_list_template_tools(db, t.id)
-        resp = AdminTemplateResponse.model_validate(t)
-        resp.tool_ids = [tool.tool_id for tool in tools]
-        resp_list.append(resp)
-
-    return resp_list
+    return [AdminTemplateResponse.model_validate(t) for t in templates]
 
 
 @router.post("/templates", response_model=AdminTemplateResponse, status_code=201)
@@ -1005,11 +994,8 @@ async def admin_create_template(
         scope=body.scope,
         default_model_id=body.default_model_id,
         assigned_user_id=body.assigned_user_id,
-        tool_ids=body.tool_ids,
     )
-    tools = await _svc_list_template_tools(db, template.id)
     resp = AdminTemplateResponse.model_validate(template)
-    resp.tool_ids = [t.tool_id for t in tools]
     await write_audit_log(
         db,
         actor=current_user,
@@ -1056,11 +1042,9 @@ async def admin_update_template(
         update_kwargs["tenant_id"] = body.tenant_id
 
     template = await _svc_update_template(
-        db, template_id, tool_ids=body.tool_ids, **update_kwargs
+        db, template_id, **update_kwargs
     )
-    tools = await _svc_list_template_tools(db, template.id)
     resp = AdminTemplateResponse.model_validate(template)
-    resp.tool_ids = [t.tool_id for t in tools]
     await write_audit_log(
         db,
         actor=current_user,

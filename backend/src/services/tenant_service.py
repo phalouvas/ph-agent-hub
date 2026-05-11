@@ -124,7 +124,7 @@ async def force_delete_tenant(db: AsyncSession, tenant_id: str) -> None:
 
     Deletion order respects FK dependency chains (leaf tables first):
     1. message_feedback, session_tags, session_active_tools,
-       skill_allowed_tools, template_allowed_tools,
+    #    skill_allowed_tools,
        tool_groups, model_groups, user_group_members
     2. messages, memory, file_uploads (S3 first, then DB)
     3. prompts, skills, templates, sessions
@@ -149,7 +149,7 @@ async def force_delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     from ..db.orm.models import Model as ModelORM
     from ..db.orm.sessions import Session as SessionORM, SessionActiveTool
     from ..db.orm.tools import Tool
-    from ..db.orm.templates import Template, TemplateAllowedTool
+    from ..db.orm.templates import Template
     from ..db.orm.skills import Skill, SkillAllowedTool
     from ..db.orm.tags import Tag as TagORM, SessionTag
     from ..db.orm.memory import Memory
@@ -219,13 +219,6 @@ async def force_delete_tenant(db: AsyncSession, tenant_id: str) -> None:
         _delete(SkillAllowedTool).where(
             SkillAllowedTool.skill_id.in_(
                 _select(Skill.id).where(Skill.tenant_id == tenant_id)
-            )
-        )
-    )
-    await db.execute(
-        _delete(TemplateAllowedTool).where(
-            TemplateAllowedTool.template_id.in_(
-                _select(Template.id).where(Template.tenant_id == tenant_id)
             )
         )
     )

@@ -1,7 +1,7 @@
 // =============================================================================
 // PH Agent Hub — Admin TemplateForm
 // =============================================================================
-// Ant Design Create/Edit Modal+Form; tool_ids multi-select.
+// Ant Design Create/Edit Modal+Form.
 // =============================================================================
 
 import React from "react";
@@ -17,7 +17,6 @@ import {
   createTemplate,
   updateTemplate,
   TemplateData,
-  listTools,
   listModels,
   listTenants,
   listUsers,
@@ -41,12 +40,6 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
   const isAdmin = user?.role === "admin";
   const scope = Form.useWatch("scope", form);
   const tenantId = Form.useWatch("tenant_id", form);
-
-  const { data: tools } = useQuery({
-    queryKey: ["admin-tools", tenantId],
-    queryFn: () => listTools({ tenant_id: tenantId }),
-    enabled: open,
-  });
 
   const { data: models } = useQuery({
     queryKey: ["admin-models", tenantId],
@@ -77,7 +70,6 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
           scope: duplicateFrom.scope,
           default_model_id: duplicateFrom.default_model_id,
           assigned_user_id: duplicateFrom.assigned_user_id,
-          tool_ids: duplicateFrom.tool_ids || [],
         });
       } else if (template) {
         form.setFieldsValue({
@@ -88,14 +80,12 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
           scope: template.scope,
           default_model_id: template.default_model_id,
           assigned_user_id: template.assigned_user_id,
-          tool_ids: template.tool_ids || [],
         });
       } else {
         form.resetFields();
         form.setFieldsValue({
           tenant_id: undefined,
           scope: "tenant",
-          tool_ids: [],
         });
       }
     }
@@ -214,17 +204,6 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
             options={(models || []).map((m) => ({
               label: `${m.name} (${m.provider})`,
               value: m.id,
-            }))}
-          />
-        </Form.Item>
-        <Form.Item name="tool_ids" label="Tools">
-          <Select
-            mode="multiple"
-            allowClear
-            placeholder="Select tools"
-            options={(tools || []).map((t) => ({
-              label: t.name,
-              value: t.id,
             }))}
           />
         </Form.Item>
