@@ -61,14 +61,9 @@ async def delete_tenant(db: AsyncSession, tenant_id: str) -> None:
         raise NotFoundError("Tenant not found")
 
     # ------------------------------------------------------------------
-    # Auto-cleanup: historical records that shouldn't block deletion
+    # Usage/audit logs are denormalized (no FKs) — they survive deletion
+    # and do NOT need to be cleaned up.
     # ------------------------------------------------------------------
-    from ..db.orm.audit_logs import AuditLog
-    from ..db.orm.usage_logs import UsageLog
-
-    await db.execute(delete(AuditLog).where(AuditLog.tenant_id == tenant_id))
-    await db.execute(delete(UsageLog).where(UsageLog.tenant_id == tenant_id))
-    await db.flush()
 
     # ------------------------------------------------------------------
     # Blocker check: active resources that must be handled manually
@@ -134,9 +129,10 @@ async def force_delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     2. messages, memory, file_uploads (S3 first, then DB)
     3. prompts, skills, templates, sessions
     4. tags, rag_documents, tools, models, user_groups
-    5. usage_logs, audit_logs, users
+    5. users
     6. tenant itself
 
+    Usage/audit logs are denormalized (no FKs) and survive deletion.
     Also deletes S3 objects for all file_uploads belonging to the tenant
     before removing the DB rows.  Raises NotFoundError if the tenant does
     not exist.
@@ -300,18 +296,8 @@ async def force_delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     await db.flush()
 
     # ==================================================================
-    # Step 5 — Historical records (FK to users, models)
-    # ==================================================================
-    await db.execute(
-        _delete(UsageLog).where(UsageLog.tenant_id == tenant_id)
-    )
-    await db.execute(
-        _delete(AuditLog).where(AuditLog.tenant_id == tenant_id)
-    )
-    await db.flush()
-
-    # ==================================================================
-    # Step 6 — Users (FK to tenants)
+    # Step 5 — Users (FK to tenants)
+    # (Usage/audit logs are denormalized — no FKs, survive deletion)
     # ==================================================================
     await db.execute(
         _delete(UserORM).where(UserORM.tenant_id == tenant_id)

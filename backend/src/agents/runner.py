@@ -687,8 +687,9 @@ async def run_agent(
                 user_message=contextualized_message,
                 agent_name=cfg.agent_name,
             )
+            cache_hit_tokens = 0
         else:
-            raw_response, tokens_in, tokens_out = await _run_agent(
+            raw_response, tokens_in, tokens_out, cache_hit_tokens = await _run_agent(
                 model=cfg.model,
                 model_client=cfg.model_client,
                 system_prompt=cfg.system_prompt,
@@ -730,10 +731,19 @@ async def run_agent(
         await write_usage_log(
             db,
             tenant_id=current_user.tenant_id,
+            tenant_name=getattr(current_user, "tenant_name", None) or "",
             user_id=current_user.id,
+            user_email=current_user.email,
+            user_full_name=current_user.display_name,
             model_id=cfg.model.id,
+            model_name=cfg.model.name,
+            provider=cfg.model.provider,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            cache_hit_tokens=cache_hit_tokens,
+            input_price=getattr(cfg.model, "input_price_per_1m", None),
+            output_price=getattr(cfg.model, "output_price_per_1m", None),
+            cache_hit_price=getattr(cfg.model, "cache_hit_price_per_1m", None),
         )
     except Exception:
         logger.exception("Failed to write usage log (non-streaming)")
@@ -1130,11 +1140,11 @@ async def _run_agent(
     tools: list,
     user_message: str,
     agent_name: str,
-) -> tuple[str, int, int]:
+) -> tuple[str, int, int, int]:
     """Run a simple MAF Agent.
 
     Returns:
-        A tuple of (response_text, tokens_in, tokens_out).
+        A tuple of (response_text, tokens_in, tokens_out, cache_hit_tokens).
     """
     from agent_framework import Agent
 
@@ -1148,15 +1158,15 @@ async def _run_agent(
     result = await agent.run(user_message)
 
     # Extract token counts (best-effort)
-    tokens_in, tokens_out = _extract_token_counts(result)
+    tokens_in, tokens_out, cache_hit = _extract_token_counts(result)
 
     # result could be a string or a structured object
     if isinstance(result, str):
-        return result, tokens_in, tokens_out
+        return result, tokens_in, tokens_out, cache_hit
 
     # MAF may return an object with a .final_output or .content attribute
     if hasattr(result, "final_output"):
-        return str(result.final_output), tokens_in, tokens_out
+        return str(result.final_output), tokens_in, tokens_out, cache_hit
     if hasattr(result, "content"):
         return str(result.content), tokens_in, tokens_out
 
@@ -1545,7 +1555,9 @@ async def run_agent_stream(
         return  # Don't proceed to message_complete on error
 
     # ---- 8. Extract token counts from stream final response -------------
-    tokens_in, tokens_out = _stream_token_info.get("in", 0), _stream_token_info.get("out", 0)
+    tokens_in = _stream_token_info.get("in", 0) or 0
+    tokens_out = _stream_token_info.get("out", 0) or 0
+    cache_hit_tokens_stream = _stream_token_info.get("cache_hit", 0) or 0
 
     # ---- 9. Persist assistant message ------------------------------------
     await _persist_assistant_message(
@@ -1565,10 +1577,19 @@ async def run_agent_stream(
         await write_usage_log(
             db,
             tenant_id=current_user.tenant_id,
+            tenant_name=getattr(current_user, "tenant_name", None) or "",
             user_id=current_user.id,
+            user_email=current_user.email,
+            user_full_name=current_user.display_name,
             model_id=cfg.model.id,
+            model_name=cfg.model.name,
+            provider=cfg.model.provider,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
+            cache_hit_tokens=cache_hit_tokens_stream,
+            input_price=getattr(cfg.model, "input_price_per_1m", None),
+            output_price=getattr(cfg.model, "output_price_per_1m", None),
+            cache_hit_price=getattr(cfg.model, "cache_hit_price_per_1m", None),
         )
     except Exception:
         logger.exception("Failed to write usage log (streaming)")
@@ -1774,6 +1795,12 @@ async def _run_agent_stream(
             if usage and isinstance(usage, dict):
                 token_counts["in"] = usage.get("input_token_count", 0) or 0
                 token_counts["out"] = usage.get("output_token_count", 0) or 0
+                cache_hit = usage.get("cache_read_input_tokens", 0) or 0
+                if cache_hit == 0:
+                    details = usage.get("prompt_tokens_details", {})
+                    if isinstance(details, dict):
+                        cache_hit = details.get("cached_tokens", 0) or 0
+                token_counts["cache_hit"] = cache_hit
     except Exception:
         pass  # Token count is best-effort for Phase 7
 
@@ -2247,18 +2274,24 @@ async def _auto_tag_session(
 # ---------------------------------------------------------------------------
 
 
-def _extract_token_counts(result: Any) -> tuple[int, int]:
+def _extract_token_counts(result: Any) -> tuple[int, int, int]:
     """Best-effort extraction of token counts from a MAF agent response.
 
     Returns:
-        A tuple of (tokens_in, tokens_out), defaulting to (0, 0).
+        A tuple of (tokens_in, tokens_out, cache_hit_tokens), defaulting to (0, 0, 0).
     """
     try:
         usage = getattr(result, "usage_details", None)
         if usage and isinstance(usage, dict):
             tokens_in = usage.get("input_token_count", 0) or 0
             tokens_out = usage.get("output_token_count", 0) or 0
-            return tokens_in, tokens_out
+            cache_hit = usage.get("cache_read_input_tokens", 0) or 0
+            # Also check OpenAI-style nested structure
+            if cache_hit == 0:
+                details = usage.get("prompt_tokens_details", {})
+                if isinstance(details, dict):
+                    cache_hit = details.get("cached_tokens", 0) or 0
+            return tokens_in, tokens_out, cache_hit
     except Exception:
         pass
-    return 0, 0
+    return 0, 0, 0

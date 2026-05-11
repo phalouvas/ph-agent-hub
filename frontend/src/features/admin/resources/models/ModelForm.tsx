@@ -106,6 +106,9 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           thinking_enabled: model.thinking_enabled,
           follow_up_questions_enabled: model.follow_up_questions_enabled,
           context_length: model.context_length,
+          input_price_per_1m: model.input_price_per_1m,
+          output_price_per_1m: model.output_price_per_1m,
+          cache_hit_price_per_1m: model.cache_hit_price_per_1m,
         });
         setIsPublic(model.is_public);
       } else {
@@ -119,6 +122,9 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
           thinking_enabled: false,
           follow_up_questions_enabled: false,
           context_length: undefined,
+          input_price_per_1m: undefined,
+          output_price_per_1m: undefined,
+          cache_hit_price_per_1m: undefined,
         });
         setIsPublic(false);
         setInitialGroupIds([]);
@@ -242,6 +248,27 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         </Form.Item>
         <Form.Item name="temperature" label="Temperature">
           <InputNumber min={0} max={2} step={0.1} style={{ width: "100%" }} />
+        </Form.Item>
+        <Form.Item
+          name="input_price_per_1m"
+          label="Input Price ($/1M tokens)"
+          tooltip="Price per 1 million input tokens. Used for cost calculation."
+        >
+          <InputNumber min={0} step={0.0001} style={{ width: "100%" }} placeholder="e.g., 0.14" />
+        </Form.Item>
+        <Form.Item
+          name="output_price_per_1m"
+          label="Output Price ($/1M tokens)"
+          tooltip="Price per 1 million output tokens. Used for cost calculation."
+        >
+          <InputNumber min={0} step={0.0001} style={{ width: "100%" }} placeholder="e.g., 0.28" />
+        </Form.Item>
+        <Form.Item
+          name="cache_hit_price_per_1m"
+          label="Cache Hit Price ($/1M tokens)"
+          tooltip="Price per 1 million cached input tokens. Defaults to input price if not set."
+        >
+          <InputNumber min={0} step={0.0001} style={{ width: "100%" }} placeholder="e.g., 0.0028" />
         </Form.Item>
 
         <Form.Item shouldUpdate noStyle>

@@ -23,6 +23,7 @@ from .file_uploads import FileUpload
 from .rag import RAGDocument
 from .usage_logs import UsageLog
 from .audit_logs import AuditLog
+from .app_settings import AppSetting
 
 __all__ = [
     "Tenant",
@@ -48,4 +49,5 @@ __all__ = [
     "RAGDocument",
     "UsageLog",
     "AuditLog",
+    "AppSetting",
 ]

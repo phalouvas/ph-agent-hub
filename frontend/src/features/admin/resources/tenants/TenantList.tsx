@@ -25,6 +25,7 @@ import {
   TenantData,
 } from "../../services/admin";
 import { TenantForm } from "./TenantForm";
+import { formatCurrency } from "../../../../shared/utils/formatCurrency";
 
 const { useBreakpoint } = Grid;
 const { Text } = Typography;
@@ -56,6 +57,12 @@ export function TenantList() {
 
   const columns = [
     { title: "Name", dataIndex: "name", key: "name" },
+    {
+      title: "Cost",
+      dataIndex: "total_cost",
+      key: "total_cost",
+      render: (v: number) => formatCurrency(v),
+    },
     {
       title: "Created",
       dataIndex: "created_at",
