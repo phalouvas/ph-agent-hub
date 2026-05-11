@@ -15,13 +15,39 @@ from agent_framework import tool
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# HTTP helper
+# HTTP helpers
 # ---------------------------------------------------------------------------
 
 
 def _build_auth_header(api_key: str, api_secret: str) -> dict[str, str]:
     """Return the Authorization header dict for ERPNext REST API."""
     return {"Authorization": f"token {api_key}:{api_secret}"}
+
+
+async def _safe_erpnext_response(resp: httpx.Response) -> dict:
+    """Process an ERPNext HTTP response, returning the JSON body.
+
+    On non-2xx status codes, returns the error body as a dict instead of
+    raising an exception.  This lets the agent see the *actual* ERPNext
+    error message (e.g. missing required arguments) so it can self-correct.
+
+    ERPNext error responses include fields like ``exc_type``, ``exc``, and
+    ``_server_messages`` which the tool-error detector recognises.
+    """
+    try:
+        body: dict = resp.json()
+    except Exception:
+        body = {"error": f"ERPNext returned {resp.status_code} (non-JSON body)"}
+    if resp.is_error:
+        logger.warning(
+            "ERPNext API error %d from %s %s: %s",
+            resp.status_code,
+            resp.request.method if resp.request else "?",
+            resp.url,
+            json.dumps(body, default=str)[:500],
+        )
+        return body  # let the agent see the error to self-correct
+    return body
 
 
 # ---------------------------------------------------------------------------
@@ -65,8 +91,7 @@ def build_erpnext_tools(
         """
         url = f"/api/resource/{doctype}/{name}"
         resp = await client.get(url)
-        resp.raise_for_status()
-        data: dict = resp.json()
+        data: dict = await _safe_erpnext_response(resp)
         logger.debug("get_doc %s/%s → %d bytes", doctype, name, len(json.dumps(data)))
         return data
 
@@ -108,8 +133,7 @@ def build_erpnext_tools(
 
         url = f"/api/resource/{doctype}"
         resp = await client.get(url, params=params)
-        resp.raise_for_status()
-        data: dict = resp.json()
+        data: dict = await _safe_erpnext_response(resp)
         results: list[dict] = data.get("data", [])
         logger.debug(
             "get_list %s (filters=%s) → %d records",
@@ -130,8 +154,7 @@ def build_erpnext_tools(
         """
         url = f"/api/resource/{doctype}"
         resp = await client.post(url, json=data)
-        resp.raise_for_status()
-        result: dict = resp.json()
+        result: dict = await _safe_erpnext_response(resp)
         logger.debug("create_doc %s → %s", doctype, result.get("data", {}).get("name", "?"))
         return result
 
@@ -147,8 +170,7 @@ def build_erpnext_tools(
         """
         url = f"/api/resource/{doctype}/{name}"
         resp = await client.put(url, json=data)
-        resp.raise_for_status()
-        result: dict = resp.json()
+        result: dict = await _safe_erpnext_response(resp)
         logger.debug("update_doc %s/%s", doctype, name)
         return result
 
@@ -163,7 +185,7 @@ def build_erpnext_tools(
         """
         url = f"/api/resource/{doctype}/{name}"
         resp = await client.delete(url)
-        resp.raise_for_status()
+        await _safe_erpnext_response(resp)
         logger.debug("delete_doc %s/%s", doctype, name)
         return {"message": f"Deleted {doctype} {name}"}
 
@@ -178,8 +200,7 @@ def build_erpnext_tools(
         """
         url = f"/api/resource/{doctype}/{name}"
         resp = await client.put(url, json={"docstatus": 1})
-        resp.raise_for_status()
-        result: dict = resp.json()
+        result: dict = await _safe_erpnext_response(resp)
         logger.debug("submit_doc %s/%s", doctype, name)
         return result
 
@@ -194,8 +215,7 @@ def build_erpnext_tools(
         """
         url = f"/api/resource/{doctype}/{name}"
         resp = await client.put(url, json={"docstatus": 2})
-        resp.raise_for_status()
-        result: dict = resp.json()
+        result: dict = await _safe_erpnext_response(resp)
         logger.debug("cancel_doc %s/%s", doctype, name)
         return result
 
@@ -213,8 +233,7 @@ def build_erpnext_tools(
         """
         url = "/api/method/frappe.client.amend_doc"
         resp = await client.post(url, json={"doctype": doctype, "name": name})
-        resp.raise_for_status()
-        result: dict = resp.json()
+        result: dict = await _safe_erpnext_response(resp)
         logger.debug("amend_doc %s/%s", doctype, name)
         return result
 
@@ -229,8 +248,7 @@ def build_erpnext_tools(
         """
         url = f"/api/resource/DocType/{doctype}"
         resp = await client.get(url)
-        resp.raise_for_status()
-        data: dict = resp.json()
+        data: dict = await _safe_erpnext_response(resp)
         doc_data: dict = data.get("data", {})
         all_fields: list[dict] = doc_data.get("fields", [])
         # Return only the most relevant field attributes to keep output
@@ -258,8 +276,11 @@ def build_erpnext_tools(
         custom reports, payroll, etc.
 
         Args:
-            method: The dotted method path (e.g. "frappe.core.doctype.file.file.upload_file").
+            method: The dotted method path (e.g. "frappe.core.doctype.file.file.upload_file"
+                or "frappe.get_list").
             args: Optional dict of keyword arguments to pass to the method.
+                For ``frappe.get_list`` you MUST pass ``doctype`` here, e.g.
+                ``{"doctype": "Sales Order"}``.
             http_method: HTTP method to use, "GET" or "POST" (default "POST").
         """
         url = f"/api/method/{method}"
@@ -270,8 +291,7 @@ def build_erpnext_tools(
             resp = await client.get(url, params=params)
         else:
             resp = await client.post(url, json=args or {})
-        resp.raise_for_status()
-        result: dict = resp.json()
+        result: dict = await _safe_erpnext_response(resp)
         logger.debug("call_method %s (%s)", method, http_method)
         return result
 
@@ -346,8 +366,7 @@ def build_erpnext_tools(
                     data=data_payload,
                     files=files_payload,
                 )
-                resp.raise_for_status()
-                result: dict = resp.json()
+                result: dict = await _safe_erpnext_response(resp)
                 logger.debug(
                     "upload_file %s → ERPNext file %s",
                     filename,
