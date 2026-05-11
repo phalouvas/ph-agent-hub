@@ -24,7 +24,7 @@ import {
   TeamOutlined,
   DollarOutlined,
 } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../../../../providers/AuthProvider";
 import {
   listUsage,
@@ -39,6 +39,7 @@ const { Title } = Typography;
 export function AnalyticsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  const queryClient = useQueryClient();
 
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(
     isAdmin ? undefined : user?.tenant_id,
@@ -53,11 +54,21 @@ export function AnalyticsPage() {
   });
 
   // Fetch users for the selected tenant
-  const { data: users } = useQuery({
+  const { data: users, isFetching: usersLoading } = useQuery({
     queryKey: ["admin-users", selectedTenantId],
     queryFn: () => listUsers({ tenant_id: selectedTenantId }),
     enabled: !!selectedTenantId,
+    // Don't keep stale data when tenant changes
+    placeholderData: (prev) => prev,
   });
+
+  // Reset user selection when tenant changes
+  const handleTenantChange = (value: string | undefined) => {
+    setSelectedTenantId(value);
+    setSelectedUserId(undefined);
+    // Force clear stale users data by triggering a new query
+    queryClient.removeQueries({ queryKey: ["admin-users"] });
+  };
 
   const { data: usage, isLoading } = useQuery({
     queryKey: ["admin-usage", selectedTenantId, selectedUserId],
@@ -76,11 +87,6 @@ export function AnalyticsPage() {
     usage?.reduce((sum, u) => sum + (u.cost || 0), 0) || 0;
   const uniqueUsers = new Set(usage?.map((u) => u.user_id) || []).size;
   const uniqueModels = new Set(usage?.map((u) => u.model_id) || []).size;
-
-  const handleTenantChange = (value: string | undefined) => {
-    setSelectedTenantId(value);
-    setSelectedUserId(undefined);
-  };
 
   const columns = [
     {
@@ -161,6 +167,7 @@ export function AnalyticsPage() {
               style={{ width: 250 }}
               value={selectedUserId}
               onChange={setSelectedUserId}
+              loading={usersLoading}
               options={users?.map((u) => ({
                 value: u.id,
                 label: `${u.display_name} (${u.email})`,
