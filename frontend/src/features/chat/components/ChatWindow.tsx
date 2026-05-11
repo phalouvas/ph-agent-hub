@@ -496,7 +496,7 @@ export function ChatWindow({
       updated_at: new Date().toISOString(),
     });
   }
-  if (streamingContent && streamingMessageId) {
+  if ((streamingContent || streamingReasoningContent) && streamingMessageId) {
     displayMessages.push({
       id: streamingMessageId,
       session_id: sessionId,
@@ -765,6 +765,7 @@ export function ChatWindow({
               }
               disabled={streaming}
               regenerating={regeneratingMsgId === msg.id}
+              streaming={msg.id === streamingMessageId}
             />
           ))
         )}
@@ -788,8 +789,8 @@ export function ChatWindow({
           />
         )}
 
-        {/* Thinking placeholder — shown while streaming/editing but before content */}
-        {(streaming) && !streamingContent && (
+        {/* Thinking placeholder — shown while streaming but before any content or reasoning */}
+        {(streaming) && !streamingContent && !streamingReasoningContent && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
               <Space style={{ marginLeft: 4 }}>
