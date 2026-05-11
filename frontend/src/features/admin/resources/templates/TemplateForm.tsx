@@ -40,16 +40,17 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const scope = Form.useWatch("scope", form);
+  const tenantId = Form.useWatch("tenant_id", form);
 
   const { data: tools } = useQuery({
-    queryKey: ["admin-tools"],
-    queryFn: () => listTools(),
+    queryKey: ["admin-tools", tenantId],
+    queryFn: () => listTools({ tenant_id: tenantId }),
     enabled: open,
   });
 
   const { data: models } = useQuery({
-    queryKey: ["admin-models"],
-    queryFn: () => listModels(),
+    queryKey: ["admin-models", tenantId],
+    queryFn: () => listModels({ tenant_id: tenantId }),
     enabled: open,
   });
 

@@ -955,15 +955,20 @@ class AdminTemplateResponse(BaseModel):
 
 @router.get("/templates", response_model=list[AdminTemplateResponse])
 async def admin_list_templates(
+    tenant_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List templates. Admin sees all. Manager sees own tenant only."""
+    """List templates. Admin sees all (optionally filtered by tenant).
+    Manager sees own tenant only."""
     if current_user.role == "admin":
-        # Admin sees all templates across all tenants
         from sqlalchemy import select
         from ..db.orm.templates import Template as TemplateORM
-        result = await db.execute(select(TemplateORM).order_by(TemplateORM.created_at))
+        stmt = select(TemplateORM)
+        if tenant_id is not None:
+            stmt = stmt.where(TemplateORM.tenant_id == tenant_id)
+        stmt = stmt.order_by(TemplateORM.created_at)
+        result = await db.execute(stmt)
         templates = list(result.scalars().all())
     else:
         templates = await _svc_list_templates(

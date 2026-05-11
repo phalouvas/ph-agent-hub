@@ -41,24 +41,25 @@ export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProp
   const isEdit = !!skill && !duplicateFrom;
   const executionType = Form.useWatch("execution_type", form);
   const visibility = Form.useWatch("visibility", form);
+  const tenantId = Form.useWatch("tenant_id", form);
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
   const { data: tools } = useQuery({
-    queryKey: ["admin-tools"],
-    queryFn: () => listTools(),
+    queryKey: ["admin-tools", tenantId],
+    queryFn: () => listTools({ tenant_id: tenantId }),
     enabled: open,
   });
 
   const { data: models } = useQuery({
-    queryKey: ["admin-models"],
-    queryFn: () => listModels(),
+    queryKey: ["admin-models", tenantId],
+    queryFn: () => listModels({ tenant_id: tenantId }),
     enabled: open,
   });
 
   const { data: templates } = useQuery({
-    queryKey: ["admin-templates"],
-    queryFn: () => listTemplates(),
+    queryKey: ["admin-templates", tenantId],
+    queryFn: () => listTemplates({ tenant_id: tenantId }),
     enabled: open,
   });
 
