@@ -1211,9 +1211,14 @@ async def _persist_assistant_message(
     tool_events: list[dict] | None = None,
     tokens_in: int = 0,
     tokens_out: int = 0,
+    reasoning: str = "",
 ) -> str:
     """Persist just the assistant message, returning its ID."""
     content: list[dict] = []
+
+    # Prepend reasoning content (always first, before tool events)
+    if reasoning.strip():
+        content.append({"type": "reasoning", "text": reasoning})
 
     # Build content array: tool events interleaved before the final text
     for evt in (tool_events or []):
@@ -1370,6 +1375,7 @@ async def run_agent_stream(
     is_temporary = session_data.get("is_temporary", False)
 
     accumulated_text: str = ""
+    accumulated_reasoning: str = ""
     accumulated_tool_events: list[dict] = []
     step_index: int = 0
     total_tokens: int = 0
@@ -1460,11 +1466,18 @@ async def run_agent_stream(
                 accumulated_text = _maybe_accumulate_text(
                     event_dict, accumulated_text
                 )
+                accumulated_reasoning = _maybe_accumulate_reasoning(
+                    event_dict, accumulated_reasoning
+                )
                 break
 
             # Accumulate text from token events
             accumulated_text = _maybe_accumulate_text(
                 event_dict, accumulated_text
+            )
+            # Accumulate reasoning from reasoning_token events
+            accumulated_reasoning = _maybe_accumulate_reasoning(
+                event_dict, accumulated_reasoning
             )
             # Accumulate tool events for persistence
             accumulated_tool_events = _maybe_accumulate_tool_events(
@@ -1499,6 +1512,7 @@ async def run_agent_stream(
         tool_events=accumulated_tool_events,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
+        reasoning=accumulated_reasoning,
     )
 
     # ---- 10. Write usage log ---------------------------------------------
@@ -1803,6 +1817,18 @@ def _sse_event(
 def _maybe_accumulate_text(event_dict: dict, current: str) -> str:
     """If *event_dict* is a ``token`` event, append its delta to *current*."""
     if event_dict.get("event") != "token":
+        return current
+    try:
+        payload = json.loads(event_dict["data"])
+        delta = payload.get("delta", "")
+        return current + delta
+    except (json.JSONDecodeError, KeyError):
+        return current
+
+
+def _maybe_accumulate_reasoning(event_dict: dict, current: str) -> str:
+    """If *event_dict* is a ``reasoning_token`` event, append its delta to *current*."""
+    if event_dict.get("event") != "reasoning_token":
         return current
     try:
         payload = json.loads(event_dict["data"])
