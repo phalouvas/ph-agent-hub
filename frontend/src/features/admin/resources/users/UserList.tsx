@@ -22,6 +22,7 @@ import {
 import {
   EditOutlined,
   DeleteOutlined,
+  CopyOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +35,7 @@ const { Text } = Typography;
 
 export function UserList() {
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
+  const [duplicatingUser, setDuplicatingUser] = useState<UserData | null>(null);
   const [creating, setCreating] = useState(false);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -104,6 +106,12 @@ export function UserList() {
             size="small"
             onClick={() => setEditingUser(record)}
           />
+          <Button
+            icon={<CopyOutlined />}
+            size="small"
+            onClick={() => setDuplicatingUser(record)}
+            title="Duplicate"
+          />
           <Popconfirm
             title="Delete this user?"
             onConfirm={() => deleteMutation.mutate(record.id)}
@@ -136,6 +144,12 @@ export function UserList() {
                   icon={<EditOutlined />}
                   type="link"
                   onClick={() => setEditingUser(user)}
+                />,
+                <Button
+                  icon={<CopyOutlined />}
+                  type="link"
+                  onClick={() => setDuplicatingUser(user)}
+                  title="Duplicate"
                 />,
                 <Popconfirm
                   title="Delete?"
@@ -195,6 +209,13 @@ export function UserList() {
           setEditingUser(null);
           setCreating(false);
         }}
+      />
+
+      <UserForm
+        open={!!duplicatingUser}
+        user={null}
+        duplicateFrom={duplicatingUser}
+        onClose={() => setDuplicatingUser(null)}
       />
     </div>
   );

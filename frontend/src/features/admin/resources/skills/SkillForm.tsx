@@ -31,13 +31,14 @@ const { TextArea } = Input;
 interface SkillFormProps {
   open: boolean;
   skill: SkillData | null;
+  duplicateFrom?: SkillData | null;
   onClose: () => void;
 }
 
-export function SkillForm({ open, skill, onClose }: SkillFormProps) {
+export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
-  const isEdit = !!skill;
+  const isEdit = !!skill && !duplicateFrom;
   const executionType = Form.useWatch("execution_type", form);
   const visibility = Form.useWatch("visibility", form);
   const { user } = useAuth();
@@ -75,7 +76,21 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
 
   React.useEffect(() => {
     if (open) {
-      if (skill) {
+      if (duplicateFrom) {
+        form.setFieldsValue({
+          tenant_id: duplicateFrom.tenant_id,
+          user_id: duplicateFrom.user_id,
+          title: `${duplicateFrom.title} (Copy)`,
+          description: duplicateFrom.description,
+          execution_type: duplicateFrom.execution_type,
+          maf_target_key: duplicateFrom.maf_target_key,
+          visibility: duplicateFrom.visibility,
+          template_id: duplicateFrom.template_id,
+          default_model_id: duplicateFrom.default_model_id,
+          enabled: duplicateFrom.enabled,
+          tool_ids: duplicateFrom.tool_ids || [],
+        });
+      } else if (skill) {
         form.setFieldsValue({
           tenant_id: skill.tenant_id,
           user_id: skill.user_id,
@@ -101,7 +116,7 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
         });
       }
     }
-  }, [open, skill, form]);
+  }, [open, skill, duplicateFrom, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -130,7 +145,7 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
 
   return (
     <Modal
-      title={isEdit ? "Edit Skill" : "Create Skill"}
+      title={duplicateFrom ? "Duplicate Skill" : isEdit ? "Edit Skill" : "Create Skill"}
       open={open}
       onOk={async () => {
         const values = await form.validateFields();

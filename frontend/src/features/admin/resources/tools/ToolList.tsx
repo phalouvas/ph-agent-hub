@@ -18,13 +18,14 @@ import {
   Card,
   Typography,
 } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listTools,
   deleteTool,
   updateTool,
+  listTenants,
   ToolData,
 } from "../../services/admin";
 import { ToolForm } from "./ToolForm";
@@ -33,6 +34,7 @@ const { useBreakpoint } = Grid;
 
 export function ToolList() {
   const [editingTool, setEditingTool] = useState<ToolData | null>(null);
+  const [duplicatingTool, setDuplicatingTool] = useState<ToolData | null>(null);
   const [creating, setCreating] = useState(false);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -44,6 +46,13 @@ export function ToolList() {
     queryKey: ["admin-tools", tenantId],
     queryFn: () => listTools({ tenant_id: tenantId }),
   });
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-tool-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteTool,
@@ -76,7 +85,14 @@ export function ToolList() {
       width: 130,
       ellipsis: true,
       responsive: ["lg" as const],
-      render: (v: string) => <Typography.Text code style={{ fontSize: 11 }}>{v.slice(0, 8)}…</Typography.Text>,
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? (
+          <Typography.Text>{tenantName}</Typography.Text>
+        ) : (
+          <Typography.Text type="secondary">Unknown tenant</Typography.Text>
+        );
+      },
     },
     {
       title: "Enabled",
@@ -100,6 +116,12 @@ export function ToolList() {
             icon={<EditOutlined />}
             size="small"
             onClick={() => setEditingTool(record)}
+          />
+          <Button
+            icon={<CopyOutlined />}
+            size="small"
+            onClick={() => setDuplicatingTool(record)}
+            title="Duplicate"
           />
           <Popconfirm
             title="Delete this tool?"
@@ -133,6 +155,12 @@ export function ToolList() {
                   icon={<EditOutlined />}
                   type="link"
                   onClick={() => setEditingTool(tool)}
+                />,
+                <Button
+                  icon={<CopyOutlined />}
+                  type="link"
+                  onClick={() => setDuplicatingTool(tool)}
+                  title="Duplicate"
                 />,
                 <Popconfirm
                   title="Delete?"
@@ -179,6 +207,13 @@ export function ToolList() {
           setEditingTool(null);
           setCreating(false);
         }}
+      />
+
+      <ToolForm
+        open={!!duplicatingTool}
+        tool={null}
+        duplicateFrom={duplicatingTool}
+        onClose={() => setDuplicatingTool(null)}
       />
     </div>
   );

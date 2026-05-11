@@ -27,6 +27,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listAdminSessions,
   deleteAdminSession,
+  listTenants,
   AdminSessionData,
 } from "../../services/admin";
 
@@ -46,6 +47,13 @@ export function SessionList() {
     queryFn: () => listAdminSessions({ tenant_id: tenantId }),
   });
 
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-session-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+
   const deleteMutation = useMutation({
     mutationFn: deleteAdminSession,
     onSuccess: () => {
@@ -58,10 +66,12 @@ export function SessionList() {
     if (!searchText.trim()) return true;
     const lower = searchText.toLowerCase();
     const tagNames = (s.tags || []).map((t) => t.name.toLowerCase()).join(" ");
+    const tenantName = tenantNameById.get(s.tenant_id)?.toLowerCase() || "";
     return (
       s.title.toLowerCase().includes(lower) ||
       s.user_id.toLowerCase().includes(lower) ||
       s.tenant_id.toLowerCase().includes(lower) ||
+      tenantName.includes(lower) ||
       tagNames.includes(lower)
     );
   });
@@ -105,7 +115,10 @@ export function SessionList() {
       width: 120,
       ellipsis: true,
       responsive: ["lg" as const],
-      render: (v: string) => <Text code style={{ fontSize: 11 }}>{v.slice(0, 8)}…</Text>,
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? <Text>{tenantName}</Text> : <Text type="secondary">Unknown tenant</Text>;
+      },
     },
     {
       title: "User",

@@ -27,6 +27,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listAdminMemories,
   deleteAdminMemory,
+  listTenants,
   MemoryData,
 } from "../../services/admin";
 
@@ -45,6 +46,13 @@ export function MemoryList() {
     queryKey: ["admin-memories", tenantId],
     queryFn: () => listAdminMemories({ tenant_id: tenantId }),
   });
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-memory-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteAdminMemory,
@@ -97,6 +105,10 @@ export function MemoryList() {
       width: 120,
       ellipsis: true,
       responsive: ["lg" as const],
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? <Text>{tenantName}</Text> : <Text type="secondary">Unknown tenant</Text>;
+      },
     },
     {
       title: "User",

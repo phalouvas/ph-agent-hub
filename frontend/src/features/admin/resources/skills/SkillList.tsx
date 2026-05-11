@@ -18,7 +18,7 @@ import {
   Card,
   Typography,
 } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -34,6 +34,7 @@ const { Text } = Typography;
 
 export function SkillList() {
   const [editingSkill, setEditingSkill] = useState<SkillData | null>(null);
+  const [duplicatingSkill, setDuplicatingSkill] = useState<SkillData | null>(null);
   const [creating, setCreating] = useState(false);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -104,6 +105,12 @@ export function SkillList() {
             size="small"
             onClick={() => setEditingSkill(record)}
           />
+          <Button
+            icon={<CopyOutlined />}
+            size="small"
+            onClick={() => setDuplicatingSkill(record)}
+            title="Duplicate"
+          />
           <Popconfirm
             title="Delete this skill?"
             onConfirm={() => deleteMutation.mutate(record.id)}
@@ -136,6 +143,12 @@ export function SkillList() {
                   icon={<EditOutlined />}
                   type="link"
                   onClick={() => setEditingSkill(skill)}
+                />,
+                <Button
+                  icon={<CopyOutlined />}
+                  type="link"
+                  onClick={() => setDuplicatingSkill(skill)}
+                  title="Duplicate"
                 />,
                 <Popconfirm
                   title="Delete?"
@@ -186,6 +199,13 @@ export function SkillList() {
           setEditingSkill(null);
           setCreating(false);
         }}
+      />
+
+      <SkillForm
+        open={!!duplicatingSkill}
+        skill={null}
+        duplicateFrom={duplicatingSkill}
+        onClose={() => setDuplicatingSkill(null)}
       />
     </div>
   );
