@@ -45,31 +45,31 @@ export function SkillForm({ open, skill, onClose }: SkillFormProps) {
 
   const { data: tools } = useQuery({
     queryKey: ["admin-tools"],
-    queryFn: listTools,
+    queryFn: () => listTools(),
     enabled: open,
   });
 
   const { data: models } = useQuery({
     queryKey: ["admin-models"],
-    queryFn: listModels,
+    queryFn: () => listModels(),
     enabled: open,
   });
 
   const { data: templates } = useQuery({
     queryKey: ["admin-templates"],
-    queryFn: listTemplates,
+    queryFn: () => listTemplates(),
     enabled: open,
   });
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: listTenants,
+    queryFn: () => listTenants(),
     enabled: open && isAdmin,
   });
 
   const { data: users } = useQuery({
     queryKey: ["admin-users"],
-    queryFn: listUsers,
+    queryFn: () => listUsers(),
     enabled: open,
   });
 
