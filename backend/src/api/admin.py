@@ -30,6 +30,7 @@ from ..services.audit_service import list_audit_logs, write_audit_log
 from ..services.tenant_service import (
     create_tenant as _svc_create_tenant,
     delete_tenant as _svc_delete_tenant,
+    force_delete_tenant as _svc_force_delete_tenant,
     list_tenants as _svc_list_tenants,
     update_tenant as _svc_update_tenant,
 )
@@ -386,15 +387,22 @@ async def update_tenant(
 async def delete_tenant(
     tenant_id: str,
     request: Request,
+    force: bool = False,
     db: AsyncSession = Depends(get_db),
     _admin: UserORM = Depends(require_admin),
 ):
-    """Delete a tenant (admin only)."""
-    await _svc_delete_tenant(db, tenant_id)
+    """Delete a tenant (admin only). Set ?force=true to cascade-delete
+    all related data (users, sessions, models, tools, etc.) instead of
+    blocking when related resources exist."""
+    action = "tenant.force_deleted" if force else "tenant.deleted"
+    if force:
+        await _svc_force_delete_tenant(db, tenant_id)
+    else:
+        await _svc_delete_tenant(db, tenant_id)
     await write_audit_log(
         db,
         actor=_admin,
-        action="tenant.deleted",
+        action=action,
         target_type="tenant",
         target_id=tenant_id,
         ip_address=_get_client_ip(request),
@@ -409,14 +417,16 @@ async def delete_tenant(
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(
+    tenant_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List users: admin sees all, manager sees own tenant only."""
-    if current_user.role == "admin":
-        users = await _svc_list_users(db)
-    else:
+    """List users: admin sees all (optionally filtered by tenant),
+    manager sees own tenant only."""
+    if current_user.role == "manager":
         users = await _svc_list_users(db, tenant_id=current_user.tenant_id)
+    else:
+        users = await _svc_list_users(db, tenant_id=tenant_id)
     return [UserResponse.model_validate(u) for u in users]
 
 
@@ -1271,14 +1281,16 @@ async def get_logs(
 
 @router.get("/groups", response_model=list[GroupResponse])
 async def list_groups(
+    tenant_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List groups. Admin sees all, manager sees own tenant only."""
-    if current_user.role == "admin":
-        groups = await _svc_list_groups(db)
-    else:
+    """List groups. Admin sees all (optionally filtered by tenant),
+    manager sees own tenant only."""
+    if current_user.role == "manager":
         groups = await _svc_list_groups(db, tenant_id=current_user.tenant_id)
+    else:
+        groups = await _svc_list_groups(db, tenant_id=tenant_id)
     return [GroupResponse.model_validate(g) for g in groups]
 
 

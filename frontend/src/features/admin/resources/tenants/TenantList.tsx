@@ -10,6 +10,7 @@ import {
   Button,
   Space,
   Popconfirm,
+  Checkbox,
   message,
   Grid,
   List,
@@ -31,6 +32,7 @@ const { Text } = Typography;
 export function TenantList() {
   const [editingTenant, setEditingTenant] = useState<TenantData | null>(null);
   const [creating, setCreating] = useState(false);
+  const [forceDelete, setForceDelete] = useState(false);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
@@ -41,10 +43,11 @@ export function TenantList() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: deleteTenant,
+    mutationFn: (id: string) => deleteTenant(id, { force: forceDelete }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-tenants"] });
       message.success("Tenant deleted");
+      setForceDelete(false);
     },
     onError: (error: Error) => {
       message.error(error.message || "Failed to delete tenant");
@@ -70,7 +73,11 @@ export function TenantList() {
             onClick={() => setEditingTenant(record)}
           />
           <Popconfirm
-            title="Delete this tenant?"
+            title={
+              forceDelete
+                ? "⚠️ This will PERMANENTLY delete the tenant AND ALL related data (users, sessions, files, etc.). Continue?"
+                : "Delete this tenant?"
+            }
             onConfirm={() => deleteMutation.mutate(record.id)}
           >
             <Button icon={<DeleteOutlined />} size="small" danger />
@@ -86,6 +93,12 @@ export function TenantList() {
         <Button type="primary" onClick={() => setCreating(true)}>
           Create Tenant
         </Button>
+        <Checkbox
+          checked={forceDelete}
+          onChange={(e) => setForceDelete(e.target.checked)}
+        >
+          Force delete (cascade all data)
+        </Checkbox>
       </Space>
 
       {isMobile ? (
@@ -103,7 +116,11 @@ export function TenantList() {
                   onClick={() => setEditingTenant(tenant)}
                 />,
                 <Popconfirm
-                  title="Delete?"
+                  title={
+                    forceDelete
+                      ? "⚠️ This will PERMANENTLY delete the tenant AND ALL related data. Continue?"
+                      : "Delete?"
+                  }
                   onConfirm={() => deleteMutation.mutate(tenant.id)}
                 >
                   <Button icon={<DeleteOutlined />} type="link" danger />

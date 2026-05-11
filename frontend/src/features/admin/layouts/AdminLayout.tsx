@@ -7,7 +7,7 @@
 // =============================================================================
 
 import { useState } from "react";
-import { Layout, Menu, Button, Typography, Space, Tag, Drawer, Grid } from "antd";
+import { Layout, Menu, Button, Typography, Space, Tag, Drawer, Grid, Select } from "antd";
 import {
   UserOutlined,
   TeamOutlined,
@@ -24,9 +24,11 @@ import {
   CommentOutlined,
   MessageOutlined,
 } from "@ant-design/icons";
-import { useNavigate, useLocation, Outlet } from "react-router-dom";
+import { useNavigate, useLocation, Outlet, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../providers/AuthProvider";
 import { Logo } from "../../../shared/components/Logo";
+import { useQuery } from "@tanstack/react-query";
+import { listTenants } from "../services/admin";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -39,8 +41,28 @@ export function AdminLayout() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const isAdmin = user?.role === "admin";
+  const selectedTenantId = searchParams.get("tenant_id") || undefined;
+
+  // Fetch tenant list for the filter dropdown
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-selector"],
+    queryFn: listTenants,
+    enabled: isAdmin,
+  });
+
+  const handleTenantChange = (value: string | undefined) => {
+    setSearchParams((prev) => {
+      if (value) {
+        prev.set("tenant_id", value);
+      } else {
+        prev.delete("tenant_id");
+      }
+      return prev;
+    });
+  };
 
   const menuItems = [
     { key: "/admin/users", icon: <UserOutlined />, label: "Users" },
@@ -164,6 +186,27 @@ export function AdminLayout() {
               <Text style={{ color: "#fff" }}>{user?.display_name}</Text>
             </Space>
           </Header>
+          {isAdmin && (
+            <div
+              style={{
+                background: "#fff",
+                padding: "8px 16px",
+                borderBottom: "1px solid #f0f0f0",
+              }}
+            >
+              <Select
+                allowClear
+                placeholder="All tenants"
+                style={{ width: "100%" }}
+                value={selectedTenantId}
+                onChange={handleTenantChange}
+                options={(tenants || []).map((t) => ({
+                  value: t.id,
+                  label: t.name,
+                }))}
+              />
+            </div>
+          )}
           <Drawer
             open={mobileMenuOpen}
             onClose={() => setMobileMenuOpen(false)}
@@ -193,6 +236,19 @@ export function AdminLayout() {
             }}
           >
             <Space>
+              {isAdmin && (
+                <Select
+                  allowClear
+                  placeholder="All tenants"
+                  style={{ minWidth: 200 }}
+                  value={selectedTenantId}
+                  onChange={handleTenantChange}
+                  options={(tenants || []).map((t) => ({
+                    value: t.id,
+                    label: t.name,
+                  }))}
+                />
+              )}
               <Button
                 size="small"
                 onClick={() => navigate("/chat")}

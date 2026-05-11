@@ -18,6 +18,7 @@ import {
   Typography,
 } from "antd";
 import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listTemplates,
@@ -35,10 +36,12 @@ export function TemplateList() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") || undefined;
 
   const { data: templates, isLoading } = useQuery({
-    queryKey: ["admin-templates"],
-    queryFn: listTemplates,
+    queryKey: ["admin-templates", tenantId],
+    queryFn: () => listTemplates({ tenant_id: tenantId }),
   });
 
   const deleteMutation = useMutation({

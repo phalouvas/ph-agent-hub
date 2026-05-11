@@ -120,8 +120,11 @@ export interface AuditData {
 // Users
 // ---------------------------------------------------------------------------
 
-export function listUsers(): Promise<UserData[]> {
-  return api<UserData[]>("/admin/users");
+export function listUsers(params?: {
+  tenant_id?: string;
+}): Promise<UserData[]> {
+  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
+  return api<UserData[]>(`/admin/users${qs}`);
 }
 
 export function getUser(id: string): Promise<UserData> {
@@ -156,16 +159,23 @@ export function updateTenant(id: string, data: { name: string }): Promise<Tenant
   return api<TenantData>(`/admin/tenants/${id}`, { method: "PUT", body: data });
 }
 
-export function deleteTenant(id: string): Promise<void> {
-  return api<void>(`/admin/tenants/${id}`, { method: "DELETE" });
+export function deleteTenant(
+  id: string,
+  params?: { force?: boolean },
+): Promise<void> {
+  const qs = params?.force ? "?force=true" : "";
+  return api<void>(`/admin/tenants/${id}${qs}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
 
-export function listModels(): Promise<ModelData[]> {
-  return api<ModelData[]>("/admin/models");
+export function listModels(params?: {
+  tenant_id?: string;
+}): Promise<ModelData[]> {
+  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
+  return api<ModelData[]>(`/admin/models${qs}`);
 }
 
 export function getModel(id: string): Promise<ModelData> {
@@ -188,8 +198,11 @@ export function deleteModel(id: string): Promise<void> {
 // Tools
 // ---------------------------------------------------------------------------
 
-export function listTools(): Promise<ToolData[]> {
-  return api<ToolData[]>("/admin/tools");
+export function listTools(params?: {
+  tenant_id?: string;
+}): Promise<ToolData[]> {
+  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
+  return api<ToolData[]>(`/admin/tools${qs}`);
 }
 
 export function getTool(id: string): Promise<ToolData> {
@@ -212,8 +225,11 @@ export function deleteTool(id: string): Promise<void> {
 // Templates
 // ---------------------------------------------------------------------------
 
-export function listTemplates(): Promise<TemplateData[]> {
-  return api<TemplateData[]>("/admin/templates");
+export function listTemplates(params?: {
+  tenant_id?: string;
+}): Promise<TemplateData[]> {
+  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
+  return api<TemplateData[]>(`/admin/templates${qs}`);
 }
 
 export function getTemplate(id: string): Promise<TemplateData> {
@@ -236,8 +252,11 @@ export function deleteTemplate(id: string): Promise<void> {
 // Skills
 // ---------------------------------------------------------------------------
 
-export function listSkills(): Promise<SkillData[]> {
-  return api<SkillData[]>("/admin/skills");
+export function listSkills(params?: {
+  tenant_id?: string;
+}): Promise<SkillData[]> {
+  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
+  return api<SkillData[]>(`/admin/skills${qs}`);
 }
 
 export function getSkill(id: string): Promise<SkillData> {
@@ -295,8 +314,11 @@ export interface GroupModelData {
   enabled: boolean;
 }
 
-export function listGroups(): Promise<GroupData[]> {
-  return api<GroupData[]>("/admin/groups");
+export function listGroups(params?: {
+  tenant_id?: string;
+}): Promise<GroupData[]> {
+  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
+  return api<GroupData[]>(`/admin/groups${qs}`);
 }
 
 export function getGroup(id: string): Promise<GroupData> {
