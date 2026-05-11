@@ -12,7 +12,7 @@ from .users import User
 from .models import Model
 from .groups import UserGroup, UserGroupMember, ModelGroup
 from .tools import Tool
-from .templates import Template, TemplateAllowedTool
+from .templates import Template
 from .prompts import Prompt
 from .skills import Skill, SkillAllowedTool
 from .sessions import Session, SessionActiveTool
@@ -34,7 +34,6 @@ __all__ = [
     "ModelGroup",
     "Tool",
     "Template",
-    "TemplateAllowedTool",
     "Prompt",
     "Skill",
     "SkillAllowedTool",

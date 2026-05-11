@@ -12,7 +12,6 @@ from ..core.dependencies import get_current_user, get_db
 from ..db.orm.users import User as UserORM
 from ..services.template_service import (
     list_templates as _svc_list_templates,
-    list_template_tools as _svc_list_template_tools,
 )
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -29,7 +28,6 @@ class TemplateResponse(BaseModel):
     assigned_user_id: str | None
     created_at: datetime
     updated_at: datetime
-    tool_ids: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -43,12 +41,4 @@ async def list_templates(
     templates = await _svc_list_templates(
         db, tenant_id=current_user.tenant_id, current_user=current_user
     )
-
-    result: list[TemplateResponse] = []
-    for t in templates:
-        tools = await _svc_list_template_tools(db, t.id)
-        resp = TemplateResponse.model_validate(t)
-        resp.tool_ids = [tool.tool_id for tool in tools]
-        result.append(resp)
-
-    return result
+    return [TemplateResponse.model_validate(t) for t in templates]

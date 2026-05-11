@@ -1,5 +1,5 @@
 # =============================================================================
-# PH Agent Hub — ORM: Templates & Template Allowed Tools
+# PH Agent Hub — ORM: Templates
 # =============================================================================
 
 import uuid
@@ -13,7 +13,6 @@ from ..base import Base
 from .tenants import Tenant
 from .users import User
 from .models import Model
-from .tools import Tool
 
 
 class Template(Base):
@@ -42,18 +41,4 @@ class Template(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-
-class TemplateAllowedTool(Base):
-    __tablename__ = "template_allowed_tools"
-
-    template_id: Mapped[str] = mapped_column(
-        CHAR(36), ForeignKey("templates.id"), primary_key=True
-    )
-    tool_id: Mapped[str] = mapped_column(
-        CHAR(36), ForeignKey("tools.id"), primary_key=True
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
     )

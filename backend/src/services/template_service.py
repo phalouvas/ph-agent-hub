@@ -1,12 +1,12 @@
 # =============================================================================
-# PH Agent Hub — Template Service (CRUD + join table management)
+# PH Agent Hub — Template Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import NotFoundError
-from ..db.orm.templates import Template, TemplateAllowedTool
+from ..db.orm.templates import Template
 from ..db.orm.users import User
 
 
@@ -46,23 +46,6 @@ async def get_template_by_id(db: AsyncSession, template_id: str) -> Template | N
     return result.scalar_one_or_none()
 
 
-async def list_template_tools(
-    db: AsyncSession, template_id: str
-) -> list[TemplateAllowedTool]:
-    """Return all allowed tool associations for a template."""
-    stmt = select(TemplateAllowedTool).where(
-        TemplateAllowedTool.template_id == template_id
-    )
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
-
-
-async def _get_template_tool_ids(db: AsyncSession, template_id: str) -> list[str]:
-    """Return just the tool_id list for a template."""
-    tools = await list_template_tools(db, template_id)
-    return [t.tool_id for t in tools]
-
-
 async def create_template(
     db: AsyncSession,
     tenant_id: str,
@@ -72,9 +55,8 @@ async def create_template(
     description: str | None = None,
     default_model_id: str | None = None,
     assigned_user_id: str | None = None,
-    tool_ids: list[str] | None = None,
 ) -> Template:
-    """Create a new template with optional tool associations."""
+    """Create a new template."""
     template = Template(
         tenant_id=tenant_id,
         title=title,
@@ -85,13 +67,6 @@ async def create_template(
         assigned_user_id=assigned_user_id,
     )
     db.add(template)
-    await db.flush()  # Get the template ID before adding join rows
-
-    # Insert join table rows
-    if tool_ids:
-        for tid in tool_ids:
-            db.add(TemplateAllowedTool(template_id=template.id, tool_id=tid))
-
     await db.commit()
     await db.refresh(template)
     return template
@@ -100,10 +75,9 @@ async def create_template(
 async def update_template(
     db: AsyncSession,
     template_id: str,
-    tool_ids: list[str] | None = None,
     **fields,
 ) -> Template:
-    """Update a template's fields. Replace tool associations if provided.
+    """Update a template's fields.
 
     Raises NotFoundError if the template does not exist.
     """
@@ -115,16 +89,6 @@ async def update_template(
     for key, value in fields.items():
         if hasattr(template, key):
             setattr(template, key, value)
-
-    # Replace join table rows if tool_ids is provided
-    if tool_ids is not None:
-        await db.execute(
-            delete(TemplateAllowedTool).where(
-                TemplateAllowedTool.template_id == template_id
-            )
-        )
-        for tid in tool_ids:
-            db.add(TemplateAllowedTool(template_id=template_id, tool_id=tid))
 
     await db.commit()
     await db.refresh(template)
@@ -154,13 +118,6 @@ async def delete_template(db: AsyncSession, template_id: str) -> None:
         sa_update(SkillORM)
         .where(SkillORM.template_id == template_id)
         .values(template_id=None)
-    )
-
-    # Delete join table rows (template_allowed_tools)
-    await db.execute(
-        delete(TemplateAllowedTool).where(
-            TemplateAllowedTool.template_id == template_id
-        )
     )
 
     await db.delete(template)

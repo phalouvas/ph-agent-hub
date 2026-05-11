@@ -15,7 +15,6 @@ import {
   Grid,
   List,
   Card,
-  Typography,
 } from "antd";
 import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
@@ -28,7 +27,6 @@ import {
 import { TemplateForm } from "./TemplateForm";
 
 const { useBreakpoint } = Grid;
-const { Text } = Typography;
 
 export function TemplateList() {
   const [editingTemplate, setEditingTemplate] = useState<TemplateData | null>(null);
@@ -60,12 +58,6 @@ export function TemplateList() {
       dataIndex: "scope",
       key: "scope",
       render: (v: string) => <Tag>{v}</Tag>,
-    },
-    {
-      title: "Tools",
-      dataIndex: "tool_ids",
-      key: "tool_ids",
-      render: (ids: string[]) => ids?.length || 0,
     },
     {
       title: "Actions",
@@ -135,9 +127,6 @@ export function TemplateList() {
                 description={
                   <Space direction="vertical" size={2}>
                     <Tag>{template.scope}</Tag>
-                    <Text type="secondary">
-                      {template.tool_ids?.length || 0} tools
-                    </Text>
                   </Space>
                 }
               />
