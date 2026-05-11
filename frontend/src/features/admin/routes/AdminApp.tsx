@@ -16,6 +16,7 @@ import SkillList from "../resources/skills/SkillList";
 import GroupList from "../resources/groups/GroupList";
 import MemoryList from "../resources/memories/MemoryList";
 import SessionList from "../resources/sessions/SessionList";
+import AuditList from "../resources/audit/AuditList";
 import AnalyticsPage from "../pages/analytics/AnalyticsPage";
 import SettingsPage from "../pages/settings/SettingsPage";
 
@@ -33,6 +34,7 @@ export function AdminApp() {
         <Route path="groups" element={<GroupList />} />
         <Route path="memories" element={<MemoryList />} />
         <Route path="sessions" element={<SessionList />} />
+        <Route path="audit" element={<AuditList />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>

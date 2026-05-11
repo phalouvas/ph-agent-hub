@@ -23,6 +23,7 @@ import {
   DatabaseOutlined,
   CommentOutlined,
   MessageOutlined,
+  AuditOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useLocation, Outlet, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../providers/AuthProvider";
@@ -97,6 +98,15 @@ export function AdminLayout() {
       icon: <CommentOutlined />,
       label: "Sessions",
     },
+    ...(isAdmin
+      ? [
+          {
+            key: "/admin/audit",
+            icon: <AuditOutlined />,
+            label: "Audit Log",
+          },
+        ]
+      : []),
     {
       key: "/admin/analytics",
       icon: <BarChartOutlined />,
