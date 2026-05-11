@@ -67,6 +67,9 @@ async def create_model(
     follow_up_questions_enabled: bool = False,
     model_id: str | None = None,
     context_length: int | None = None,
+    input_price_per_1m: float | None = None,
+    output_price_per_1m: float | None = None,
+    cache_hit_price_per_1m: float | None = None,
 ) -> Model:
     """Create a new model. api_key is transparently encrypted by the ORM."""
     model = Model(
@@ -83,6 +86,9 @@ async def create_model(
         thinking_enabled=thinking_enabled,
         follow_up_questions_enabled=follow_up_questions_enabled,
         context_length=context_length,
+        input_price_per_1m=input_price_per_1m,
+        output_price_per_1m=output_price_per_1m,
+        cache_hit_price_per_1m=cache_hit_price_per_1m,
     )
     db.add(model)
     await db.commit()

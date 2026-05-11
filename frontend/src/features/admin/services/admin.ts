@@ -21,6 +21,9 @@ export interface UserData {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_cost: number;
 }
 
 export interface TenantData {
@@ -28,6 +31,9 @@ export interface TenantData {
   name: string;
   created_at: string;
   updated_at: string;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_cost: number;
 }
 
 export interface ModelData {
@@ -45,6 +51,9 @@ export interface ModelData {
   thinking_enabled: boolean;
   follow_up_questions_enabled: boolean;
   context_length: number | null;
+  input_price_per_1m: number | null;
+  output_price_per_1m: number | null;
+  cache_hit_price_per_1m: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -96,11 +105,22 @@ export interface SkillData {
 export interface UsageData {
   id: string;
   tenant_id: string;
+  tenant_name: string | null;
   user_id: string;
+  user_email: string | null;
+  user_full_name: string | null;
   model_id: string;
+  model_name: string | null;
+  provider: string | null;
   tokens_in: number;
   tokens_out: number;
+  cache_hit_tokens: number | null;
+  cost: number | null;
   created_at: string;
+}
+
+export interface SettingsData {
+  settings: Record<string, string>;
 }
 
 export interface AuditData {
@@ -279,9 +299,20 @@ export function deleteSkill(id: string): Promise<void> {
 // Usage & Audit
 // ---------------------------------------------------------------------------
 
-export function listUsage(params?: { tenant_id?: string }): Promise<UsageData[]> {
-  const query = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
+export function listUsage(params?: { tenant_id?: string; user_id?: string }): Promise<UsageData[]> {
+  const qs: string[] = [];
+  if (params?.tenant_id) qs.push(`tenant_id=${params.tenant_id}`);
+  if (params?.user_id) qs.push(`user_id=${params.user_id}`);
+  const query = qs.length ? `?${qs.join("&")}` : "";
   return api<UsageData[]>(`/admin/usage${query}`);
+}
+
+export function getSettings(): Promise<SettingsData> {
+  return api<SettingsData>("/admin/settings");
+}
+
+export function updateSettings(settings: Record<string, string>): Promise<SettingsData> {
+  return api<SettingsData>("/admin/settings", { method: "PUT", body: settings });
 }
 
 export function listAuditLogs(): Promise<AuditData[]> {

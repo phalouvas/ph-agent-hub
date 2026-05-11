@@ -27,6 +27,7 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listUsers, deleteUser, updateUser, UserData } from "../../services/admin";
 import { UserForm } from "./UserForm";
+import { formatCurrency } from "../../../../shared/utils/formatCurrency";
 
 const { useBreakpoint } = Grid;
 const { Text } = Typography;
@@ -64,6 +65,12 @@ export function UserList() {
   const columns = [
     { title: "Name", dataIndex: "display_name", key: "display_name" },
     { title: "Email", dataIndex: "email", key: "email" },
+    {
+      title: "Cost",
+      dataIndex: "total_cost",
+      key: "total_cost",
+      render: (v: number) => formatCurrency(v),
+    },
     {
       title: "Role",
       dataIndex: "role",

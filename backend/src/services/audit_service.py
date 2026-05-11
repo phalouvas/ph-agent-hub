@@ -54,8 +54,11 @@ async def write_audit_log(
 
     log = AuditLog(
         tenant_id=tenant_id,  # type: ignore[arg-type]
+        tenant_name=getattr(actor, "tenant_name", None),  # denormalized snapshot
         actor_id=actor.id,
         actor_role=actor.role,
+        actor_email=actor.email,
+        actor_full_name=actor.display_name,
         action=action,
         target_type=target_type,
         target_id=target_id,

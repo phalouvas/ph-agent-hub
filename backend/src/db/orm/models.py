@@ -5,7 +5,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, Integer, Float, DateTime, ForeignKey, func
+from sqlalchemy import String, Boolean, Integer, Float, Numeric, DateTime, ForeignKey, func
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,6 +35,10 @@ class Model(Base):
     thinking_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     follow_up_questions_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     context_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Pricing (per 1M tokens, currency-neutral; formatted per app setting)
+    input_price_per_1m: Mapped[float | None] = mapped_column(Numeric(precision=12, scale=6), nullable=True)
+    output_price_per_1m: Mapped[float | None] = mapped_column(Numeric(precision=12, scale=6), nullable=True)
+    cache_hit_price_per_1m: Mapped[float | None] = mapped_column(Numeric(precision=12, scale=6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

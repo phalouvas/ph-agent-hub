@@ -34,7 +34,8 @@ from ..services.tenant_service import (
     list_tenants as _svc_list_tenants,
     update_tenant as _svc_update_tenant,
 )
-from ..services.usage_service import list_usage_logs
+from ..services.usage_service import list_usage_logs, get_tenant_aggregates, get_user_aggregates
+from ..services.settings_service import get_all_settings, set_settings
 from ..services.user_service import (
     create_user as _svc_create_user,
     delete_user as _svc_delete_user,
@@ -103,10 +104,17 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 class UsageLogResponse(BaseModel):
     id: str
     tenant_id: str
+    tenant_name: str | None = None
     user_id: str
+    user_email: str | None = None
+    user_full_name: str | None = None
     model_id: str
+    model_name: str | None = None
+    provider: str | None = None
     tokens_in: int
     tokens_out: int
+    cache_hit_tokens: int | None = None
+    cost: float | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -115,8 +123,11 @@ class UsageLogResponse(BaseModel):
 class AuditLogResponse(BaseModel):
     id: str
     tenant_id: str | None
+    tenant_name: str | None = None
     actor_id: str
     actor_role: str
+    actor_email: str | None = None
+    actor_full_name: str | None = None
     action: str
     target_type: str | None
     target_id: str | None
@@ -145,6 +156,9 @@ class TenantResponse(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    total_cost: float = 0.0
 
     model_config = {"from_attributes": True}
 
@@ -175,6 +189,9 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    total_cost: float = 0.0
 
     model_config = {"from_attributes": True}
 
@@ -193,6 +210,9 @@ class ModelCreate(BaseModel):
     thinking_enabled: bool = False
     follow_up_questions_enabled: bool = False
     context_length: int | None = None
+    input_price_per_1m: float | None = None
+    output_price_per_1m: float | None = None
+    cache_hit_price_per_1m: float | None = None
 
 
 class ModelUpdate(BaseModel):
@@ -209,6 +229,9 @@ class ModelUpdate(BaseModel):
     thinking_enabled: bool | None = None
     follow_up_questions_enabled: bool | None = None
     context_length: int | None = None
+    input_price_per_1m: float | None = None
+    output_price_per_1m: float | None = None
+    cache_hit_price_per_1m: float | None = None
 
 
 class ModelResponse(BaseModel):
@@ -225,6 +248,9 @@ class ModelResponse(BaseModel):
     thinking_enabled: bool
     follow_up_questions_enabled: bool = False
     context_length: int | None = None
+    input_price_per_1m: float | None = None
+    output_price_per_1m: float | None = None
+    cache_hit_price_per_1m: float | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -326,6 +352,15 @@ class ToolAssign(BaseModel):
 
 
 # =============================================================================
+# Pydantic Schemas — Settings
+# =============================================================================
+
+
+class SettingsResponse(BaseModel):
+    settings: dict[str, str]
+
+
+# =============================================================================
 # Tenant Endpoints (admin only)
 # =============================================================================
 
@@ -335,9 +370,19 @@ async def list_tenants(
     db: AsyncSession = Depends(get_db),
     _admin: UserORM = Depends(require_admin),
 ):
-    """List all tenants (admin only)."""
+    """List all tenants with aggregate usage stats (admin only)."""
     tenants = await _svc_list_tenants(db)
-    return [TenantResponse.model_validate(t) for t in tenants]
+    aggregates = await get_tenant_aggregates(db)
+
+    results: list[TenantResponse] = []
+    for t in tenants:
+        agg = aggregates.get(t.id, {})
+        resp = TenantResponse.model_validate(t)
+        resp.total_tokens_in = agg.get("total_tokens_in", 0)
+        resp.total_tokens_out = agg.get("total_tokens_out", 0)
+        resp.total_cost = agg.get("total_cost", 0.0)
+        results.append(resp)
+    return results
 
 
 @router.post("/tenants", response_model=TenantResponse, status_code=201)
@@ -421,13 +466,24 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List users: admin sees all (optionally filtered by tenant),
-    manager sees own tenant only."""
+    """List users with aggregate usage stats: admin sees all (optionally
+    filtered by tenant), manager sees own tenant only."""
     if current_user.role == "manager":
         users = await _svc_list_users(db, tenant_id=current_user.tenant_id)
     else:
         users = await _svc_list_users(db, tenant_id=tenant_id)
-    return [UserResponse.model_validate(u) for u in users]
+
+    aggregates = await get_user_aggregates(db)
+
+    results: list[UserResponse] = []
+    for u in users:
+        agg = aggregates.get(u.id, {})
+        resp = UserResponse.model_validate(u)
+        resp.total_tokens_in = agg.get("total_tokens_in", 0)
+        resp.total_tokens_out = agg.get("total_tokens_out", 0)
+        resp.total_cost = agg.get("total_cost", 0.0)
+        results.append(resp)
+    return results
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)
@@ -600,6 +656,9 @@ async def create_model(
         temperature=body.temperature,
         thinking_enabled=body.thinking_enabled,
         context_length=body.context_length,
+        input_price_per_1m=body.input_price_per_1m,
+        output_price_per_1m=body.output_price_per_1m,
+        cache_hit_price_per_1m=body.cache_hit_price_per_1m,
     )
     await write_audit_log(
         db,
@@ -654,6 +713,12 @@ async def update_model(
         update_kwargs["follow_up_questions_enabled"] = body.follow_up_questions_enabled
     if body.context_length is not None:
         update_kwargs["context_length"] = body.context_length
+    if body.input_price_per_1m is not None:
+        update_kwargs["input_price_per_1m"] = body.input_price_per_1m
+    if body.output_price_per_1m is not None:
+        update_kwargs["output_price_per_1m"] = body.output_price_per_1m
+    if body.cache_hit_price_per_1m is not None:
+        update_kwargs["cache_hit_price_per_1m"] = body.cache_hit_price_per_1m
     if body.tenant_id is not None:
         if current_user.role == "manager" and body.tenant_id != current_user.tenant_id:
             raise ForbiddenError("Managers can only assign models to their own tenant")
@@ -1844,3 +1909,29 @@ async def admin_delete_session(
         tenant_id=current_user.tenant_id,
         ip_address=_get_client_ip(request),
     )
+
+
+# =============================================================================
+# Settings Endpoints (admin only)
+# =============================================================================
+
+
+@router.get("/settings", response_model=SettingsResponse)
+async def get_settings(
+    db: AsyncSession = Depends(get_db),
+    _admin: UserORM = Depends(require_admin),
+):
+    """Get all application settings (admin only)."""
+    settings = await get_all_settings(db)
+    return SettingsResponse(settings=settings)
+
+
+@router.put("/settings", response_model=SettingsResponse)
+async def update_settings(
+    body: dict[str, str],
+    db: AsyncSession = Depends(get_db),
+    _admin: UserORM = Depends(require_admin),
+):
+    """Bulk update application settings (admin only)."""
+    settings = await set_settings(db, body)
+    return SettingsResponse(settings=settings)
