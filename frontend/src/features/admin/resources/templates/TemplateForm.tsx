@@ -29,13 +29,14 @@ const { TextArea } = Input;
 interface TemplateFormProps {
   open: boolean;
   template: TemplateData | null;
+  duplicateFrom?: TemplateData | null;
   onClose: () => void;
 }
 
-export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
+export function TemplateForm({ open, template, duplicateFrom, onClose }: TemplateFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
-  const isEdit = !!template;
+  const isEdit = !!template && !duplicateFrom;
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const scope = Form.useWatch("scope", form);
@@ -66,7 +67,18 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
 
   React.useEffect(() => {
     if (open) {
-      if (template) {
+      if (duplicateFrom) {
+        form.setFieldsValue({
+          tenant_id: duplicateFrom.tenant_id,
+          title: `${duplicateFrom.title} (Copy)`,
+          description: duplicateFrom.description,
+          system_prompt: duplicateFrom.system_prompt,
+          scope: duplicateFrom.scope,
+          default_model_id: duplicateFrom.default_model_id,
+          assigned_user_id: duplicateFrom.assigned_user_id,
+          tool_ids: duplicateFrom.tool_ids || [],
+        });
+      } else if (template) {
         form.setFieldsValue({
           tenant_id: template.tenant_id,
           title: template.title,
@@ -86,7 +98,7 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
         });
       }
     }
-  }, [open, template, form]);
+  }, [open, template, duplicateFrom, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -115,7 +127,7 @@ export function TemplateForm({ open, template, onClose }: TemplateFormProps) {
 
   return (
     <Modal
-      title={isEdit ? "Edit Template" : "Create Template"}
+      title={duplicateFrom ? "Duplicate Template" : isEdit ? "Edit Template" : "Create Template"}
       open={open}
       onOk={async () => {
         const values = await form.validateFields();

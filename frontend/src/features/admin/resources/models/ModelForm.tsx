@@ -33,13 +33,14 @@ import { useAuth } from "../../../../providers/AuthProvider";
 interface ModelFormProps {
   open: boolean;
   model: ModelData | null;
+  duplicateFrom?: ModelData | null;
   onClose: () => void;
 }
 
-export function ModelForm({ open, model, onClose }: ModelFormProps) {
+export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
-  const isEdit = !!model;
+  const isEdit = !!model && !duplicateFrom;
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -91,7 +92,28 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
 
   React.useEffect(() => {
     if (open) {
-      if (model) {
+      if (duplicateFrom) {
+        form.setFieldsValue({
+          tenant_id: duplicateFrom.tenant_id,
+          name: `${duplicateFrom.name} (Copy)`,
+          model_id: duplicateFrom.model_id,
+          provider: duplicateFrom.provider,
+          base_url: duplicateFrom.base_url,
+          enabled: duplicateFrom.enabled,
+          is_public: duplicateFrom.is_public,
+          max_tokens: duplicateFrom.max_tokens,
+          temperature: duplicateFrom.temperature,
+          thinking_enabled: duplicateFrom.thinking_enabled,
+          follow_up_questions_enabled: duplicateFrom.follow_up_questions_enabled,
+          context_length: duplicateFrom.context_length,
+          input_price_per_1m: duplicateFrom.input_price_per_1m,
+          output_price_per_1m: duplicateFrom.output_price_per_1m,
+          cache_hit_price_per_1m: duplicateFrom.cache_hit_price_per_1m,
+          api_key: undefined,
+        });
+        setIsPublic(duplicateFrom.is_public);
+        setInitialGroupIds([]);
+      } else if (model) {
         form.setFieldsValue({
           tenant_id: model.tenant_id,
           name: model.name,
@@ -130,7 +152,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
         setInitialGroupIds([]);
       }
     }
-  }, [open, model, form]);
+  }, [open, model, duplicateFrom, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -165,7 +187,7 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
 
   return (
     <Modal
-      title={isEdit ? "Edit Model" : "Add Model"}
+      title={duplicateFrom ? "Duplicate Model" : isEdit ? "Edit Model" : "Add Model"}
       open={open}
       onOk={async () => {
         const values = await form.validateFields();

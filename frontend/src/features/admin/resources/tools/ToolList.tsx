@@ -18,7 +18,7 @@ import {
   Card,
   Typography,
 } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,6 +33,7 @@ const { useBreakpoint } = Grid;
 
 export function ToolList() {
   const [editingTool, setEditingTool] = useState<ToolData | null>(null);
+  const [duplicatingTool, setDuplicatingTool] = useState<ToolData | null>(null);
   const [creating, setCreating] = useState(false);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -101,6 +102,12 @@ export function ToolList() {
             size="small"
             onClick={() => setEditingTool(record)}
           />
+          <Button
+            icon={<CopyOutlined />}
+            size="small"
+            onClick={() => setDuplicatingTool(record)}
+            title="Duplicate"
+          />
           <Popconfirm
             title="Delete this tool?"
             onConfirm={() => deleteMutation.mutate(record.id)}
@@ -133,6 +140,12 @@ export function ToolList() {
                   icon={<EditOutlined />}
                   type="link"
                   onClick={() => setEditingTool(tool)}
+                />,
+                <Button
+                  icon={<CopyOutlined />}
+                  type="link"
+                  onClick={() => setDuplicatingTool(tool)}
+                  title="Duplicate"
                 />,
                 <Popconfirm
                   title="Delete?"
@@ -179,6 +192,13 @@ export function ToolList() {
           setEditingTool(null);
           setCreating(false);
         }}
+      />
+
+      <ToolForm
+        open={!!duplicatingTool}
+        tool={null}
+        duplicateFrom={duplicatingTool}
+        onClose={() => setDuplicatingTool(null)}
       />
     </div>
   );

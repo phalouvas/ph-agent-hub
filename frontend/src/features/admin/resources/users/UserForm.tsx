@@ -25,14 +25,15 @@ import {
 interface UserFormProps {
   open: boolean;
   user: UserData | null;
+  duplicateFrom?: UserData | null;
   onClose: () => void;
 }
 
-export function UserForm({ open, user, onClose }: UserFormProps) {
+export function UserForm({ open, user, duplicateFrom, onClose }: UserFormProps) {
   const [form] = Form.useForm();
   const { user: currentUser } = useAuth();
   const queryClient = useQueryClient();
-  const isEdit = !!user;
+  const isEdit = !!user && !duplicateFrom;
   const isAdmin = currentUser?.role === "admin";
 
   // Groups state
@@ -80,7 +81,20 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
 
   React.useEffect(() => {
     if (open) {
-      if (user) {
+      if (duplicateFrom) {
+        // Transform email: user@domain.com -> user-copy@domain.com
+        const emailParts = duplicateFrom.email.split("@");
+        const dupEmail = emailParts.length === 2
+          ? `${emailParts[0]}-copy@${emailParts[1]}`
+          : `${duplicateFrom.email}-copy`;
+        form.setFieldsValue({
+          email: dupEmail,
+          display_name: `${duplicateFrom.display_name} (Copy)`,
+          role: duplicateFrom.role,
+          is_active: duplicateFrom.is_active,
+          tenant_id: duplicateFrom.tenant_id,
+        });
+      } else if (user) {
         form.setFieldsValue({
           email: user.email,
           display_name: user.display_name,
@@ -96,7 +110,7 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
         });
       }
     }
-  }, [open, user, form]);
+  }, [open, user, duplicateFrom, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => createUser(data as Partial<UserData> & { password: string }),
@@ -152,7 +166,7 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
 
   return (
     <Modal
-      title={isEdit ? "Edit User" : "Create User"}
+      title={duplicateFrom ? "Duplicate User" : isEdit ? "Edit User" : "Create User"}
       open={open}
       onOk={handleOk}
       onCancel={onClose}
@@ -177,7 +191,7 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
         <Form.Item name="password" label="Password">
           <Input.Password
             placeholder={
-              isEdit ? "Leave blank to keep current" : "Enter password"
+              isEdit ? "Leave blank to keep current" : duplicateFrom ? "Enter password" : "Enter password"
             }
           />
         </Form.Item>
@@ -197,7 +211,7 @@ export function UserForm({ open, user, onClose }: UserFormProps) {
         <Form.Item name="is_active" label="Active" valuePropName="checked">
           <Switch />
         </Form.Item>
-        {isEdit && (
+        {(isEdit || duplicateFrom) && (
           <Form.Item name="groups" label="Groups">
             {groupsLoading ? (
               <Spin size="small" />

@@ -17,7 +17,7 @@ import {
   Card,
   Typography,
 } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -32,6 +32,7 @@ const { Text } = Typography;
 
 export function TemplateList() {
   const [editingTemplate, setEditingTemplate] = useState<TemplateData | null>(null);
+  const [duplicatingTemplate, setDuplicatingTemplate] = useState<TemplateData | null>(null);
   const [creating, setCreating] = useState(false);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -76,6 +77,12 @@ export function TemplateList() {
             size="small"
             onClick={() => setEditingTemplate(record)}
           />
+          <Button
+            icon={<CopyOutlined />}
+            size="small"
+            onClick={() => setDuplicatingTemplate(record)}
+            title="Duplicate"
+          />
           <Popconfirm
             title="Delete this template?"
             onConfirm={() => deleteMutation.mutate(record.id)}
@@ -108,6 +115,12 @@ export function TemplateList() {
                   icon={<EditOutlined />}
                   type="link"
                   onClick={() => setEditingTemplate(template)}
+                />,
+                <Button
+                  icon={<CopyOutlined />}
+                  type="link"
+                  onClick={() => setDuplicatingTemplate(template)}
+                  title="Duplicate"
                 />,
                 <Popconfirm
                   title="Delete?"
@@ -147,6 +160,13 @@ export function TemplateList() {
           setEditingTemplate(null);
           setCreating(false);
         }}
+      />
+
+      <TemplateForm
+        open={!!duplicatingTemplate}
+        template={null}
+        duplicateFrom={duplicatingTemplate}
+        onClose={() => setDuplicatingTemplate(null)}
       />
     </div>
   );

@@ -18,7 +18,7 @@ import {
   Card,
   Typography,
 } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -34,6 +34,7 @@ const { Text } = Typography;
 
 export function ModelList() {
   const [editingModel, setEditingModel] = useState<ModelData | null>(null);
+  const [duplicatingModel, setDuplicatingModel] = useState<ModelData | null>(null);
   const [creating, setCreating] = useState(false);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -149,6 +150,12 @@ export function ModelList() {
             size="small"
             onClick={() => setEditingModel(record)}
           />
+          <Button
+            icon={<CopyOutlined />}
+            size="small"
+            onClick={() => setDuplicatingModel(record)}
+            title="Duplicate"
+          />
           <Popconfirm
             title="Delete this model?"
             onConfirm={() => deleteMutation.mutate(record.id)}
@@ -181,6 +188,12 @@ export function ModelList() {
                   icon={<EditOutlined />}
                   type="link"
                   onClick={() => setEditingModel(model)}
+                />,
+                <Button
+                  icon={<CopyOutlined />}
+                  type="link"
+                  onClick={() => setDuplicatingModel(model)}
+                  title="Duplicate"
                 />,
                 <Popconfirm
                   title="Delete?"
@@ -230,6 +243,13 @@ export function ModelList() {
           setEditingModel(null);
           setCreating(false);
         }}
+      />
+
+      <ModelForm
+        open={!!duplicatingModel}
+        model={null}
+        duplicateFrom={duplicatingModel}
+        onClose={() => setDuplicatingModel(null)}
       />
     </div>
   );

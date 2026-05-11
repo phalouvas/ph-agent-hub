@@ -22,14 +22,15 @@ const { TextArea } = Input;
 interface ToolFormProps {
   open: boolean;
   tool: ToolData | null;
+  duplicateFrom?: ToolData | null;
   onClose: () => void;
 }
 
-export function ToolForm({ open, tool, onClose }: ToolFormProps) {
+export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
-  const isEdit = !!tool;
-  const [toolType, setToolType] = React.useState(tool?.type ?? "custom");
+  const isEdit = !!tool && !duplicateFrom;
+  const [toolType, setToolType] = React.useState(tool?.type ?? duplicateFrom?.type ?? "custom");
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
@@ -41,7 +42,27 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
 
   React.useEffect(() => {
     if (open) {
-      if (tool) {
+      if (duplicateFrom) {
+        const fields: Record<string, unknown> = {
+          tenant_id: duplicateFrom.tenant_id,
+          name: `${duplicateFrom.name} (Copy)`,
+          type: duplicateFrom.type,
+          enabled: duplicateFrom.enabled,
+          is_public: duplicateFrom.is_public,
+        };
+        if (duplicateFrom.type === "erpnext" && duplicateFrom.config) {
+          fields.erpnext_base_url = duplicateFrom.config.base_url || "";
+          fields.erpnext_api_key = duplicateFrom.config.api_key || "";
+          fields.erpnext_api_secret = duplicateFrom.config.api_secret || "";
+        }
+        if (duplicateFrom.type === "custom") {
+          fields.config_json = duplicateFrom.config
+            ? JSON.stringify(duplicateFrom.config, null, 2)
+            : "";
+        }
+        form.setFieldsValue(fields);
+        setToolType(duplicateFrom.type);
+      } else if (tool) {
         const fields: Record<string, unknown> = {
           tenant_id: tool.tenant_id,
           name: tool.name,
@@ -73,7 +94,7 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
         setToolType("custom");
       }
     }
-  }, [open, tool, form]);
+  }, [open, tool, duplicateFrom, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => {
@@ -143,7 +164,7 @@ export function ToolForm({ open, tool, onClose }: ToolFormProps) {
 
   return (
     <Modal
-      title={isEdit ? "Edit Tool" : "Create Tool"}
+      title={duplicateFrom ? "Duplicate Tool" : isEdit ? "Edit Tool" : "Create Tool"}
       open={open}
       onOk={async () => {
         const values = await form.validateFields();
