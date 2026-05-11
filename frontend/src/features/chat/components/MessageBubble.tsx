@@ -73,6 +73,7 @@ interface MessageBubbleProps {
   onRegenerate?: (messageId: string) => void;
   disabled?: boolean;
   regenerating?: boolean;
+  streaming?: boolean;
 }
 
 export function MessageBubble({
@@ -83,6 +84,7 @@ export function MessageBubble({
   onRegenerate,
   disabled,
   regenerating,
+  streaming,
 }: MessageBubbleProps) {
   const isUser = message.sender === "user";
   const isSystem = message.sender === "system";
@@ -156,12 +158,13 @@ export function MessageBubble({
 
       {/* Bubble */}
       <div style={bubbleStyle}>
-        {/* Reasoning panel */}
+        {/* Reasoning panel — auto-expanded during streaming so user can see
+            the model think in real-time, collapsed otherwise. */}
         {reasoningItems.length > 0 && (
           <Collapse
             ghost
             size="small"
-            defaultActiveKey={[]}
+            defaultActiveKey={streaming ? ["reasoning"] : []}
             items={[
               {
                 key: "reasoning",
