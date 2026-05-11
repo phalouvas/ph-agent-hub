@@ -75,7 +75,7 @@ async def write_usage_log(
         provider=provider,
         tokens_in=tokens_in,
         tokens_out=tokens_out,
-        cache_hit_tokens=cache_hit_tokens or None,
+        cache_hit_tokens=cache_hit_tokens,
         cost=cost,
     )
     db.add(log)
