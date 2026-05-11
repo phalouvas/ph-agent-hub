@@ -7,7 +7,7 @@
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -439,6 +439,14 @@ async def delete_tenant(
     """Delete a tenant (admin only). Set ?force=true to cascade-delete
     all related data (users, sessions, models, tools, etc.) instead of
     blocking when related resources exist."""
+    # Safety: Don't allow admins to force-delete their own tenant
+    # (it would destroy their own user row and break the session).
+    if force and _admin.tenant_id == tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot force-delete your own tenant. "
+                   "Ask an admin from a different tenant to perform this action.",
+        )
     action = "tenant.force_deleted" if force else "tenant.deleted"
     if force:
         await _svc_force_delete_tenant(db, tenant_id)

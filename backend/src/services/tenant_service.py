@@ -129,8 +129,13 @@ async def force_delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     2. messages, memory, file_uploads (S3 first, then DB)
     3. prompts, skills, templates, sessions
     4. tags, rag_documents, tools, models, user_groups
-    5. users
-    6. tenant itself
+    5. cross-tenant rows referencing users being deleted:
+       user_tool_preferences, user_group_members, message_feedback,
+       prompts, memory, file_uploads → DELETE;
+       skills.user_id, templates.assigned_user_id → SET NULL;
+       then cross-tenant sessions & children → DELETE
+    6. users
+    7. tenant itself
 
     Usage/audit logs are denormalized (no FKs) and survive deletion.
     Also deletes S3 objects for all file_uploads belonging to the tenant
@@ -296,7 +301,121 @@ async def force_delete_tenant(db: AsyncSession, tenant_id: str) -> None:
     await db.flush()
 
     # ==================================================================
-    # Step 5 — Users (FK to tenants)
+    # Step 5 — Clean up rows in OTHER tenants that reference users
+    # being deleted.  This is needed because a user may have been
+    # moved between tenants: their old rows retain the original
+    # tenant_id but still reference the user via FK.  Without this
+    # step, the user delete in step 6 would fail with a foreign-key
+    # violation from those cross-tenant rows.
+    # ==================================================================
+    from ..db.orm.user_tool_preferences import UserToolPreference
+
+    user_ids_subq = _select(UserORM.id).where(UserORM.tenant_id == tenant_id)
+
+    # 5a — Tables with a direct user_id FK and no tenant_id (or the
+    #      tenant-scoped delete already handled same-tenant rows).
+    await db.execute(
+        _delete(UserToolPreference).where(
+            UserToolPreference.user_id.in_(user_ids_subq)
+        )
+    )
+    await db.execute(
+        _delete(UserGroupMember).where(
+            UserGroupMember.user_id.in_(user_ids_subq)
+        )
+    )
+    # MessageFeedback has its own user_id FK (who left the feedback)
+    await db.execute(
+        _delete(MessageFeedback).where(
+            MessageFeedback.user_id.in_(user_ids_subq)
+        )
+    )
+    # Prompts: user_id is non-null — delete cross-tenant prompts
+    await db.execute(
+        _delete(Prompt).where(Prompt.user_id.in_(user_ids_subq))
+    )
+    await db.execute(
+        _delete(Memory).where(Memory.user_id.in_(user_ids_subq))
+    )
+    # FileUpload: skip S3 cleanup for cross-tenant files (they belong to
+    # another tenant; we only remove the DB row so the FK doesn't block
+    # the user delete).
+    await db.execute(
+        _delete(FileUpload).where(FileUpload.user_id.in_(user_ids_subq))
+    )
+    await db.flush()
+
+    # 5b — Nullable user_id FKs: set to NULL for cross-tenant rows
+    #      (these reference a creator/assignee; destroying another
+    #      tenant's skill/template would be too aggressive).
+    from sqlalchemy import update as _update
+    await db.execute(
+        _update(Skill)
+        .where(Skill.user_id.in_(user_ids_subq))
+        .values(user_id=None)
+    )
+    await db.execute(
+        _update(Template)
+        .where(Template.assigned_user_id.in_(user_ids_subq))
+        .values(assigned_user_id=None)
+    )
+    await db.flush()
+
+    # 5c — Leaf children of sessions (cross-tenant)
+    await db.execute(
+        _delete(MessageFeedback).where(
+            MessageFeedback.message_id.in_(
+                _select(Message.id).where(
+                    Message.session_id.in_(
+                        _select(SessionORM.id).where(
+                            SessionORM.user_id.in_(user_ids_subq)
+                        )
+                    )
+                )
+            )
+        )
+    )
+    await db.execute(
+        _delete(SessionTag).where(
+            SessionTag.session_id.in_(
+                _select(SessionORM.id).where(
+                    SessionORM.user_id.in_(user_ids_subq)
+                )
+            )
+        )
+    )
+    await db.execute(
+        _delete(SessionActiveTool).where(
+            SessionActiveTool.session_id.in_(
+                _select(SessionORM.id).where(
+                    SessionORM.user_id.in_(user_ids_subq)
+                )
+            )
+        )
+    )
+
+    # 5d — Messages (cross-tenant)
+    await db.execute(
+        _delete(Message).where(
+            Message.session_id.in_(
+                _select(SessionORM.id).where(
+                    SessionORM.user_id.in_(user_ids_subq)
+                )
+            )
+        )
+    )
+    await db.flush()
+
+    # 5e — Sessions themselves (cross-tenant)
+    await db.execute(
+        _delete(SessionORM).where(
+            SessionORM.user_id.in_(user_ids_subq)
+        )
+    )
+    await db.flush()
+
+    # ==================================================================
+    # Step 6 — Users (FK to tenants)
     # (Usage/audit logs are denormalized — no FKs, survive deletion)
     # ==================================================================
     await db.execute(
