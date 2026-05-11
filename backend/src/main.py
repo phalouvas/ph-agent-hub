@@ -31,9 +31,12 @@ from .core.limiter import limiter, RateLimitExceeded
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: scan MAF registry. Shutdown: no-op for now."""
+    """Startup: scan MAF registry, load agent identity. Shutdown: no-op."""
     from .agents.registry import startup_scan
+    from .agents.runner import load_agent_identity
     from .db.base import AsyncSessionLocal
+
+    load_agent_identity()
 
     async with AsyncSessionLocal() as db:
         await startup_scan(db)

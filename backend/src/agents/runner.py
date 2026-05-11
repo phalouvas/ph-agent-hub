@@ -20,6 +20,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from sqlalchemy import select
@@ -138,6 +139,44 @@ KEEP_RECENT_PAIRS = 3
 # Maximum summary length in characters (to keep the summary itself
 # from consuming too much context).
 MAX_SUMMARY_CHARS = 2000
+
+# ---------------------------------------------------------------------------
+# Platform identity (Issue #83)
+# ---------------------------------------------------------------------------
+# Static identity text loaded once at startup. Injected as the first block
+# of every system prompt so the agent knows what PH Agent Hub is and what
+# features it provides.
+
+_AGENT_IDENTITY: str = ""
+_IDENTITY_PATH = Path(__file__).parent / "identity.txt"
+
+
+def load_agent_identity() -> None:
+    """Load the platform identity text file into the module-level variable.
+
+    Called once from main.py's lifespan at startup. Gracefully degrades
+    if the file is missing or unreadable.
+    """
+    global _AGENT_IDENTITY
+    try:
+        if _IDENTITY_PATH.exists():
+            _AGENT_IDENTITY = _IDENTITY_PATH.read_text(encoding="utf-8").strip()
+            msg = (
+                f"[identity] Loaded agent identity from {_IDENTITY_PATH} "
+                f"({len(_AGENT_IDENTITY)} chars)"
+            )
+            print(msg, flush=True)
+            logger.info(msg)
+        else:
+            msg = f"[identity] WARNING: Agent identity file not found at {_IDENTITY_PATH}"
+            print(msg, flush=True)
+            logger.warning(msg)
+    except Exception:
+        msg = f"[identity] WARNING: Failed to load agent identity from {_IDENTITY_PATH}"
+        print(msg, flush=True)
+        logger.warning(msg)
+        import traceback
+        traceback.print_exc()
 
 
 def _estimate_tokens(text: str) -> int:
@@ -805,6 +844,12 @@ async def _build_system_prompt(
                 template_id = skill.template_id
 
     parts: list[str] = []
+
+    # ---- Platform identity (Issue #83) -----------------------------------
+    # Always inject the platform identity as the first block so the agent
+    # knows what PH Agent Hub is and can answer questions about itself.
+    if _AGENT_IDENTITY:
+        parts.append(_AGENT_IDENTITY)
 
     # Template system prompt
     if template_id:
