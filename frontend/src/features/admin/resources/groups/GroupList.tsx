@@ -29,6 +29,7 @@ import {
   ApiOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listGroups,
@@ -63,25 +64,27 @@ export function GroupList() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<GroupData | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") || undefined;
 
   const { data: groups, isLoading } = useQuery({
-    queryKey: ["admin-groups"],
-    queryFn: listGroups,
+    queryKey: ["admin-groups", tenantId],
+    queryFn: () => listGroups({ tenant_id: tenantId }),
   });
 
   const { data: users } = useQuery({
-    queryKey: ["admin-users"],
-    queryFn: listUsers,
+    queryKey: ["admin-users", tenantId],
+    queryFn: () => listUsers({ tenant_id: tenantId }),
   });
 
   const { data: models } = useQuery({
-    queryKey: ["admin-models"],
-    queryFn: listModels,
+    queryKey: ["admin-models", tenantId],
+    queryFn: () => listModels({ tenant_id: tenantId }),
   });
 
   const { data: tools } = useQuery({
-    queryKey: ["admin-tools"],
-    queryFn: listTools,
+    queryKey: ["admin-tools", tenantId],
+    queryFn: () => listTools({ tenant_id: tenantId }),
   });
 
   const deleteMutation = useMutation({

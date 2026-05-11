@@ -19,6 +19,7 @@ import {
   Typography,
 } from "antd";
 import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSkills,
@@ -37,10 +38,12 @@ export function SkillList() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") || undefined;
 
   const { data: skills, isLoading } = useQuery({
-    queryKey: ["admin-skills"],
-    queryFn: listSkills,
+    queryKey: ["admin-skills", tenantId],
+    queryFn: () => listSkills({ tenant_id: tenantId }),
   });
 
   const deleteMutation = useMutation({

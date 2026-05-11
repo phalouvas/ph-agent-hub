@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Table,
   Button,
@@ -37,10 +38,12 @@ export function MemoryList() {
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
   const [searchText, setSearchText] = useState("");
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") || undefined;
 
   const { data: memories, isLoading } = useQuery({
-    queryKey: ["admin-memories"],
-    queryFn: () => listAdminMemories(),
+    queryKey: ["admin-memories", tenantId],
+    queryFn: () => listAdminMemories({ tenant_id: tenantId }),
   });
 
   const deleteMutation = useMutation({

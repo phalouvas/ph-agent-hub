@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Table,
   Button,
@@ -37,10 +38,12 @@ export function SessionList() {
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
   const [searchText, setSearchText] = useState("");
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") || undefined;
 
   const { data: sessions, isLoading } = useQuery({
-    queryKey: ["admin-sessions"],
-    queryFn: () => listAdminSessions(),
+    queryKey: ["admin-sessions", tenantId],
+    queryFn: () => listAdminSessions({ tenant_id: tenantId }),
   });
 
   const deleteMutation = useMutation({

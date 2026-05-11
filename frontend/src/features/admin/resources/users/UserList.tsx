@@ -23,6 +23,7 @@ import {
   EditOutlined,
   DeleteOutlined,
 } from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { listUsers, deleteUser, updateUser, UserData } from "../../services/admin";
 import { UserForm } from "./UserForm";
@@ -36,10 +37,12 @@ export function UserList() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const tenantId = searchParams.get("tenant_id") || undefined;
 
   const { data: users, isLoading } = useQuery({
-    queryKey: ["admin-users"],
-    queryFn: listUsers,
+    queryKey: ["admin-users", tenantId],
+    queryFn: () => listUsers({ tenant_id: tenantId }),
   });
 
   const deleteMutation = useMutation({
