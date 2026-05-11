@@ -128,7 +128,11 @@ Tools let the AI interact with external systems — query databases, call APIs, 
 
 You can only activate tools that your administrator has approved for your tenant.
 
-### 6.2 Deactivate Tools
+### 6.2 Always-On Tools
+
+You can mark a tool as **always-on** — it will be automatically activated for every new session you create. In the tool selector, toggle the always-on switch next to a tool. Your preference is saved and applied to all future sessions.
+
+### 6.3 Deactivate Tools
 
 Toggle a tool off to prevent the AI from using it. The change takes effect immediately.
 
@@ -172,12 +176,11 @@ Click the **Memory** button to see all stored memory entries.
 2. Enter the information you want the AI to remember
 3. Save
 
-Example memory entries:
-- "My name is Alex and I prefer concise answers"
-- "Project X uses PostgreSQL on port 5432"
-- "Always format dates as YYYY-MM-DD"
+### 8.3 Edit Memory
 
-### 8.3 Delete Memory
+Click any memory entry to edit its key or value inline. Changes take effect immediately.
+
+### 8.4 Delete Memory
 
 Click the delete icon on any memory entry to remove it. The AI will no longer reference it.
 
@@ -193,31 +196,50 @@ Memory is private to you — no other user can see your memory entries.
 2. Click the **Edit** (pencil) icon
 3. Modify the text and save
 
-Editing creates a **new branch** — your original message is preserved. The AI's response to the edited message appears in the new branch.
+The original user message and its assistant response are replaced. The conversation stays linear — your edit becomes the new history.
 
 ### 9.2 Regenerate a Response
 
-Click the **Regenerate** icon on an assistant message to get a new response to the same prompt. This also creates a new branch — your original response is preserved.
+Click the **Regenerate** icon on an assistant message to get a new response to the same prompt. The old response is replaced with a fresh one — the conversation stays linear.
 
 ### 9.3 Delete a Message
 
-Click the **Delete** (trash) icon on any message to soft-delete it. Deleted messages are hidden from view but preserved in the database.
+Click the **Delete** (trash) icon on any message to permanently remove it from the conversation. Both the message and any attached file uploads are deleted.
 
-### 9.4 Branch Navigation
-
-When a conversation has multiple branches (from edits or regenerations), use the branch navigator to switch between them. Each branch is a complete, independent version of the conversation from the branch point onward.
-
-### 9.5 Message Feedback
+### 9.4 Message Feedback
 
 Click **thumbs up** or **thumbs down** on any assistant message to provide feedback. This helps administrators understand model performance.
 
 ---
 
-## 10. Tips & Best Practices
+## 10. Auto-Tagging & Follow-Up Questions
+
+### 10.1 Auto-Tagging
+
+After each agent response, the session is automatically labeled with 3–5 topic tags (e.g., "programming", "data analysis", "erpnext"). These tags appear in the session sidebar and help you find conversations later. Tags are displayed as colored badges below the session title.
+
+### 10.2 Follow-Up Questions
+
+After each response, three suggested follow-up questions appear below the assistant message. Click any question to ask it instantly. This feature is enabled per-model by your administrator — not all models generate follow-up questions.
+
+---
+
+## 11. Thinking Mode
+
+> Available for DeepSeek models only.
+
+When enabled, you'll see the model's internal reasoning process before the final answer. The reasoning appears in an expandable panel labeled **Reasoning**. This is useful for understanding *how* the model arrived at its answer, especially for complex or multi-step problems.
+
+Toggle thinking mode in your session settings. Your administrator controls whether a model supports this feature.
+
+---
+
+## 12. Tips & Best Practices
 
 - **Use descriptive session titles** — it makes searching and organizing much easier
 - **Pin important sessions** — they stay at the top of your list
 - **Use memory for cross-session context** — the AI will remember preferences and facts
+- **Mark frequently-used tools as always-on** — they'll be active in every new session automatically
 - **Try different models** — some are better at coding, others at writing or analysis
 - **Experiment with skills** — skills can dramatically change the AI's capabilities
 - **Activate tools only when needed** — unnecessary tools can slow down responses
@@ -227,7 +249,7 @@ Click **thumbs up** or **thumbs down** on any assistant message to provide feedb
 
 ---
 
-## 11. Troubleshooting
+## 13. Troubleshooting
 
 ### The AI isn't responding
 

@@ -70,12 +70,17 @@ Administrators configure models per tenant.
 - id (UUID, PK)
 - tenant_id (UUID, FK → tenants.id)
 - name (string) — e.g., "deepseek-r1"
+- model_id (string) — provider's model identifier, e.g., "deepseek-reasoner"
 - provider (string) — e.g., "deepseek", "openai", "anthropic"
 - api_key (string) — stored encrypted using Fernet symmetric encryption; decrypted in memory at runtime by `/backend/src/core/encryption.py`
 - base_url (string, nullable)
 - enabled (boolean)
+- is_public (boolean, default false) — when true, model is available to all users regardless of group membership
 - max_tokens (int)
 - temperature (float)
+- thinking_enabled (boolean) — supports reasoning/thinking mode (DeepSeek R1)
+- follow_up_questions_enabled (boolean) — generates follow-up question suggestions
+- context_length (int, nullable) — model's maximum context window in tokens
 - routing_priority (int)
 - created_at (timestamp)
 - updated_at (timestamp)
@@ -90,9 +95,10 @@ Tools represent external integrations (ERPNext, Membrane, custom tools).
 - id (UUID, PK)
 - tenant_id (UUID, FK → tenants.id)
 - name (string)
-- type (enum: erpnext, membrane, custom)
+- type (enum: erpnext, membrane, custom, calculator, currency_exchange, datetime, fetch_url, file_list, memory, rss_feed, weather, web_search, wikipedia)
 - config (JSON)
 - enabled (boolean)
+- is_public (boolean, default false) — when true, tool is available to all users regardless of group membership
 - created_at (timestamp)
 - updated_at (timestamp)
 
@@ -111,6 +117,47 @@ Stored as a tool config, but also available as a dedicated table for convenience
 - version (string)
 - created_at (timestamp)
 - updated_at (timestamp)
+
+---
+
+## 1.6 User Tool Preferences
+
+Users can mark tools as "always on" so they're automatically activated in new sessions.
+
+**Table: user_tool_preferences**
+- user_id (UUID, FK → users.id, PK)
+- tool_id (UUID, FK → tools.id, PK)
+- always_on (boolean, default false)
+- created_at (timestamp)
+- updated_at (timestamp)
+
+---
+
+## 1.7 Groups (Access Control)
+
+Groups restrict which models and tools specific users can access. Models and tools marked `is_public` are available to all users regardless of group membership.
+
+**Table: user_groups**
+- id (UUID, PK)
+- tenant_id (UUID, FK → tenants.id)
+- name (string, 255)
+- created_at (timestamp)
+- updated_at (timestamp)
+
+**Table: user_group_members**
+- user_id (UUID, FK → users.id, PK)
+- group_id (UUID, FK → user_groups.id, PK)
+- created_at (timestamp)
+
+**Table: model_groups**
+- model_id (UUID, FK → models.id, PK)
+- group_id (UUID, FK → user_groups.id, PK)
+- created_at (timestamp)
+
+**Table: tool_groups**
+- tool_id (UUID, FK → tools.id, PK)
+- group_id (UUID, FK → user_groups.id, PK)
+- created_at (timestamp)
 
 ---
 
@@ -207,10 +254,26 @@ A session belongs to a user and a tenant.
 - selected_template_id (UUID, FK → templates.id, nullable)
 - selected_prompt_id (UUID, FK → prompts.id, nullable)
 - selected_skill_id (UUID, FK → skills.id, nullable)
+- selected_model_id (UUID, FK → models.id, nullable)
+- thinking_enabled (bool, nullable) — session-level override for reasoning mode; null means use model default
 - created_at (timestamp)
 - updated_at (timestamp)
 
-Active tools for a session are tracked via a join table. A user can only activate tools that are enabled for their tenant.
+Sessions have a many-to-many relationship with tags via the `session_tags` join table. Tags are generated automatically after each agent response (3–5 topic tags).
+
+**Table: session_tags**
+- session_id (UUID, FK → sessions.id)
+- tag_id (UUID, FK → tags.id)
+- created_at (timestamp)
+
+**Table: tags**
+- id (UUID, PK)
+- tenant_id (UUID, FK → tenants.id)
+- name (string, 50) — unique per tenant
+- color (string, nullable) — hex color for badge display
+- created_at (timestamp)
+
+Active tools for a session are tracked via a join table. A user can only activate tools that are enabled for their tenant. Users can also mark tools as "always on" to automatically activate them in new sessions.
 
 **Table: session_active_tools**
 - session_id (UUID, FK → sessions.id)
@@ -234,7 +297,10 @@ Message content is a structured JSON array of parts to support multi-modal messa
 - content (JSON array of parts) — each part has a `type` (text | image | tool_output) and corresponding payload
 - model_id (UUID, FK → models.id, nullable)
 - tool_calls (JSON)
+- tokens_in (int, nullable) — input token count for this message
+- tokens_out (int, nullable) — output token count for this message
 - is_deleted (boolean, default false) — soft delete; message is hidden but branch integrity is preserved
+- summarized (boolean, default false) — whether this message has been compressed into a summary
 - created_at (timestamp)
 - updated_at (timestamp)
 
