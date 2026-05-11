@@ -16,7 +16,7 @@ import {
   Card,
   Tooltip,
 } from "antd";
-import { SearchOutlined, AuditOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "@ant-design/icons";
 import { useQuery } from "@tanstack/react-query";
 import { listAuditLogs, AuditData } from "../../services/admin";
 

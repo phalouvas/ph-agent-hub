@@ -2,18 +2,18 @@
 # =============================================================================
 # PH Agent Hub — Build & Push Script
 # =============================================================================
-# Builds backend and frontend Docker images, then optionally pushes them to
-# Docker Hub (or another registry).
+# Builds backend and frontend Docker images and pushes them to the registry.
 #
 # Usage:
-#   ./build.sh                          # Build both images with :latest tag
-#   ./build.sh -t v1.2.3                # Build with a specific version tag
-#   ./build.sh -t v1.2.3 -p             # Build and push to registry
-#   ./build.sh -t v1.2.3 -p --no-cache  # Build without cache and push
+#   ./build.sh                    # Build + push with tag from package.json
+#   ./build.sh -t v1.2.3          # Override the tag
+#   ./build.sh --no-push          # Build only, skip registry push
+#   ./build.sh --cache            # Use Docker layer cache (faster, less safe)
+#   ./build.sh --no-push --cache  # Combine overrides
 #
 # Prerequisites:
 #   - Docker installed and running
-#   - Logged into the registry (docker login) if using --push
+#   - Logged into the registry (docker login)
 # =============================================================================
 
 set -euo pipefail
@@ -25,13 +25,15 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 REGISTRY="phalouvas"           # Docker Hub user or full registry URL
 BACKEND_IMAGE="${REGISTRY}/ph-agent-hub-backend"
 FRONTEND_IMAGE="${REGISTRY}/ph-agent-hub-frontend"
-TAG="latest"
-PUSH=false
-NO_CACHE=""
 
 # ── Auto-detect version from package.json ──────────────────────────────────
 APP_VERSION="$(grep '"version"' "${PROJECT_DIR}/frontend/package.json" | head -1 | sed 's/.*"version": *"\(.*\)".*/\1/')"
 echo "Detected app version: ${APP_VERSION}"
+
+# ── Defaults (production-first) ────────────────────────────────────────────
+TAG="${APP_VERSION:-latest}"   # Auto-tag from package.json, fallback: latest
+PUSH=true                       # Push by default; --no-push to skip
+NO_CACHE="--no-cache"           # No-cache by default; --cache to use cache
 
 # ── Help ───────────────────────────────────────────────────────────────────
 usage() {
@@ -39,9 +41,9 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Options:
-  -t, --tag TAG       Image tag (default: latest)
-  -p, --push          Push to registry after building
-  --no-cache          Build without Docker cache
+  -t, --tag TAG       Override the image tag (default: auto-detected from package.json)
+  --no-push           Build images but skip pushing to registry
+  --cache             Use Docker layer cache instead of --no-cache
   -h, --help          Show this help
 EOF
   exit 0
@@ -51,8 +53,8 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -t|--tag) TAG="$2"; shift 2 ;;
-    -p|--push) PUSH=true; shift ;;
-    --no-cache) NO_CACHE="--no-cache"; shift ;;
+    --no-push) PUSH=false; shift ;;
+    --cache) NO_CACHE=""; shift ;;
     -h|--help) usage ;;
     *) echo "Unknown option: $1"; usage ;;
   esac
@@ -62,7 +64,7 @@ done
 echo "========================================"
 echo " Building backend: ${BACKEND_IMAGE}:${TAG}"
 echo "========================================"
-docker build $NO_CACHE \
+docker build ${NO_CACHE} \
   -t "${BACKEND_IMAGE}:${TAG}" \
   -t "${BACKEND_IMAGE}:latest" \
   -f "${PROJECT_DIR}/backend/Dockerfile" \
@@ -73,13 +75,13 @@ echo ""
 echo "========================================"
 echo " Building frontend: ${FRONTEND_IMAGE}:${TAG}"
 echo "========================================"
-docker build $NO_CACHE \
+docker build ${NO_CACHE} \
   -t "${FRONTEND_IMAGE}:${TAG}" \
   -t "${FRONTEND_IMAGE}:latest" \
   -f "${PROJECT_DIR}/frontend/Dockerfile.prod" \
   "${PROJECT_DIR}/frontend"
 
-# ── Push (optional) ────────────────────────────────────────────────────────
+# ── Push ───────────────────────────────────────────────────────────────────
 if $PUSH; then
   echo ""
   echo "========================================"
@@ -87,7 +89,6 @@ if $PUSH; then
   echo "========================================"
   docker push "${BACKEND_IMAGE}:${TAG}"
   docker push "${FRONTEND_IMAGE}:${TAG}"
-  # Also push :latest if the user specified a version tag
   if [ "${TAG}" != "latest" ]; then
     docker push "${BACKEND_IMAGE}:latest"
     docker push "${FRONTEND_IMAGE}:latest"
@@ -99,5 +100,5 @@ if $PUSH; then
   fi
 else
   echo ""
-  echo "Done — images built with tag '${TAG}'. Use --push to push to registry."
+  echo "Done — images built with tag '${TAG}' (push skipped with --no-push)."
 fi

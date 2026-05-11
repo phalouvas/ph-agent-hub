@@ -49,13 +49,13 @@ export function ModelForm({ open, model, onClose }: ModelFormProps) {
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: listTenants,
+    queryFn: () => listTenants(),
     enabled: open && isAdmin,
   });
 
   const { data: allGroups } = useQuery({
     queryKey: ["admin-groups"],
-    queryFn: listGroups,
+    queryFn: () => listGroups(),
     enabled: open,
   });
 
