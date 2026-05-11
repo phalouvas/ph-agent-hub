@@ -29,6 +29,7 @@ import { useAuth } from "../../../providers/AuthProvider";
 import { Logo } from "../../../shared/components/Logo";
 import { useQuery } from "@tanstack/react-query";
 import { listTenants } from "../services/admin";
+import { version } from "../../../../package.json";
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -130,7 +131,7 @@ export function AdminLayout() {
           borderBottom: "1px solid rgba(255,255,255,0.1)",
         }}
       >
-        <Logo size={30} showText textColor="#fff" />
+        <Logo size={30} showText textColor="#fff" version={version} />
       </div>
       <Menu
         theme="dark"
