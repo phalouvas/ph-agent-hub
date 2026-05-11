@@ -7,7 +7,7 @@
 // POST to /chat/session/:id/message with Accept: text/event-stream.
 // =============================================================================
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   fetchEventSource,
   EventStreamContentType,
@@ -149,6 +149,15 @@ export function useStream() {
   );
   const abortRef = useRef<AbortController | null>(null);
 
+  // Abort any in-flight SSE stream when the hook unmounts. Without this,
+  // @microsoft/fetch-event-source reconnects on document visibility change
+  // after navigation, re-POSTing the message (Issue #124).
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   const startStream = useCallback(
     async (
       sessionId: string,
@@ -189,6 +198,7 @@ export function useStream() {
               content,
               file_ids: fileIds || [],
             }),
+            openWhenHidden: true,
             signal: controller.signal,
             async onopen(response) {
               if (
@@ -330,6 +340,7 @@ export function useStream() {
               Accept: "text/event-stream",
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
+            openWhenHidden: true,
             signal: controller.signal,
             async onopen(response) {
               if (
@@ -450,6 +461,7 @@ export function useStream() {
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
             body: JSON.stringify({ content }),
+            openWhenHidden: true,
             signal: controller.signal,
             async onopen(response) {
               if (

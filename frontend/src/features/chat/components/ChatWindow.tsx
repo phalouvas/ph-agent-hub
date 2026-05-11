@@ -126,6 +126,30 @@ export function ChatWindow({
   );
   const modelSupportsThinking = selectedModel?.thinking_enabled === true;
 
+  // Reset all streaming state when the session changes (mount with new
+  // sessionId or fresh mount). This prevents stale streamingContent,
+  // pendingUserMessage, etc. from bleeding into the new session.
+  //
+  // NOTE: We intentionally do NOT call stopStream(sessionId) in a cleanup
+  // effect here.  React StrictMode double-mounts components in dev, so a
+  // cleanup-based stopStream would fire DELETE /chat/session/:id/stream on
+  // every mount, setting a Redis cancel flag (60 s TTL) that cancels the
+  // next message the user sends (Issue #124).  Stream abort on unmount is
+  // handled inside useStream.ts, and stale session–switch state is cleared
+  // by the state‑reset effect below.
+  useEffect(() => {
+    setStreamingContent("");
+    setStreamingReasoningContent("");
+    setStreamingMessageId(null);
+    setStreamError(null);
+    setToolEvents([]);
+    setFollowUpQuestions([]);
+    setStreamingTokens(null);
+    setPendingUserMessage(null);
+    setEditingMsgId(null);
+    setRegeneratingMsgId(null);
+  }, [sessionId]);
+
   // Smart auto-scroll: only scroll to bottom when user hasn't scrolled up.
   // Allows the user to interrupt auto-scroll by scrolling up, and resumes
   // auto-scroll when they scroll back to the bottom.
