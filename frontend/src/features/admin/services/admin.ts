@@ -126,8 +126,11 @@ export interface SettingsData {
 export interface AuditData {
   id: string;
   tenant_id: string | null;
+  tenant_name: string | null;
   actor_id: string;
   actor_role: string;
+  actor_email: string | null;
+  actor_full_name: string | null;
   action: string;
   target_type: string | null;
   target_id: string | null;
@@ -316,7 +319,7 @@ export function updateSettings(settings: Record<string, string>): Promise<Settin
 }
 
 export function listAuditLogs(): Promise<AuditData[]> {
-  return api<AuditData[]>("/admin/logs");
+  return api<AuditData[]>("/admin/audit");
 }
 
 // ---------------------------------------------------------------------------
