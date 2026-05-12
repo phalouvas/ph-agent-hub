@@ -53,17 +53,32 @@ async def main() -> None:
         raise SystemExit(1)
 
     async with AsyncSessionLocal() as db:
-        # 1. Ensure default tenant exists
+        # 1. Ensure at least one tenant exists.
+        #    Prefer a tenant matching DEFAULT_TENANT_NAME, but if none exists
+        #    with that name, use the first available tenant. This prevents
+        #    duplicate tenant creation when DEFAULT_TENANT_NAME changes between
+        #    deployments or the old tenant was renamed/deleted.
         result = await db.execute(
             select(Tenant).where(Tenant.name == DEFAULT_TENANT_NAME)
         )
         tenant = result.scalar_one_or_none()
 
         if tenant is None:
-            tenant = Tenant(name=DEFAULT_TENANT_NAME)
-            db.add(tenant)
-            await db.flush()
-            print(f"[seed] Created tenant: {DEFAULT_TENANT_NAME} (id={tenant.id})")
+            # No tenant with the configured name — check if ANY tenant exists
+            result = await db.execute(select(Tenant).limit(1))
+            existing = result.scalar_one_or_none()
+
+            if existing is not None:
+                tenant = existing
+                print(
+                    f"[seed] Using existing tenant: {tenant.name} (id={tenant.id}) "
+                    f"(DEFAULT_TENANT_NAME='{DEFAULT_TENANT_NAME}' not found)"
+                )
+            else:
+                tenant = Tenant(name=DEFAULT_TENANT_NAME)
+                db.add(tenant)
+                await db.flush()
+                print(f"[seed] Created tenant: {DEFAULT_TENANT_NAME} (id={tenant.id})")
         else:
             print(f"[seed] Tenant already exists: {DEFAULT_TENANT_NAME} (id={tenant.id})")
 
