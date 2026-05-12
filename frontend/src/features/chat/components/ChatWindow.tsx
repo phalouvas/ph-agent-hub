@@ -7,6 +7,7 @@
 // =============================================================================
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
 import { Button, Drawer, Grid, Input, Space, Spin, Empty, Alert, Switch, Tag, Typography, Upload, message, notification } from "antd";
 import {
   SendOutlined,
@@ -77,7 +78,7 @@ export function ChatWindow({
   const [thinkingEnabled, setThinkingEnabled] = useState<boolean | null>(null);
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const queryClient = useQueryClient();
   const screens = useBreakpoint();
   const isMobile = !screens.md;
@@ -85,10 +86,6 @@ export function ChatWindow({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [uploading, setUploading] = useState(false);
-
-  // Track whether the user has manually scrolled up (to disable auto-scroll)
-  const userScrolledUpRef = useRef(false);
-  // State for showing the "scroll to bottom" button (refs don't trigger re-renders)
   const [showScrollButton, setShowScrollButton] = useState(false);
 
   // Optimistic user message — shown immediately on send, replaced by
@@ -150,18 +147,6 @@ export function ChatWindow({
     setRegeneratingMsgId(null);
   }, [sessionId]);
 
-  // Smart auto-scroll: only scroll to bottom when user hasn't scrolled up.
-  // Allows the user to interrupt auto-scroll by scrolling up, and resumes
-  // auto-scroll when they scroll back to the bottom.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || userScrolledUpRef.current) return;
-    // Use requestAnimationFrame to avoid layout thrashing during rapid token updates
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-  }, [messages, streamingContent, toolEvents, streaming]);
-
   // Clear editing state once the edited message is confirmed gone from the list
   useEffect(() => {
     if (editingMsgId && messages) {
@@ -171,27 +156,6 @@ export function ChatWindow({
       }
     }
   }, [messages, editingMsgId]);
-
-  // Scroll event handler: detect when user manually scrolls away from the bottom
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // Threshold in pixels — user is "at bottom" if within 80px of the bottom edge
-    const threshold = 80;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const scrolledUp = distanceFromBottom > threshold;
-    userScrolledUpRef.current = scrolledUp;
-    setShowScrollButton(scrolledUp);
-  }, []);
-
-  // Scroll to bottom and re-enable auto-scroll
-  const scrollToBottom = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-    userScrolledUpRef.current = false;
-    setShowScrollButton(false);
-  }, []);
 
   const handleSend = useCallback(async () => {
     if (!inputValue.trim() || streaming) return;
@@ -203,10 +167,6 @@ export function ChatWindow({
     setToolEvents([]);
     setFollowUpQuestions([]);
     setStreamingTokens(null);
-
-    // Re-enable auto-scroll when user sends a new message
-    userScrolledUpRef.current = false;
-    setShowScrollButton(false);
 
     // ---- Edit mode: streaming, like regenerate but on the user message ----
     if (editingMsgId) {
@@ -388,10 +348,10 @@ export function ChatWindow({
     setInputValue("");
   }, []);
 
-  const handleDelete = async (messageId: string) => {
+  const handleDelete = useCallback(async (messageId: string) => {
     await deleteMessage(sessionId, messageId);
     queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
-  };
+  }, [sessionId, queryClient]);
 
   const handleRegenerate = useCallback((messageId: string) => {
     if (streaming) return;
@@ -402,10 +362,6 @@ export function ChatWindow({
     setToolEvents([]);
     setFollowUpQuestions([]);
     setStreamingTokens(null);
-
-    // Re-enable auto-scroll
-    userScrolledUpRef.current = false;
-    setShowScrollButton(false);
 
     startRegenerateStream(sessionId, messageId, {
       onToken(token, msgId) {
@@ -751,164 +707,176 @@ export function ChatWindow({
       </Drawer>
 
       {/* Messages area */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        style={{
-          flex: 1,
-          overflow: "auto",
-          padding: "16px",
-          position: "relative",
-        }}
-      >
-        {streamError && (
-          <Alert
-            message="Error"
-            description={streamError}
-            type="error"
-            closable
-            onClose={() => setStreamError(null)}
-            style={{ marginBottom: 12 }}
-          />
-        )}
-        {loadingMessages ? (
-          <div style={{ textAlign: "center", padding: 48 }}>
-            <Spin />
-          </div>
-        ) : displayMessages.length === 0 ? (
-          <Empty
-            description="No messages yet. Start a conversation!"
-            style={{ marginTop: 64 }}
-          />
-        ) : (
-          displayMessages.map((msg) => (
-            <MessageBubble
-              key={msg.id + (msg.id === streamingMessageId ? "-streaming" : "")}
-              message={msg}
-              sessionId={sessionId}
-              onEdit={msg.sender === "user" ? handleEdit : undefined}
-              onDelete={
-                !isTemporary
-                  ? handleDelete
-                  : undefined
-              }
-              onRegenerate={
-                msg.sender === "assistant" && !isTemporary
-                  ? handleRegenerate
-                  : undefined
-              }
-              disabled={streaming}
-              regenerating={regeneratingMsgId === msg.id}
-              streaming={msg.id === streamingMessageId}
-            />
-          ))
-        )}
-
-        {/* Scroll-to-bottom floating button — appears when user scrolls up */}
-        {showScrollButton && (
-          <Button
-            shape="circle"
-            size="small"
-            icon={<DownOutlined />}
-            onClick={scrollToBottom}
-            style={{
-              position: "sticky",
-              bottom: 16,
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 10,
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            }}
-            title="Scroll to bottom"
-          />
-        )}
-
-        {/* Thinking placeholder — shown while streaming but before any content or reasoning */}
-        {(streaming) && !streamingContent && !streamingReasoningContent && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
-              <Space style={{ marginLeft: 4 }}>
-                <RobotOutlined style={{ color: "#52c41a" }} />
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  Assistant
-                </Text>
-              </Space>
+      <div style={{ position: "relative", flex: 1 }}>
+        <Virtuoso
+          ref={virtuosoRef}
+          data={displayMessages}
+          followOutput="smooth"
+          atBottomThreshold={80}
+          atBottomStateChange={(atBottom) => setShowScrollButton(!atBottom)}
+          style={{ height: "100%" }}
+          itemContent={(_index, msg) => (
+            <div style={{ padding: "0 16px" }}>
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                sessionId={sessionId}
+                onEdit={msg.sender === "user" ? handleEdit : undefined}
+                onDelete={
+                  !isTemporary
+                    ? handleDelete
+                    : undefined
+                }
+                onRegenerate={
+                  msg.sender === "assistant" && !isTemporary
+                    ? handleRegenerate
+                    : undefined
+                }
+                disabled={streaming}
+                regenerating={regeneratingMsgId === msg.id}
+                streaming={msg.id === streamingMessageId}
+              />
             </div>
-            <div
-              style={{
-                display: "inline-block",
-                maxWidth: "80%",
-                padding: "12px 16px",
-                borderRadius: 12,
-                borderBottomLeftRadius: 4,
-                background: "#f0f0f0",
-              }}
-            >
-              <Space size={4}>
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
+          )}
+          components={{
+            Header: () =>
+              streamError ? (
+                <div style={{ padding: "0 16px" }}>
+                  <Alert
+                    message="Error"
+                    description={streamError}
+                    type="error"
+                    closable
+                    onClose={() => setStreamError(null)}
+                    style={{ marginBottom: 12 }}
+                  />
+                </div>
+              ) : null,
+            EmptyPlaceholder: () =>
+              loadingMessages ? (
+                <div style={{ textAlign: "center", padding: 48 }}>
+                  <Spin />
+                </div>
+              ) : (
+                <Empty
+                  description="No messages yet. Start a conversation!"
+                  style={{ marginTop: 64 }}
+                />
+              ),
+            Footer: () => (
+              <>
+                {/* Thinking placeholder — shown while streaming but before any content or reasoning */}
+              {streaming && !streamingContent && !streamingReasoningContent && (
+                <div style={{ padding: "0 16px", marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
+                    <Space style={{ marginLeft: 4 }}>
+                      <RobotOutlined style={{ color: "#52c41a" }} />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        Assistant
+                      </Text>
+                    </Space>
+                  </div>
+                  <div
                     style={{
                       display: "inline-block",
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: "#bbb",
-                      animation: `thinkingDot 1.4s ease-in-out ${i * 0.2}s infinite`,
+                      maxWidth: "80%",
+                      padding: "12px 16px",
+                      borderRadius: 12,
+                      borderBottomLeftRadius: 4,
+                      background: "#f0f0f0",
                     }}
-                  />
-                ))}
-                <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>
-                  AI is thinking…
-                </Text>
-              </Space>
-            </div>
-          </div>
-        )}
+                  >
+                    <Space size={4}>
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          style={{
+                            display: "inline-block",
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: "#bbb",
+                            animation: `thinkingDot 1.4s ease-in-out ${i * 0.2}s infinite`,
+                          }}
+                        />
+                      ))}
+                      <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>
+                        AI is thinking…
+                      </Text>
+                    </Space>
+                  </div>
+                </div>
+              )}
 
-        {/* Follow-up questions chips */}
-        {!streaming && followUpQuestions.length > 0 && (
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-              padding: "0 0 12px 0",
-              justifyContent: "flex-start",
-            }}
-          >
-            {followUpQuestions.map((q, i) => (
-              <Button
-                key={i}
-                size="small"
-                type="default"
-                style={{
-                  borderRadius: 16,
-                  maxWidth: "100%",
-                  whiteSpace: "normal",
-                  height: "auto",
-                  padding: "4px 12px",
-                  textAlign: "left",
-                }}
-                onClick={() => {
-                  setInputValue(q);
-                  setFollowUpQuestions([]);
-                  // Auto-send on next tick after state settles
-                  setTimeout(() => {
-                    const textarea = document.querySelector(
-                      `[data-session-id="${sessionId}"] textarea, #chat-input-${sessionId}`
-                    ) as HTMLTextAreaElement;
-                    if (textarea) {
-                      textarea.focus();
-                    }
-                  }, 0);
-                }}
-              >
-                {q}
-              </Button>
-            ))}
-          </div>
-        )}
+              {/* Follow-up questions chips */}
+              {!streaming && followUpQuestions.length > 0 && (
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    padding: "0 16px 12px",
+                    justifyContent: "flex-start",
+                  }}
+                >
+                  {followUpQuestions.map((q, i) => (
+                    <Button
+                      key={i}
+                      size="small"
+                      type="default"
+                      style={{
+                        borderRadius: 16,
+                        maxWidth: "100%",
+                        whiteSpace: "normal",
+                        height: "auto",
+                        padding: "4px 12px",
+                        textAlign: "left",
+                      }}
+                      onClick={() => {
+                        setInputValue(q);
+                        setFollowUpQuestions([]);
+                        setTimeout(() => {
+                          const textarea = document.querySelector(
+                            `[data-session-id="${sessionId}"] textarea, #chat-input-${sessionId}`
+                          ) as HTMLTextAreaElement;
+                          if (textarea) {
+                            textarea.focus();
+                          }
+                        }, 0);
+                      }}
+                    >
+                      {q}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </>
+          ),
+        }}
+      />
+      {/* Scroll-to-bottom floating button — rendered outside Virtuoso's scroll container */}
+      {showScrollButton && (
+        <Button
+          shape="circle"
+          size="small"
+          icon={<DownOutlined />}
+          onClick={() => {
+            virtuosoRef.current?.scrollToIndex({
+              index: "LAST",
+              behavior: "smooth",
+            });
+          }}
+          style={{
+            position: "absolute",
+            bottom: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+          }}
+          title="Scroll to bottom"
+        />
+      )}
       </div>
 
       {/* Input area */}
