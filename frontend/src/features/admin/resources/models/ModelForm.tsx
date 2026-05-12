@@ -109,7 +109,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
           input_price_per_1m: duplicateFrom.input_price_per_1m,
           output_price_per_1m: duplicateFrom.output_price_per_1m,
           cache_hit_price_per_1m: duplicateFrom.cache_hit_price_per_1m,
-          api_key: undefined,
+          api_key: "",
         });
         setIsPublic(duplicateFrom.is_public);
         setInitialGroupIds([]);
@@ -140,7 +140,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
           is_public: false,
           max_tokens: 4096,
           temperature: 0.7,
-
+          api_key: "",
           thinking_enabled: false,
           follow_up_questions_enabled: false,
           context_length: undefined,
