@@ -114,7 +114,10 @@ export async function api<T = unknown>(
   if (contentType.includes("application/json")) {
     const data = await res.json();
     if (!res.ok) {
-      throw new ApiError(res.status, data.detail || JSON.stringify(data));
+      const detail = Array.isArray(data.detail)
+        ? data.detail.map((e: { msg: string }) => e.msg).join("; ")
+        : data.detail;
+      throw new ApiError(res.status, detail || JSON.stringify(data));
     }
     return data as T;
   }

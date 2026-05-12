@@ -662,6 +662,7 @@ async def create_model(
         max_tokens=body.max_tokens,
         temperature=body.temperature,
         thinking_enabled=body.thinking_enabled,
+        follow_up_questions_enabled=body.follow_up_questions_enabled,
         context_length=body.context_length,
         input_price_per_1m=body.input_price_per_1m,
         output_price_per_1m=body.output_price_per_1m,
