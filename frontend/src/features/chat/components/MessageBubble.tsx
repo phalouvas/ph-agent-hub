@@ -76,7 +76,7 @@ interface MessageBubbleProps {
   streaming?: boolean;
 }
 
-export function MessageBubble({
+function MessageBubbleInner({
   message,
   sessionId,
   onEdit,
@@ -493,5 +493,17 @@ export function MessageBubble({
     </div>
   );
 }
+
+export const MessageBubble = React.memo(MessageBubbleInner, (prev, next) =>
+  prev.message.id === next.message.id &&
+  prev.message.content === next.message.content &&
+  prev.streaming === next.streaming &&
+  prev.regenerating === next.regenerating &&
+  prev.disabled === next.disabled &&
+  prev.onEdit === next.onEdit &&
+  prev.onDelete === next.onDelete &&
+  prev.onRegenerate === next.onRegenerate &&
+  prev.sessionId === next.sessionId
+);
 
 export default MessageBubble;
