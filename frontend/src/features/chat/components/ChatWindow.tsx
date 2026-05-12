@@ -29,7 +29,7 @@ import {
   deleteMessage,
   summarizeSession,
 } from "../services/chat";
-import api from "../../../services/api";
+import api, { getToken } from "../../../services/api";
 import {
   ModelSelector,
   TemplateSelector,
@@ -157,6 +157,34 @@ export function ChatWindow({
     }
   }, [messages, editingMsgId]);
 
+  // ---- Fetch follow-up questions after stream closes (Issue #126) -----------
+  // The backend now generates follow-up questions in a background task so
+  // the SSE stream can close immediately after message_complete.  This
+  // helper polls the follow-up endpoint once after a short delay.
+  const fetchFollowUpQuestions = useCallback(
+    (sid: string, setter: (questions: string[]) => void) => {
+      const BASE_URL = import.meta.env.VITE_API_URL || "/api";
+      setTimeout(async () => {
+        try {
+          const token = getToken();
+          const res = await fetch(
+            `${BASE_URL}/chat/session/${sid}/follow-up-questions`,
+            { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data.questions && data.questions.length > 0) {
+              setter(data.questions);
+            }
+          }
+        } catch {
+          // Follow-up questions are optional — silently ignore failures
+        }
+      }, 1500);
+    },
+    [],
+  );
+
   const handleSend = useCallback(async () => {
     if (!inputValue.trim() || streaming) return;
     const content = inputValue.trim();
@@ -236,6 +264,7 @@ export function ChatWindow({
           queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
           queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
           queryClient.invalidateQueries({ queryKey: ["sessions"] });
+          fetchFollowUpQuestions(sessionId, setFollowUpQuestions);
         },
       });
       return;
@@ -311,11 +340,10 @@ export function ChatWindow({
         setStreamingMessageId(null);
         setToolEvents([]);
         setStreamingTokens(null);
-        // Don't clear followUpQuestions here — they are set after
-        // message_complete and should persist until the next message.
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        fetchFollowUpQuestions(sessionId, setFollowUpQuestions);
       },
     });
   }, [inputValue, streaming, sessionId, startStream, queryClient, pendingFiles, editingMsgId]);
@@ -420,6 +448,7 @@ export function ChatWindow({
         queryClient.invalidateQueries({ queryKey: ["messages", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["session", sessionId] });
         queryClient.invalidateQueries({ queryKey: ["sessions"] });
+        fetchFollowUpQuestions(sessionId, setFollowUpQuestions);
       },
     });
   }, [streaming, sessionId, startRegenerateStream, queryClient]);

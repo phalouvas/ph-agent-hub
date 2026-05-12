@@ -1081,6 +1081,36 @@ async def submit_feedback(
 
 
 # =============================================================================
+# Follow-up Questions — Issue #126
+# =============================================================================
+
+
+class FollowUpQuestionsResponse(BaseModel):
+    questions: list[str]
+
+
+@router.get(
+    "/session/{session_id}/follow-up-questions",
+    response_model=FollowUpQuestionsResponse,
+)
+async def get_follow_up_questions(
+    session_id: str,
+    current_user: UserORM = Depends(get_current_user),
+):
+    """Retrieve follow-up questions for a session from Redis.
+
+    Questions are generated asynchronously by a background task after
+    the SSE stream closes.  This endpoint is polled once by the frontend
+    when the stream finishes.  Returns an empty list if questions haven't
+    been generated yet or if the model doesn't support them.
+    """
+    from ..core.redis import get_follow_up_questions as _redis_get_follow_up
+
+    questions = await _redis_get_follow_up(session_id)
+    return FollowUpQuestionsResponse(questions=questions or [])
+
+
+# =============================================================================
 # Message Summarization — Issue #29
 # =============================================================================
 

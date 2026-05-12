@@ -15,6 +15,7 @@
 #   template.system_prompt + memory injection
 # =============================================================================
 
+import asyncio
 import json
 import logging
 import uuid
@@ -34,6 +35,7 @@ from ..core.redis import (
     clear_stream_cancel,
     get_temp_messages,
     get_temp_session,
+    store_follow_up_questions,
 )
 from ..db.orm.messages import Message
 from ..db.orm.models import Model
@@ -1673,86 +1675,111 @@ async def run_agent_stream(
         }),
     }
 
-    # ---- 12. Generate follow-up questions (if enabled) --------------------
-    if getattr(cfg.model, "follow_up_questions_enabled", False):
-        try:
-            questions = await _generate_follow_up_questions(
-                model=cfg.model,
-                system_prompt=cfg.system_prompt,
-                user_message=user_message,
-                assistant_response=accumulated_text,
-            )
-            if questions:
-                yield {
-                    "event": "follow_up_questions",
-                    "data": json.dumps({
-                        "session_id": session_id,
-                        "message_id": message_id,
-                        "questions": questions,
-                    }),
-                }
-        except Exception:
-            logger.exception(
-                "Failed to generate follow-up questions for session %s",
-                session_id,
-            )
+    # ---- 12. Launch post-response background tasks -----------------------
+    # Issue #126: Follow-up question generation and auto-tagging used to
+    # run synchronously inside the generator, keeping the SSE stream open
+    # and blocking the user from sending their next message.  Now they're
+    # launched as fire-and-forget background tasks so the stream closes
+    # immediately after message_complete.
+    _schedule_post_response_tasks(
+        model=cfg.model,
+        system_prompt=cfg.system_prompt,
+        user_message=user_message,
+        assistant_response=accumulated_text,
+        session_id=session_id,
+        tenant_id=tenant_id,
+        is_temporary=is_temporary,
+    )
 
-    # ---- 13. Auto-tag session (first assistant response only) --------------
-    if not is_temporary and accumulated_text:
-        try:
-            # Check if this is the first assistant message
-            tag_count_result = await db.execute(
-                select(Message).where(
-                    Message.session_id == session_id,
-                    Message.sender == "assistant",
-                )
-            )
-            assistant_count = len(list(tag_count_result.scalars().all()))
 
-            if assistant_count == 1:
-                tag_names = await _auto_tag_session(
-                    model=cfg.model,
-                    system_prompt=cfg.system_prompt,
+# ---------------------------------------------------------------------------
+# Post-response background tasks (Issue #126)
+# ---------------------------------------------------------------------------
+
+
+def _schedule_post_response_tasks(
+    model: Model,
+    system_prompt: str,
+    user_message: str,
+    assistant_response: str,
+    session_id: str,
+    tenant_id: str,
+    is_temporary: bool,
+) -> None:
+    """Launch follow-up generation and auto-tagging as background tasks.
+
+    These used to block the SSE stream; now they run independently so the
+    stream can close immediately after ``message_complete``, freeing the
+    user to send their next message right away.
+    """
+
+    async def _run() -> None:
+        # -- Follow-up questions -------------------------------------------
+        if getattr(model, "follow_up_questions_enabled", False):
+            try:
+                questions = await _generate_follow_up_questions(
+                    model=model,
+                    system_prompt=system_prompt,
                     user_message=user_message,
-                    assistant_response=accumulated_text,
-                    session_id=session_id,
-                    tenant_id=tenant_id,
+                    assistant_response=assistant_response,
                 )
-                if tag_names:
-                    # Open a fresh DB session for tag persistence
-                    from ..db.base import AsyncSessionLocal
+                if questions:
+                    await store_follow_up_questions(session_id, questions)
+            except Exception:
+                logger.exception(
+                    "Failed to generate follow-up questions for session %s",
+                    session_id,
+                )
 
-                    async with AsyncSessionLocal() as tag_db:
-                        from ..services import session_service as _tag_svc
+        # -- Auto-tagging --------------------------------------------------
+        if not is_temporary and assistant_response:
+            try:
+                from ..db.base import AsyncSessionLocal
 
-                        persisted_tags: list[str] = []
-                        for tag_name in tag_names:
-                            try:
-                                tag = await _tag_svc.get_or_create_tag(
-                                    tag_db, tenant_id, tag_name
-                                )
-                                await _tag_svc.add_tag_to_session(
-                                    tag_db, session_id, tag.id
-                                )
-                                persisted_tags.append(tag_name)
-                            except Exception:
-                                logger.warning(
-                                    "Failed to persist tag '%s' for session %s",
-                                    tag_name, session_id, exc_info=True,
-                                )
+                async with AsyncSessionLocal() as tag_db:
+                    tag_count_result = await tag_db.execute(
+                        select(Message).where(
+                            Message.session_id == session_id,
+                            Message.sender == "assistant",
+                        )
+                    )
+                    assistant_count = len(
+                        list(tag_count_result.scalars().all())
+                    )
 
-                        if persisted_tags:
-                            yield {
-                                "event": "tags_updated",
-                                "data": json.dumps({
-                                    "session_id": session_id,
-                                    "tags": persisted_tags,
-                                }),
-                            }
-        except Exception:
-            logger.exception(
-                "Failed to auto-tag session %s", session_id
-            )
+                    if assistant_count == 1:
+                        tag_names = await _auto_tag_session(
+                            model=model,
+                            system_prompt=system_prompt,
+                            user_message=user_message,
+                            assistant_response=assistant_response,
+                            session_id=session_id,
+                            tenant_id=tenant_id,
+                        )
+                        if tag_names:
+                            from ..services import session_service as _tag_svc
+
+                            for tag_name in tag_names:
+                                try:
+                                    tag = await _tag_svc.get_or_create_tag(
+                                        tag_db, tenant_id, tag_name
+                                    )
+                                    await _tag_svc.add_tag_to_session(
+                                        tag_db, session_id, tag.id
+                                    )
+                                except Exception:
+                                    logger.warning(
+                                        "Failed to persist tag '%s' for session %s",
+                                        tag_name,
+                                        session_id,
+                                        exc_info=True,
+                                    )
+            except Exception:
+                logger.exception(
+                    "Failed to auto-tag session %s", session_id
+                )
+
+    asyncio.create_task(_run())
 
 
 # ---------------------------------------------------------------------------
