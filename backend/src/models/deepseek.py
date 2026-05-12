@@ -220,9 +220,20 @@ def build_deepseek_client(
     base_url = model.base_url.rstrip("/")
     if not base_url.endswith("/v1"):
         base_url += "/v1"
-    return DeepSeekThinkingClient(
-        model=model.model_id or model.name,
+
+    # Pre-configure an AsyncOpenAI client with timeout and retry settings
+    # to survive transient network errors during long multi-tool streaming runs.
+    import openai
+
+    openai_client = openai.AsyncOpenAI(
         api_key=model.api_key,
         base_url=base_url,
+        max_retries=2,
+        timeout=300.0,
+    )
+
+    return DeepSeekThinkingClient(
+        model=model.model_id or model.name,
+        async_client=openai_client,
         thinking_enabled=thinking_enabled,
     )

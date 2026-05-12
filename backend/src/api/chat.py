@@ -188,6 +188,8 @@ def _session_to_dict(session: Session) -> dict[str, Any]:
         "selected_skill_id": session.selected_skill_id,
         "selected_model_id": session.selected_model_id,
         "thinking_enabled": session.thinking_enabled,
+        "created_at": session.created_at.isoformat(),
+        "updated_at": session.updated_at.isoformat(),
     }
 
 
@@ -635,15 +637,23 @@ async def _handle_streaming_message(
 
     async def inner_gen() -> AsyncIterator[dict]:
         """The inner generator that yields SSE event dicts."""
-        async for event_dict in run_agent_stream(
-            session_data=data,
-            user_message=_user_message,
-            db=db,
-            current_user=current_user,
-            message_id=message_id,
-            file_ids=_valid_file_ids,
-        ):
-            yield event_dict
+        try:
+            async for event_dict in run_agent_stream(
+                session_data=data,
+                user_message=_user_message,
+                db=db,
+                current_user=current_user,
+                message_id=message_id,
+                file_ids=_valid_file_ids,
+            ):
+                yield event_dict
+        finally:
+            # Ensure DB connection is cleanly returned to the pool even
+            # when the client disconnects mid-stream (asyncio.CancelledError).
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     # Wrap with heartbeat to keep proxy connections alive
     gen = _stream_with_heartbeat(inner_gen(), interval=15)
@@ -974,14 +984,22 @@ async def _handle_streaming_regenerate(
     message_id = str(uuid.uuid4())
 
     async def inner_gen() -> AsyncIterator[dict]:
-        async for event_dict in run_agent_stream(
-            session_data=data,
-            user_message=user_text,
-            db=db,
-            current_user=current_user,
-            message_id=message_id,
-        ):
-            yield event_dict
+        try:
+            async for event_dict in run_agent_stream(
+                session_data=data,
+                user_message=user_text,
+                db=db,
+                current_user=current_user,
+                message_id=message_id,
+            ):
+                yield event_dict
+        finally:
+            # Ensure DB connection is cleanly returned to the pool even
+            # when the client disconnects mid-stream (asyncio.CancelledError).
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     gen = _stream_with_heartbeat(inner_gen(), interval=15)
     return EventSourceResponse(gen, media_type="text/event-stream")
@@ -1762,7 +1780,7 @@ async def list_sessions_by_tag(
 def _parse_datetime(val: Any) -> datetime:
     """Parse a datetime value that may be a string or datetime object."""
     if val is None:
-        logger.warning("_parse_datetime received None, using current time")
+        logger.debug("_parse_datetime received None, using current time")
         return datetime.now(timezone.utc)
     if isinstance(val, datetime):
         return val

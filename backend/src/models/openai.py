@@ -12,8 +12,19 @@ def build_openai_client(model: Model) -> OpenAIChatClient:
 
     The model.api_key is already decrypted by the EncryptedString ORM type.
     """
+    # Pre-configure an AsyncOpenAI client with timeout and retry settings
+    # to survive transient network errors during long multi-tool streaming runs.
+    import openai
+
+    openai_client_args: dict = {
+        "api_key": model.api_key,
+        "max_retries": 2,
+        "timeout": 300.0,
+    }
+    if model.base_url:
+        openai_client_args["base_url"] = model.base_url
+
     return OpenAIChatClient(
         model=model.model_id or model.name,
-        api_key=model.api_key,
-        base_url=model.base_url,
+        async_client=openai.AsyncOpenAI(**openai_client_args),
     )
