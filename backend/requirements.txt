@@ -34,6 +34,10 @@ pydantic-settings
 # File uploads
 python-multipart
 markitdown
+openpyxl
+pandas
+mammoth
+python-pptx
 pdfplumber
 pdfminer-six
 pypdfium2

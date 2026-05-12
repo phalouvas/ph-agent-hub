@@ -26,7 +26,10 @@ class Settings(BaseSettings):
     UPLOAD_MAX_SIZE_BYTES: int = 20_971_520  # 20 MiB
     UPLOAD_ALLOWED_TYPES: str = (
         "text/plain,text/csv,text/markdown,application/pdf,"
-        "application/json,image/png,image/jpeg,image/gif,image/webp"
+        "application/json,image/png,image/jpeg,image/gif,image/webp,"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     )
 
     # --- Authentication (JWT) ---
