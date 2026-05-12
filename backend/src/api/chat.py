@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -924,11 +924,30 @@ async def regenerate_assistant_message(
             "Cannot regenerate: could not find the parent user message text"
         )
 
-    # Hard-delete both the old assistant and its user message
+    # Collect file IDs from the parent user message before deletion
+    user_file_ids: list[str] = []
+    if user_msg_to_delete is not None:
+        from ..db.orm.file_uploads import FileUpload as FileUploadORM
+
+        fu_result = await db.execute(
+            select(FileUploadORM).where(
+                FileUploadORM.message_id == user_msg_to_delete.id
+            )
+        )
+        user_file_ids = [fu.id for fu in fu_result.scalars().all()]
+
+    # Hard-delete the old assistant message and its uploads.
+    # For the user message, preserve the file uploads by unsetting
+    # their message_id so they can be re-linked to the new message.
     await upload_service.delete_uploads_for_message(db, message_id)
     await db.delete(assistant_msg)
     if user_msg_to_delete is not None:
-        await upload_service.delete_uploads_for_message(db, user_msg_to_delete.id)
+        if user_file_ids:
+            await db.execute(
+                update(FileUploadORM)
+                .where(FileUploadORM.id.in_(user_file_ids))
+                .values(message_id=None)
+            )
         await db.delete(user_msg_to_delete)
     await db.commit()
 
@@ -946,6 +965,7 @@ async def regenerate_assistant_message(
             db=db,
             current_user=current_user,
             user_text=user_text,
+            file_ids=user_file_ids,
         )
 
     # ---- Non-streaming path ---------------------------------------------
@@ -954,6 +974,7 @@ async def regenerate_assistant_message(
         user_message=user_text,
         db=db,
         current_user=current_user,
+        file_ids=user_file_ids,
     )
 
     model_id = data.get("selected_model_id")
@@ -975,6 +996,7 @@ async def _handle_streaming_regenerate(
     db: AsyncSession,
     current_user: UserORM,
     user_text: str,
+    file_ids: list[str] | None = None,
 ) -> EventSourceResponse:
     """Assemble and return an SSE EventSourceResponse for a streaming regenerate.
     
@@ -982,6 +1004,7 @@ async def _handle_streaming_regenerate(
     in the DB, so a new user+assistant pair is persisted (same as send_message).
     """
     message_id = str(uuid.uuid4())
+    _file_ids = file_ids or []
 
     async def inner_gen() -> AsyncIterator[dict]:
         try:
@@ -991,6 +1014,7 @@ async def _handle_streaming_regenerate(
                 db=db,
                 current_user=current_user,
                 message_id=message_id,
+                file_ids=_file_ids,
             ):
                 yield event_dict
         finally:
