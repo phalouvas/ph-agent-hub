@@ -163,3 +163,41 @@ async def clear_stream_cancel(session_id: str) -> None:
     """Remove the stream cancellation flag for *session_id*."""
     r = await get_redis()
     await r.delete(f"{STREAM_CANCEL_PREFIX}{session_id}")
+
+
+# ---------------------------------------------------------------------------
+# Follow-up questions helpers — stored in Redis so the frontend can fetch
+# them via a lightweight REST endpoint after the SSE stream closes.
+# ---------------------------------------------------------------------------
+FOLLOW_UP_PREFIX = "follow_up:"
+
+
+async def store_follow_up_questions(
+    session_id: str, questions: list[str], ttl: int = 60
+) -> None:
+    """Store follow-up questions for a session with a short TTL.
+
+    The short TTL ensures stale questions don't linger if the user
+    navigates away before fetching them.
+    """
+    import json
+
+    r = await get_redis()
+    key = f"{FOLLOW_UP_PREFIX}{session_id}"
+    await r.setex(key, ttl, json.dumps(questions))
+
+
+async def get_follow_up_questions(session_id: str) -> list[str] | None:
+    """Retrieve follow-up questions from Redis.
+
+    Returns None if the key does not exist (questions not yet generated
+    or already expired).
+    """
+    import json
+
+    r = await get_redis()
+    key = f"{FOLLOW_UP_PREFIX}{session_id}"
+    raw = await r.get(key)
+    if raw is None:
+        return None
+    return json.loads(raw)
