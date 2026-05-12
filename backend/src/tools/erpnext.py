@@ -59,6 +59,7 @@ def build_erpnext_tools(
     base_url: str,
     api_key: str,
     api_secret: str,
+    httpx_client: httpx.AsyncClient,
     file_infos: list[dict] | None = None,
 ) -> list:
     """Return a list of MAF @tool-decorated async functions bound to an
@@ -68,6 +69,9 @@ def build_erpnext_tools(
         base_url: ERPNext site URL (e.g. ``https://erp.example.com``).
         api_key: ERPNext API key.
         api_secret: ERPNext API secret.
+        httpx_client: A pre-configured ``httpx.AsyncClient`` whose lifecycle
+            is managed by the caller.  Must already have ``base_url`` and
+            ``Authorization`` headers set.
         file_infos: Optional list of FileUpload dicts (storage_key, bucket,
             original_filename, content_type, id) for the ``upload_file`` tool.
 
@@ -75,10 +79,6 @@ def build_erpnext_tools(
         A list of callables ready to pass to ``Agent(tools=...)``.
     """
     auth_header = _build_auth_header(api_key, api_secret)
-    client = httpx.AsyncClient(
-        base_url=base_url.rstrip("/"),
-        headers=auth_header,
-    )
 
     # ------------------------------------------------------------------
     @tool
@@ -90,7 +90,7 @@ def build_erpnext_tools(
             name: The document name/id.
         """
         url = f"/api/resource/{doctype}/{name}"
-        resp = await client.get(url)
+        resp = await httpx_client.get(url)
         data: dict = await _safe_erpnext_response(resp)
         logger.debug("get_doc %s/%s → %d bytes", doctype, name, len(json.dumps(data)))
         return data
@@ -132,7 +132,7 @@ def build_erpnext_tools(
             params["or_filters"] = json.dumps(or_filters)
 
         url = f"/api/resource/{doctype}"
-        resp = await client.get(url, params=params)
+        resp = await httpx_client.get(url, params=params)
         data: dict = await _safe_erpnext_response(resp)
         results: list[dict] = data.get("data", [])
         logger.debug(
@@ -153,7 +153,7 @@ def build_erpnext_tools(
             data: Dict of field names to values for the new document.
         """
         url = f"/api/resource/{doctype}"
-        resp = await client.post(url, json=data)
+        resp = await httpx_client.post(url, json=data)
         result: dict = await _safe_erpnext_response(resp)
         logger.debug("create_doc %s → %s", doctype, result.get("data", {}).get("name", "?"))
         return result
@@ -169,7 +169,7 @@ def build_erpnext_tools(
             data: Dict of field names to new values.
         """
         url = f"/api/resource/{doctype}/{name}"
-        resp = await client.put(url, json=data)
+        resp = await httpx_client.put(url, json=data)
         result: dict = await _safe_erpnext_response(resp)
         logger.debug("update_doc %s/%s", doctype, name)
         return result
@@ -184,7 +184,7 @@ def build_erpnext_tools(
             name: The document name/id to delete.
         """
         url = f"/api/resource/{doctype}/{name}"
-        resp = await client.delete(url)
+        resp = await httpx_client.delete(url)
         await _safe_erpnext_response(resp)
         logger.debug("delete_doc %s/%s", doctype, name)
         return {"message": f"Deleted {doctype} {name}"}
@@ -199,7 +199,7 @@ def build_erpnext_tools(
             name: The document name/id to submit.
         """
         url = f"/api/resource/{doctype}/{name}"
-        resp = await client.put(url, json={"docstatus": 1})
+        resp = await httpx_client.put(url, json={"docstatus": 1})
         result: dict = await _safe_erpnext_response(resp)
         logger.debug("submit_doc %s/%s", doctype, name)
         return result
@@ -214,7 +214,7 @@ def build_erpnext_tools(
             name: The document name/id to cancel.
         """
         url = f"/api/resource/{doctype}/{name}"
-        resp = await client.put(url, json={"docstatus": 2})
+        resp = await httpx_client.put(url, json={"docstatus": 2})
         result: dict = await _safe_erpnext_response(resp)
         logger.debug("cancel_doc %s/%s", doctype, name)
         return result
@@ -232,7 +232,7 @@ def build_erpnext_tools(
             name: The document name/id to amend.
         """
         url = "/api/method/frappe.client.amend_doc"
-        resp = await client.post(url, json={"doctype": doctype, "name": name})
+        resp = await httpx_client.post(url, json={"doctype": doctype, "name": name})
         result: dict = await _safe_erpnext_response(resp)
         logger.debug("amend_doc %s/%s", doctype, name)
         return result
@@ -247,7 +247,7 @@ def build_erpnext_tools(
             doctype: The DocType name (e.g. "Purchase Invoice").
         """
         url = f"/api/resource/DocType/{doctype}"
-        resp = await client.get(url)
+        resp = await httpx_client.get(url)
         data: dict = await _safe_erpnext_response(resp)
         doc_data: dict = data.get("data", {})
         all_fields: list[dict] = doc_data.get("fields", [])
@@ -288,9 +288,9 @@ def build_erpnext_tools(
             params: dict[str, Any] = {}
             if args:
                 params = {k: json.dumps(v) if not isinstance(v, str) else v for k, v in args.items()}
-            resp = await client.get(url, params=params)
+            resp = await httpx_client.get(url, params=params)
         else:
-            resp = await client.post(url, json=args or {})
+            resp = await httpx_client.post(url, json=args or {})
         result: dict = await _safe_erpnext_response(resp)
         logger.debug("call_method %s (%s)", method, http_method)
         return result

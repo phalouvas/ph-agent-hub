@@ -18,7 +18,7 @@
 import json
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
@@ -65,6 +65,7 @@ class SessionConfig:
     agent_name: str
     thinking_enabled: bool
     tenant_name: str = ""
+    cleanup_clients: list = field(default_factory=list)
 
 async def _resolve_session_config(
     db: AsyncSession,
@@ -88,7 +89,7 @@ async def _resolve_session_config(
     skill = await _resolve_skill(db, session_data)
 
     # 4. Resolve active tools
-    active_tool_callables = await _resolve_tool_callables(
+    active_tool_callables, cleanup_clients = await _resolve_tool_callables(
         db, session_data, tenant_id, file_ids=file_ids
     )
 
@@ -132,6 +133,7 @@ async def _resolve_session_config(
         agent_name=agent_name,
         thinking_enabled=thinking_enabled,
         tenant_name=tenant_name,
+        cleanup_clients=cleanup_clients,
     )
 
 
@@ -691,78 +693,88 @@ async def run_agent(
     raw_response: str
 
     try:
-        if cfg.execution_type == "workflow":
-            raw_response, tokens_in, tokens_out = await _run_workflow(
-                model=cfg.model,
-                skill=cfg.skill,
-                model_client=cfg.model_client,
-                system_prompt=cfg.system_prompt,
-                tools=cfg.active_tool_callables,
-                user_message=contextualized_message,
-                agent_name=cfg.agent_name,
-            )
-            cache_hit_tokens = 0
-        else:
-            raw_response, tokens_in, tokens_out, cache_hit_tokens = await _run_agent(
-                model=cfg.model,
-                model_client=cfg.model_client,
-                system_prompt=cfg.system_prompt,
-                tools=cfg.active_tool_callables,
-                user_message=contextualized_message,
-                agent_name=cfg.agent_name,
-            )
-    except Exception as exc:
-        logger.error("Agent run failed: %s", exc)
-        raise ValidationError(
-            f"Agent execution failed: {exc}"
-        ) from exc
+        try:
+            if cfg.execution_type == "workflow":
+                raw_response, tokens_in, tokens_out = await _run_workflow(
+                    model=cfg.model,
+                    skill=cfg.skill,
+                    model_client=cfg.model_client,
+                    system_prompt=cfg.system_prompt,
+                    tools=cfg.active_tool_callables,
+                    user_message=contextualized_message,
+                    agent_name=cfg.agent_name,
+                )
+                cache_hit_tokens = 0
+            else:
+                raw_response, tokens_in, tokens_out, cache_hit_tokens = await _run_agent(
+                    model=cfg.model,
+                    model_client=cfg.model_client,
+                    system_prompt=cfg.system_prompt,
+                    tools=cfg.active_tool_callables,
+                    user_message=contextualized_message,
+                    agent_name=cfg.agent_name,
+                )
+        except Exception as exc:
+            logger.error("Agent run failed: %s", exc)
+            raise ValidationError(
+                f"Agent execution failed: {exc}"
+            ) from exc
 
-    # ---- 8. Persist messages --------------------------------------------
-    _user_msg_id, assistant_msg_id = await _persist_messages(
-        db=db,
-        session_id=session_id,
-        is_temporary=is_temporary,
-        user_message=user_message,
-        assistant_response=raw_response,
-        model_id=cfg.model.id,
-        tokens_in=tokens_in,
-        tokens_out=tokens_out,
-    )
-
-    # ---- 9. Link file uploads to the user message ------------------------
-    if file_ids:
-        from ..services import upload_service as _upload_svc
-
-        await _upload_svc.link_uploads_to_message(
+        # ---- 8. Persist messages --------------------------------------------
+        _user_msg_id, assistant_msg_id = await _persist_messages(
             db=db,
-            file_ids=file_ids,
-            message_id=_user_msg_id,
-            user_id=current_user.id,
-        )
-
-    # ---- 10. Write usage log (non-streaming) -----------------------------
-    try:
-        await write_usage_log(
-            db,
-            tenant_id=current_user.tenant_id,
-            tenant_name=getattr(cfg, "tenant_name", "") or "",
-            user_id=current_user.id,
-            user_email=current_user.email,
-            user_full_name=current_user.display_name,
+            session_id=session_id,
+            is_temporary=is_temporary,
+            user_message=user_message,
+            assistant_response=raw_response,
             model_id=cfg.model.id,
-            model_name=cfg.model.name,
-            provider=cfg.model.provider,
             tokens_in=tokens_in,
             tokens_out=tokens_out,
-            cache_hit_tokens=cache_hit_tokens,
-            input_price=getattr(cfg.model, "input_price_per_1m", None),
-            output_price=getattr(cfg.model, "output_price_per_1m", None),
-            cache_hit_price=getattr(cfg.model, "cache_hit_price_per_1m", None),
         )
-    except Exception:
-        logger.exception("Failed to write usage log (non-streaming)")
 
-    return raw_response, assistant_msg_id
+        # ---- 9. Link file uploads to the user message ------------------------
+        if file_ids:
+            from ..services import upload_service as _upload_svc
+
+            await _upload_svc.link_uploads_to_message(
+                db=db,
+                file_ids=file_ids,
+                message_id=_user_msg_id,
+                user_id=current_user.id,
+            )
+
+        # ---- 10. Write usage log (non-streaming) -----------------------------
+        try:
+            await write_usage_log(
+                db,
+                tenant_id=current_user.tenant_id,
+                tenant_name=getattr(cfg, "tenant_name", "") or "",
+                user_id=current_user.id,
+                user_email=current_user.email,
+                user_full_name=current_user.display_name,
+                model_id=cfg.model.id,
+                model_name=cfg.model.name,
+                provider=cfg.model.provider,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                cache_hit_tokens=cache_hit_tokens,
+                input_price=getattr(cfg.model, "input_price_per_1m", None),
+                output_price=getattr(cfg.model, "output_price_per_1m", None),
+                cache_hit_price=getattr(cfg.model, "cache_hit_price_per_1m", None),
+            )
+        except Exception:
+            logger.exception("Failed to write usage log (non-streaming)")
+
+        return raw_response, assistant_msg_id
+
+    finally:
+        # ---- Close ERPNext httpx clients to prevent connection leaks -----
+        if cfg is not None and cfg.cleanup_clients:
+            for client in cfg.cleanup_clients:
+                try:
+                    await client.aclose()
+                except Exception:
+                    logger.debug("Failed to close ERPNext httpx client", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -943,14 +955,20 @@ async def _resolve_tool_callables(
     session_data: dict,
     tenant_id: str,
     file_ids: list[str] | None = None,
-) -> list:
+) -> tuple[list, list]:
     """Resolve active tools into MAF tool callables.
+
+    Returns:
+        A tuple of (callables, cleanup_clients) where cleanup_clients is a
+        list of httpx.AsyncClient instances that must be closed after the
+        agent run completes.
 
     Resolution chain:
     1. session_active_tools (manually activated by user in chat)
     2. skill.tool_ids (from the selected skill's config, if no session tools)
     """
     session_id = session_data["id"]
+    cleanup_clients: list = []
     is_temporary = session_data.get("is_temporary", False)
 
     # Load Tool ORM records
@@ -1008,7 +1026,9 @@ async def _resolve_tool_callables(
     # Build callables for each tool
     callables: list = []
     for tool in tools:
-        tool_callables = await _build_tool_callables(db, tool, tenant_id, session_id=session_id)
+        tool_callables = await _build_tool_callables(
+            db, tool, tenant_id, session_id=session_id, cleanup_clients=cleanup_clients
+        )
         callables.extend(tool_callables)
 
     # ---- Built-in tool: list_uploaded_files (always available) ----------
@@ -1037,7 +1057,7 @@ async def _resolve_tool_callables(
                 "Failed to build memory tools for user=%s", user_id, exc_info=True
             )
 
-    return callables
+    return callables, cleanup_clients
 
 
 async def _build_tool_callables(
@@ -1045,10 +1065,11 @@ async def _build_tool_callables(
     tool: Tool,
     tenant_id: str,
     session_id: str = "",
+    cleanup_clients: list | None = None,
 ) -> list:
     """Dispatch on tool.type to the appropriate factory."""
     if tool.type == "erpnext":
-        return await _build_erpnext_callables(db, tool, tenant_id, session_id=session_id)
+        return await _build_erpnext_callables(db, tool, tenant_id, session_id=session_id, cleanup_clients=cleanup_clients)
     elif tool.type == "membrane":
         from ..tools.membrane import build_membrane_tools
         return build_membrane_tools(tool.config or {})
@@ -1089,6 +1110,7 @@ async def _build_erpnext_callables(
     tool: Tool,
     tenant_id: str,
     session_id: str = "",
+    cleanup_clients: list | None = None,
 ) -> list:
     """Build ERPNext tool callables for a given Tool record.
 
@@ -1097,7 +1119,12 @@ async def _build_erpnext_callables(
     ``upload_file`` tool can access files uploaded in any
     message — the built-in ``list_uploaded_files`` tool
     acts as the discovery guard against misuse.
+
+    Creates a shared ``httpx.AsyncClient`` that is registered
+    on *cleanup_clients* so the caller can close it after the
+    agent run completes.
     """
+    import httpx
     from ..tools.erpnext import build_erpnext_tools
 
     config = tool.config or {}
@@ -1110,6 +1137,16 @@ async def _build_erpnext_callables(
             f"ERPNext tool '{tool.name}' is missing required config fields. "
             "Set base_url, api_key, and api_secret in the tool config."
         )
+
+    # Build the shared httpx client — caller is responsible for closing it
+    auth_header = {"Authorization": f"token {api_key}:{api_secret}"}
+    erpnext_client = httpx.AsyncClient(
+        base_url=base_url.rstrip("/"),
+        headers=auth_header,
+        timeout=30.0,
+    )
+    if cleanup_clients is not None:
+        cleanup_clients.append(erpnext_client)
 
     # Resolve file infos from ALL session file uploads
     file_infos: list[dict] | None = None
@@ -1138,6 +1175,7 @@ async def _build_erpnext_callables(
         base_url=base_url,
         api_key=api_key,
         api_secret=api_secret,
+        httpx_client=erpnext_client,
         file_infos=file_infos,
     )
 
@@ -1566,7 +1604,21 @@ async def run_agent_stream(
                 "message": str(exc),
             }),
         }
+        # Roll back DB session to ensure the connection is returned to the pool
+        try:
+            await db.rollback()
+        except Exception:
+            logger.debug("Failed to rollback DB session after stream error", exc_info=True)
         return  # Don't proceed to message_complete on error
+
+    finally:
+        # ---- Close ERPNext httpx clients to prevent connection leaks -----
+        if cfg is not None and cfg.cleanup_clients:
+            for client in cfg.cleanup_clients:
+                try:
+                    await client.aclose()
+                except Exception:
+                    logger.debug("Failed to close ERPNext httpx client", exc_info=True)
 
     # ---- 8. Extract token counts from stream final response -------------
     tokens_in = _stream_token_info.get("in", 0) or 0
