@@ -971,9 +971,12 @@ export function ChatWindow({
             }}
             disabled={streaming || isTemporary || !!editingMsgId}
             accept={
-              ".pdf,.csv,.txt,.md,.json,.png,.jpg,.jpeg,.gif,.webp," +
+              ".pdf,.csv,.txt,.md,.json,.png,.jpg,.jpeg,.gif,.webp,.xlsx,.docx,.pptx," +
               "application/pdf,text/csv,text/plain,text/markdown," +
-              "application/json,image/png,image/jpeg,image/gif,image/webp"
+              "application/json,image/png,image/jpeg,image/gif,image/webp," +
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet," +
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document," +
+              "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             }
           >
             <Button

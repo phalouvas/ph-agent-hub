@@ -25,6 +25,9 @@ _EXTRACTABLE_MIME_TYPES = frozenset({
     "text/plain",
     "text/markdown",
     "application/json",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 })
 
 # Image MIME types (no text extraction)
