@@ -5,7 +5,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, Enum, ForeignKey, JSON, func
+from sqlalchemy import String, Boolean, DateTime, Enum, ForeignKey, JSON, Text, func
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +27,7 @@ class Tool(Base):
         Enum("erpnext", "membrane", "custom", "datetime", "web_search", "fetch_url", "weather", "calculator", "wikipedia", "rss_feed", "currency_exchange", name="tool_type_enum"), nullable=False
     )
     config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    code: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

@@ -2,6 +2,7 @@
 // PH Agent Hub — Admin ToolForm
 // =============================================================================
 // Ant Design Create/Edit Modal+Form; dynamic fields per tool type.
+// Includes a CodeMirror-based Python editor for the "custom" type.
 // =============================================================================
 
 import React from "react";
@@ -12,12 +13,15 @@ import {
   Select,
   Switch,
   message,
+  Typography,
 } from "antd";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { createTool, updateTool, listTenants, ToolData, TenantData } from "../../services/admin";
 import { useAuth } from "../../../../providers/AuthProvider";
+import { CodeEditor } from "../../../../shared/components/CodeEditor";
 
 const { TextArea } = Input;
+const { Text } = Typography;
 
 interface ToolFormProps {
   open: boolean;
@@ -25,6 +29,19 @@ interface ToolFormProps {
   duplicateFrom?: ToolData | null;
   onClose: () => void;
 }
+
+const DEFAULT_CODE_TEMPLATE = `async def execute(**kwargs) -> dict:
+    """Custom tool logic.
+
+    Args:
+        **kwargs: Arguments passed by the LLM based on your function signature.
+
+    Returns:
+        A dict with the result.
+    """
+    # Your code here — use httpx, json, datetime, etc.
+    return {"result": "Hello from custom tool!", "input": kwargs}
+`;
 
 export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) {
   const [form] = Form.useForm();
@@ -59,6 +76,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
           fields.config_json = duplicateFrom.config
             ? JSON.stringify(duplicateFrom.config, null, 2)
             : "";
+          fields.code = duplicateFrom.code || "";
         }
         form.setFieldsValue(fields);
         setToolType(duplicateFrom.type);
@@ -76,11 +94,12 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
           fields.erpnext_api_key = tool.config.api_key || "";
           fields.erpnext_api_secret = tool.config.api_secret || "";
         }
-        // Populate config_json for custom type
+        // Populate config_json and code for custom type
         if (tool.type === "custom") {
           fields.config_json = tool.config
             ? JSON.stringify(tool.config, null, 2)
             : "";
+          fields.code = tool.code || "";
         }
         form.setFieldsValue(fields);
         setToolType(tool.type);
@@ -90,6 +109,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
           type: "custom",
           enabled: true,
           is_public: false,
+          code: DEFAULT_CODE_TEMPLATE,
         });
         setToolType("custom");
       }
@@ -179,7 +199,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
       }}
       onCancel={onClose}
       confirmLoading={createMutation.isPending || updateMutation.isPending}
-      width={520}
+      width={720}
     >
       <Form form={form} layout="vertical">
         {isAdmin && (
@@ -251,14 +271,32 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
           </>
         )}
 
-        {/* Config JSON for custom type only */}
+        {/* Custom type: code editor + config JSON */}
         {toolType === "custom" && (
-          <Form.Item name="config_json" label="Config (JSON)">
-            <TextArea
-              rows={6}
-              placeholder='{"key": "value"}'
-            />
-          </Form.Item>
+          <>
+            <Form.Item
+              name="code"
+              label="Python Code"
+              rules={[{ required: true, message: "Code is required for custom tools" }]}
+              extra={
+                <Text type="secondary">
+                  Define an <Text code>async def execute(**kwargs) -&gt; dict</Text> function.
+                  Available modules: httpx, json, datetime, re, math, hashlib, base64, uuid,
+                  urllib.parse, asyncio, collections, itertools, textwrap, html, csv, io,
+                  typing, enum, random, statistics.
+                </Text>
+              }
+              getValueFromEvent={(val: string) => val}
+            >
+              <CodeEditor height="300px" />
+            </Form.Item>
+            <Form.Item name="config_json" label="Config (JSON)">
+              <TextArea
+                rows={4}
+                placeholder='{"key": "value"}'
+              />
+            </Form.Item>
+          </>
         )}
 
         <Form.Item name="enabled" label="Enabled" valuePropName="checked">

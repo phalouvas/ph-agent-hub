@@ -1088,7 +1088,10 @@ async def _build_tool_callables(
         from ..tools.membrane import build_membrane_tools
         return build_membrane_tools(tool.config or {})
     elif tool.type == "custom":
-        # Stub for Phase 6
+        from ..tools.custom_tool_executor import build_custom_tool_from_code
+        if tool.code:
+            return build_custom_tool_from_code(tool.code, tool.config or {})
+        logger.warning("Custom tool %s has no code", tool.id)
         return []
     elif tool.type == "datetime":
         from ..tools.datetime import build_datetime_tools

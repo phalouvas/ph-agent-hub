@@ -24,7 +24,7 @@ from ..core.dependencies import (
     require_admin,
     require_admin_or_manager,
 )
-from ..core.exceptions import ForbiddenError, NotFoundError
+from ..core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from ..db.orm.users import User as UserORM
 from ..services.audit_service import list_audit_logs, write_audit_log
 from ..services.tenant_service import (
@@ -261,6 +261,7 @@ class ToolCreate(BaseModel):
     name: str
     type: str
     config: dict | None = None
+    code: str | None = None
     enabled: bool = True
     is_public: bool = False
 
@@ -270,6 +271,7 @@ class ToolUpdate(BaseModel):
     name: str | None = None
     type: str | None = None
     config: dict | None = None
+    code: str | None = None
     enabled: bool | None = None
     is_public: bool | None = None
 
@@ -280,6 +282,7 @@ class ToolResponse(BaseModel):
     name: str
     type: str
     config: dict | None
+    code: str | None
     enabled: bool
     is_public: bool
     created_at: datetime
@@ -812,12 +815,22 @@ async def create_tool(
     if current_user.role == "manager" and body.tenant_id and body.tenant_id != current_user.tenant_id:
         raise ForbiddenError("Managers can only create tools in their own tenant")
     tenant_id = body.tenant_id if current_user.role == "admin" and body.tenant_id else current_user.tenant_id
+
+    # Validate custom tool code before saving
+    if body.type == "custom" and body.code:
+        from ..tools.custom_tool_executor import validate_tool_code
+        try:
+            validate_tool_code(body.code)
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+
     tool = await _svc_create_tool(
         db,
         tenant_id=tenant_id,
         name=body.name,
         type=body.type,
         config=body.config,
+        code=body.code,
         enabled=body.enabled,
         is_public=body.is_public,
     )
@@ -848,6 +861,16 @@ async def update_tool(
         if target.tenant_id != current_user.tenant_id:
             raise ForbiddenError("Managers can only modify tools in their own tenant")
 
+    # Validate custom tool code before saving
+    resolved_type = body.type if body.type is not None else target.type
+    resolved_code = body.code if body.code is not None else target.code
+    if resolved_type == "custom" and resolved_code:
+        from ..tools.custom_tool_executor import validate_tool_code
+        try:
+            validate_tool_code(resolved_code)
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+
     update_kwargs: dict = {}
     if body.name is not None:
         update_kwargs["name"] = body.name
@@ -855,6 +878,8 @@ async def update_tool(
         update_kwargs["type"] = body.type
     if body.config is not None:
         update_kwargs["config"] = body.config
+    if body.code is not None:
+        update_kwargs["code"] = body.code
     if body.enabled is not None:
         update_kwargs["enabled"] = body.enabled
     if body.is_public is not None:
