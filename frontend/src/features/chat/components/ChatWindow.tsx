@@ -8,7 +8,7 @@
 
 import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { Virtuoso, VirtuosoHandle } from "react-virtuoso";
-import { Button, Drawer, Grid, Input, Space, Spin, Empty, Alert, Switch, Tag, Typography, Upload, message, notification } from "antd";
+import { Button, Drawer, Grid, Input, Slider, Space, Spin, Empty, Alert, Switch, Tag, Typography, Upload, message, notification } from "antd";
 import {
   SendOutlined,
   SettingOutlined,
@@ -58,6 +58,7 @@ interface ChatWindowProps {
   selectedModelId?: string;
   selectedTemplateId?: string;
   selectedSkillId?: string;
+  temperature?: number | null;
   onSessionUpdate?: (data: Record<string, unknown>) => void;
 }
 
@@ -67,6 +68,7 @@ export function ChatWindow({
   selectedModelId,
   selectedTemplateId,
   selectedSkillId,
+  temperature,
   onSessionUpdate,
 }: ChatWindowProps) {
   const [inputValue, setInputValue] = useState("");
@@ -76,6 +78,9 @@ export function ChatWindow({
   const [streamError, setStreamError] = useState<string | null>(null);
   const [streamingTokens, setStreamingTokens] = useState<{ tokens_in: number; tokens_out: number } | null>(null);
   const [thinkingEnabled, setThinkingEnabled] = useState<boolean | null>(null);
+  const [sessionTemperature, setSessionTemperature] = useState<number | null>(
+    temperature ?? null,
+  );
   const [toolEvents, setToolEvents] = useState<Array<{type: string; data: Record<string, unknown>}>>([]);
   const [followUpQuestions, setFollowUpQuestions] = useState<string[]>([]);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -145,7 +150,8 @@ export function ChatWindow({
     setPendingUserMessage(null);
     setEditingMsgId(null);
     setRegeneratingMsgId(null);
-  }, [sessionId]);
+    setSessionTemperature(temperature ?? null);
+  }, [sessionId, temperature]);
 
   // Clear editing state once the edited message is confirmed gone from the list
   useEffect(() => {
@@ -207,7 +213,7 @@ export function ChatWindow({
         content,
       });
 
-      startEditStream(sessionId, msgId, content, {
+      startEditStream(sessionId, msgId, content, sessionTemperature ?? undefined, {
         onToken(token, msgId) {
           setStreamingMessageId(msgId);
           setStreamingContent((prev) => prev + token);
@@ -280,7 +286,12 @@ export function ChatWindow({
     const fileIds = pendingFiles.map((f) => f.file_id);
     setPendingFiles([]);
 
-    startStream(sessionId, content, fileIds.length > 0 ? fileIds : undefined, {
+    startStream(
+      sessionId,
+      content,
+      fileIds.length > 0 ? fileIds : undefined,
+      sessionTemperature ?? undefined,
+      {
       onToken(token, msgId) {
         setStreamingMessageId(msgId);
         setStreamingContent((prev) => prev + token);
@@ -664,6 +675,13 @@ export function ChatWindow({
               }}
             />
           )}
+          <Button
+            size="small"
+            icon={<SettingOutlined />}
+            onClick={() => setSettingsOpen(true)}
+          >
+            Options
+          </Button>
         </div>
       )}
       <Drawer
@@ -732,6 +750,25 @@ export function ChatWindow({
               }}
             />
           )}
+          <div style={{ width: "100%" }}>
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Temperature: {sessionTemperature?.toFixed(1) ?? "Model default"}
+              </Text>
+              <Slider
+                min={0}
+                max={2}
+                step={0.1}
+                value={sessionTemperature ?? 0.7}
+                onChange={(v) => {
+                  const val = v as number;
+                  setSessionTemperature(val);
+                  onSessionUpdate?.({ temperature: val });
+                }}
+                marks={{ 0: "0", 1: "1", 2: "2" }}
+              />
+            </Space>
+          </div>
         </div>
       </Drawer>
 

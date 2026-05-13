@@ -13,7 +13,7 @@ from .deepseek import build_deepseek_client
 from .openai import build_openai_client
 
 
-def get_chat_client(model: Model, thinking_enabled: bool = False) -> BaseChatClient:
+def get_chat_client(model: Model, thinking_enabled: bool = False, temperature: float = 0.7) -> BaseChatClient:
     """Return the appropriate MAF ChatClient for the given Model.
 
     Dispatches on model.provider:
@@ -26,11 +26,11 @@ def get_chat_client(model: Model, thinking_enabled: bool = False) -> BaseChatCli
     provider = model.provider.lower()
 
     if provider == "openai":
-        return build_openai_client(model)
+        return build_openai_client(model, temperature=temperature)
     elif provider == "deepseek":
-        return build_deepseek_client(model, thinking_enabled=thinking_enabled)
+        return build_deepseek_client(model, thinking_enabled=thinking_enabled, temperature=temperature)
     elif provider == "anthropic":
-        return build_anthropic_client(model)
+        return build_anthropic_client(model, temperature=temperature)
     else:
         raise NotImplementedError(
             f"Provider '{model.provider}' is not supported"

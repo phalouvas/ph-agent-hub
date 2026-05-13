@@ -66,6 +66,7 @@ class SessionCreate(BaseModel):
     selected_model_id: str | None = None
     active_tool_ids: list[str] | None = None
     thinking_enabled: bool | None = None
+    temperature: float | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -75,6 +76,7 @@ class SessionUpdate(BaseModel):
     selected_skill_id: str | None = None
     selected_model_id: str | None = None
     thinking_enabled: bool | None = None
+    temperature: float | None = None
 
 
 class TagResponse(BaseModel):
@@ -96,6 +98,7 @@ class SessionResponse(BaseModel):
     selected_skill_id: str | None
     selected_model_id: str | None
     thinking_enabled: bool | None
+    temperature: float | None
     tags: list[TagResponse] = []
     created_at: datetime
     updated_at: datetime
@@ -106,6 +109,7 @@ class SessionResponse(BaseModel):
 class MessageCreate(BaseModel):
     content: str
     file_ids: list[str] | None = None
+    temperature: float | None = None
 
 
 class MessageResponse(BaseModel):
@@ -188,6 +192,7 @@ def _session_to_dict(session: Session) -> dict[str, Any]:
         "selected_skill_id": session.selected_skill_id,
         "selected_model_id": session.selected_model_id,
         "thinking_enabled": session.thinking_enabled,
+        "temperature": session.temperature,
         "created_at": session.created_at.isoformat(),
         "updated_at": session.updated_at.isoformat(),
     }
@@ -331,6 +336,7 @@ async def create_session(
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
             "thinking_enabled": body.thinking_enabled,
+            "temperature": body.temperature,
             "active_tool_ids": active_tool_ids,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -349,6 +355,7 @@ async def create_session(
             "selected_skill_id": body.selected_skill_id,
             "selected_model_id": body.selected_model_id,
             "thinking_enabled": body.thinking_enabled,
+            "temperature": body.temperature,
             "tags": [],
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
@@ -366,6 +373,7 @@ async def create_session(
             selected_skill_id=body.selected_skill_id,
             selected_model_id=body.selected_model_id,
             thinking_enabled=body.thinking_enabled,
+            temperature=body.temperature,
         )
 
         # Auto-activate always-on tools for permanent session
@@ -422,6 +430,7 @@ async def get_session(
         "selected_skill_id": data.get("selected_skill_id"),
         "selected_model_id": data.get("selected_model_id"),
         "thinking_enabled": data.get("thinking_enabled"),
+        "temperature": data.get("temperature"),
         "tags": data.get("tags", []),
         "created_at": _parse_datetime(data.get("created_at")),
         "updated_at": _parse_datetime(data.get("updated_at")),
@@ -459,6 +468,7 @@ async def update_session(
             "selected_skill_id": data.get("selected_skill_id"),
             "selected_model_id": data.get("selected_model_id"),
             "thinking_enabled": data.get("thinking_enabled"),
+            "temperature": data.get("temperature"),
             "tags": [],
             "created_at": _parse_datetime(data.get("created_at")),
             "updated_at": datetime.now(timezone.utc),
@@ -588,6 +598,9 @@ async def send_message(
     )
 
     if is_streaming:
+        # Inject per-message temperature override into session_data
+        if body.temperature is not None:
+            data["_message_temperature"] = body.temperature
         return await _handle_streaming_message(
             session_id=session_id,
             body=body,
@@ -599,6 +612,9 @@ async def send_message(
         )
 
     # ---- Non-streaming path (Phase 6 backward compat) --------------------
+    # Inject per-message temperature override into session_data
+    if body.temperature is not None:
+        data["_message_temperature"] = body.temperature
     response_text, assistant_msg_id = await run_agent(
         session_data=data,
         user_message=modified_message,
@@ -783,6 +799,9 @@ async def edit_user_message(
     is_streaming = "text/event-stream" in accept.lower()
 
     if is_streaming:
+        # Inject per-message temperature override into session_data
+        if body.temperature is not None:
+            data["_message_temperature"] = body.temperature
         return await _handle_streaming_message(
             session_id=session_id,
             body=body,
@@ -794,6 +813,9 @@ async def edit_user_message(
         )
 
     # ---- Non-streaming path ---------------------------------------------
+    # Inject per-message temperature override into session_data
+    if body.temperature is not None:
+        data["_message_temperature"] = body.temperature
     response_text, assistant_msg_id = await run_agent(
         session_data=data,
         user_message=body.content,

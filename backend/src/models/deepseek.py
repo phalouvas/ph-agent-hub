@@ -207,6 +207,7 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
 def build_deepseek_client(
     model: Model,
     thinking_enabled: bool = False,
+    temperature: float = 0.7,
 ) -> DeepSeekThinkingClient:
     """Build a DeepSeek chat client from a Model record.
 
@@ -236,4 +237,5 @@ def build_deepseek_client(
         model=model.model_id or model.name,
         async_client=openai_client,
         thinking_enabled=thinking_enabled,
+        temperature=temperature,
     )

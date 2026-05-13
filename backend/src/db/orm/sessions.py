@@ -5,7 +5,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import String, Boolean, DateTime, Float, ForeignKey, func
 from sqlalchemy.dialects.mysql import CHAR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -43,6 +43,7 @@ class Session(Base):
         CHAR(36), ForeignKey("models.id"), nullable=True
     )
     thinking_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=None)
+    temperature: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
