@@ -15,6 +15,10 @@ VALID_TOOL_TYPES = {
     "currency_exchange",
 }
 
+VALID_TOOL_CATEGORIES = {
+    "financial", "web", "enterprise", "utility", "custom", "system", "general",
+}
+
 
 async def list_tools(
     db: AsyncSession,
@@ -65,12 +69,18 @@ async def create_tool(
     code: str | None = None,
     enabled: bool = True,
     is_public: bool = False,
+    category: str = "general",
 ) -> Tool:
-    """Create a new tool. Raises ValidationError if type is invalid."""
+    """Create a new tool. Raises ValidationError if type or category is invalid."""
     if type not in VALID_TOOL_TYPES:
         raise ValidationError(
             f"Invalid tool type '{type}'. "
             f"Must be one of: {', '.join(sorted(VALID_TOOL_TYPES))}"
+        )
+    if category not in VALID_TOOL_CATEGORIES:
+        raise ValidationError(
+            f"Invalid tool category '{category}'. "
+            f"Must be one of: {', '.join(sorted(VALID_TOOL_CATEGORIES))}"
         )
 
     tool = Tool(
@@ -81,6 +91,7 @@ async def create_tool(
         code=code,
         enabled=enabled,
         is_public=is_public,
+        category=category,
     )
     db.add(tool)
     await db.commit()
@@ -99,6 +110,11 @@ async def update_tool(db: AsyncSession, tool_id: str, **fields) -> Tool:
         raise ValidationError(
             f"Invalid tool type '{fields['type']}'. "
             f"Must be one of: {', '.join(sorted(VALID_TOOL_TYPES))}"
+        )
+    if "category" in fields and fields["category"] not in VALID_TOOL_CATEGORIES:
+        raise ValidationError(
+            f"Invalid tool category '{fields['category']}'. "
+            f"Must be one of: {', '.join(sorted(VALID_TOOL_CATEGORIES))}"
         )
 
     for key, value in fields.items():

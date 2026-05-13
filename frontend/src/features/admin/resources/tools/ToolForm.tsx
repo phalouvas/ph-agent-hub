@@ -78,6 +78,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
             : "";
           fields.code = duplicateFrom.code || "";
         }
+        fields.category = duplicateFrom.category || undefined;
         form.setFieldsValue(fields);
         setToolType(duplicateFrom.type);
       } else if (tool) {
@@ -85,6 +86,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
           tenant_id: tool.tenant_id,
           name: tool.name,
           type: tool.type,
+          category: tool.category || undefined,
           enabled: tool.enabled,
           is_public: tool.is_public,
         };
@@ -107,6 +109,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
         form.resetFields();
         form.setFieldsValue({
           type: "custom",
+          category: undefined,
           enabled: true,
           is_public: false,
           code: DEFAULT_CODE_TEMPLATE,
@@ -241,6 +244,25 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
               { label: "Wikipedia", value: "wikipedia" },
             ]}
             onChange={(value) => setToolType(value)}
+          />
+        </Form.Item>
+        <Form.Item
+          name="category"
+          label="Category"
+          extra="Group tools by category in admin and chat UIs"
+        >
+          <Select
+            allowClear
+            placeholder="Select category (default: general)"
+            options={[
+              { label: "Financial", value: "financial" },
+              { label: "Web", value: "web" },
+              { label: "Enterprise", value: "enterprise" },
+              { label: "Utility", value: "utility" },
+              { label: "Custom", value: "custom" },
+              { label: "System", value: "system" },
+              { label: "General", value: "general" },
+            ]}
           />
         </Form.Item>
 

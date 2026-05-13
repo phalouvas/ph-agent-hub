@@ -63,6 +63,7 @@ export interface ToolData {
   tenant_id: string;
   name: string;
   type: string;
+  category: string;
   config: Record<string, unknown> | null;
   code: string | null;
   enabled: boolean;

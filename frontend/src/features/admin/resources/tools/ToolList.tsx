@@ -4,7 +4,7 @@
 // Ant Design Table/List; type column (erpnext/membrane/custom).
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Table,
   Button,
@@ -17,6 +17,7 @@ import {
   List,
   Card,
   Typography,
+  Select,
 } from "antd";
 import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
@@ -36,6 +37,7 @@ export function ToolList() {
   const [editingTool, setEditingTool] = useState<ToolData | null>(null);
   const [duplicatingTool, setDuplicatingTool] = useState<ToolData | null>(null);
   const [creating, setCreating] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined);
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
@@ -53,6 +55,32 @@ export function ToolList() {
   });
 
   const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    financial: "Financial",
+    web: "Web",
+    enterprise: "Enterprise",
+    utility: "Utility",
+    custom: "Custom",
+    system: "System",
+    general: "General",
+  };
+
+  const CATEGORY_COLORS: Record<string, string> = {
+    financial: "green",
+    web: "blue",
+    enterprise: "orange",
+    utility: "cyan",
+    custom: "purple",
+    system: "default",
+    general: "default",
+  };
+
+  const filteredTools = useMemo(() => {
+    if (!tools) return [];
+    if (!categoryFilter) return tools;
+    return tools.filter((t) => t.category === categoryFilter);
+  }, [tools, categoryFilter]);
 
   const deleteMutation = useMutation({
     mutationFn: deleteTool,
@@ -72,6 +100,16 @@ export function ToolList() {
 
   const columns = [
     { title: "Name", dataIndex: "name", key: "name" },
+    {
+      title: "Category",
+      dataIndex: "category",
+      key: "category",
+      render: (v: string) => (
+        <Tag color={CATEGORY_COLORS[v] || "default"}>
+          {CATEGORY_LABELS[v] || v}
+        </Tag>
+      ),
+    },
     {
       title: "Type",
       dataIndex: "type",
@@ -149,10 +187,24 @@ export function ToolList() {
         </Button>
       </Space>
 
+      <Space style={{ marginBottom: 16, marginLeft: 8 }}>
+        <Select
+          allowClear
+          placeholder="Filter by category"
+          style={{ width: 180 }}
+          value={categoryFilter}
+          onChange={(val) => setCategoryFilter(val)}
+          options={Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
+            label,
+            value,
+          }))}
+        />
+      </Space>
+
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={tools || []}
+          dataSource={filteredTools}
           renderItem={(tool) => (
             <Card
               size="small"
@@ -182,6 +234,9 @@ export function ToolList() {
                 description={
                   <Space direction="vertical" size={2}>
                     <Space size={4}>
+                      <Tag color={CATEGORY_COLORS[tool.category] || "default"}>
+                        {CATEGORY_LABELS[tool.category] || tool.category}
+                      </Tag>
                       <Tag color="purple">{tool.type}</Tag>
                       {tool.type === "custom" && tool.code && (
                         <Tag color="green" style={{ fontSize: 11 }}>code</Tag>
@@ -206,7 +261,7 @@ export function ToolList() {
       ) : (
         <Table
           columns={columns}
-          dataSource={tools || []}
+          dataSource={filteredTools}
           rowKey="id"
           loading={isLoading}
         />
