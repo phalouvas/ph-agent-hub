@@ -844,22 +844,17 @@ export function ChatWindow({
                 {/* Thinking placeholder — shown while streaming but before any content or reasoning */}
               {streaming && !streamingContent && !streamingReasoningContent && (
                 <div style={{ padding: "0 16px", marginBottom: 16 }}>
-                  <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
-                    <Space style={{ marginLeft: 4 }}>
-                      <RobotOutlined style={{ color: "#52c41a" }} />
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 2 }}>
+                    <Space style={{ marginLeft: 4 }} size={2}>
+                      <RobotOutlined style={{ color: "#52c41a", fontSize: 11 }} />
+                      <Text type="secondary" style={{ fontSize: 11 }}>
                         Assistant
                       </Text>
                     </Space>
                   </div>
                   <div
                     style={{
-                      display: "inline-block",
-                      maxWidth: "80%",
-                      padding: "12px 16px",
-                      borderRadius: 12,
-                      borderBottomLeftRadius: 4,
-                      background: "#f0f0f0",
+                      padding: "8px 0",
                     }}
                   >
                     <Space size={4}>

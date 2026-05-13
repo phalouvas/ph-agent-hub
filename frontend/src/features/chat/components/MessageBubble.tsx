@@ -98,12 +98,12 @@ function MessageBubbleInner({
   );
 
   const bubbleStyle: React.CSSProperties = {
-    maxWidth: "80%",
     padding: "12px 16px",
     borderRadius: 12,
     marginBottom: 8,
     ...(isSystem
       ? {
+          maxWidth: "80%",
           background: "#fffbe6",
           border: "1px solid #ffe58f",
           marginLeft: "auto",
@@ -112,14 +112,16 @@ function MessageBubbleInner({
         }
       : isUser
       ? {
+          maxWidth: "80%",
           background: "#1677ff",
           color: "#fff",
           marginLeft: "auto",
           borderBottomRightRadius: 4,
         }
       : {
-          background: "#f0f0f0",
-          borderBottomLeftRadius: 4,
+          background: "transparent",
+          padding: 0,
+          borderRadius: 0,
         }),
   };
 
@@ -136,20 +138,20 @@ function MessageBubbleInner({
   return (
     <div style={{ marginBottom: 16 }}>
       {/* Sender indicator */}
-      <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 4 }}>
-        <Space style={{ marginLeft: isUser ? undefined : 4 }}>
+      <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 2 }}>
+        <Space style={{ marginLeft: isUser ? undefined : 4 }} size={2}>
           {isUser ? (
-            <UserOutlined style={{ color: "#1677ff" }} />
+            <UserOutlined style={{ color: "#1677ff", fontSize: 11 }} />
           ) : isSystem ? (
-            <CompressOutlined style={{ color: "#faad14" }} />
+            <CompressOutlined style={{ color: "#faad14", fontSize: 11 }} />
           ) : (
-            <RobotOutlined style={{ color: "#52c41a" }} />
+            <RobotOutlined style={{ color: "#52c41a", fontSize: 11 }} />
           )}
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 11 }}>
             {isUser ? "You" : isSystem ? "Summary" : "Assistant"}
           </Text>
           {message.model_id && !isUser && (
-            <Text type="secondary" style={{ fontSize: 11 }}>
+            <Text type="secondary" style={{ fontSize: 10, color: "#bbb" }}>
               · {message.model_id.slice(0, 8)}
             </Text>
           )}
@@ -181,10 +183,8 @@ function MessageBubbleInner({
                     style={{
                       maxHeight: 300,
                       overflow: "auto",
-                      background: "#f9f0ff",
-                      border: "1px solid #d3adf7",
-                      borderRadius: 6,
-                      padding: "8px 12px",
+                      borderLeft: "3px solid #d3adf7",
+                      padding: "4px 12px",
                     }}
                   >
                     <Typography.Paragraph
@@ -201,8 +201,6 @@ function MessageBubbleInner({
                 ),
                 style: {
                   marginBottom: textItems.length > 0 ? 8 : 0,
-                  background: "rgba(249, 240, 255, 0.5)",
-                  borderRadius: 6,
                 },
               },
             ]}
@@ -210,7 +208,7 @@ function MessageBubbleInner({
         )}
 
         {textItems.map((item, i) => (
-          <div key={i}>
+          <div key={i} style={isUser ? undefined : { maxWidth: 750 }}>
             {isUser ? (
               <Text style={{ color: "#fff", whiteSpace: "pre-wrap" }}>
                 {item.text}
@@ -314,10 +312,6 @@ function MessageBubbleInner({
                 ),
                 style: {
                   marginTop: 8,
-                  background: isUser
-                    ? "rgba(255,255,255,0.1)"
-                    : "rgba(0,0,0,0.03)",
-                  borderRadius: 6,
                 },
               },
             ]}
