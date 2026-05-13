@@ -120,8 +120,7 @@ function MessageBubbleInner({
         }
       : {
           background: "transparent",
-          borderLeft: "3px solid #e8e8e8",
-          paddingLeft: 20,
+          padding: 0,
           borderRadius: 0,
         }),
   };

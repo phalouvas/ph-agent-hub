@@ -854,8 +854,7 @@ export function ChatWindow({
                   </div>
                   <div
                     style={{
-                      borderLeft: "3px solid #e8e8e8",
-                      padding: "8px 0 8px 20px",
+                      padding: "8px 0",
                     }}
                   >
                     <Space size={4}>
@@ -887,7 +886,7 @@ export function ChatWindow({
                     display: "flex",
                     flexWrap: "wrap",
                     gap: 8,
-                    padding: "0 16px 12px 39px",
+                    padding: "0 16px 12px",
                     justifyContent: "flex-start",
                   }}
                 >
