@@ -26,7 +26,13 @@ import {
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listUsers, deleteUser, updateUser, UserData } from "../../services/admin";
+import {
+  listUsers,
+  deleteUser,
+  updateUser,
+  listTenants,
+  UserData,
+} from "../../services/admin";
 import { UserForm } from "./UserForm";
 import { formatCurrency } from "../../../../shared/utils/formatCurrency";
 
@@ -47,6 +53,13 @@ export function UserList() {
     queryKey: ["admin-users", tenantId],
     queryFn: () => listUsers({ tenant_id: tenantId }),
   });
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-user-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteUser,
@@ -95,6 +108,22 @@ export function UserList() {
           }
         />
       ),
+    },
+    {
+      title: "Tenant",
+      dataIndex: "tenant_id",
+      key: "tenant_id",
+      width: 130,
+      ellipsis: true,
+      responsive: ["lg" as const],
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? (
+          <Text>{tenantName}</Text>
+        ) : (
+          <Text type="secondary">Unknown tenant</Text>
+        );
+      },
     },
     {
       title: "Actions",
