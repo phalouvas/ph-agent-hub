@@ -1117,6 +1117,21 @@ async def _build_tool_callables(
     elif tool.type == "currency_exchange":
         from ..tools.currency_exchange import build_currency_exchange_tools
         return build_currency_exchange_tools(tool.config or {})
+    elif tool.type == "market_overview":
+        from ..tools.market_overview import build_market_overview_tools
+        return build_market_overview_tools(tool.config or {})
+    elif tool.type == "etf_data":
+        from ..tools.etf_data import build_etf_data_tools
+        return build_etf_data_tools(tool.config or {})
+    elif tool.type == "stock_data":
+        from ..tools.stock_data import build_stock_data_tools
+        return build_stock_data_tools(tool.config or {})
+    elif tool.type == "portfolio":
+        from ..tools.portfolio import build_portfolio_tools
+        return build_portfolio_tools(tool.config or {})
+    elif tool.type == "sec_filings":
+        from ..tools.sec_filings import build_sec_filings_tools
+        return build_sec_filings_tools(tool.config or {})
     else:
         logger.warning("Unknown tool type '%s' for tool %s", tool.type, tool.id)
         return []

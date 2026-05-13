@@ -144,6 +144,9 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
       message.success("Tool created");
       onClose();
     },
+    onError: (error: Error) => {
+      message.error(error.message || "Failed to create tool");
+    },
   });
 
   const updateMutation = useMutation({
@@ -179,6 +182,9 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
       queryClient.invalidateQueries({ queryKey: ["admin-tools"] });
       message.success("Tool updated");
       onClose();
+    },
+    onError: (error: Error) => {
+      message.error(error.message || "Failed to update tool");
     },
   });
 
@@ -233,9 +239,14 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
               { label: "Custom", value: "custom" },
               { label: "Datetime", value: "datetime" },
               { label: "ERPNext", value: "erpnext" },
+              { label: "ETF Data", value: "etf_data" },
               { label: "Fetch URL", value: "fetch_url" },
+              { label: "Market Overview", value: "market_overview" },
               { label: "Membrane", value: "membrane" },
+              { label: "Portfolio", value: "portfolio" },
               { label: "RSS Feed", value: "rss_feed" },
+              { label: "SEC Filings", value: "sec_filings" },
+              { label: "Stock Data", value: "stock_data" },
               { label: "Weather", value: "weather" },
               { label: "Web Search", value: "web_search" },
               { label: "Wikipedia", value: "wikipedia" },
