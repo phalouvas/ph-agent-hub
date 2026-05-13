@@ -1132,6 +1132,22 @@ async def _build_tool_callables(
     elif tool.type == "sec_filings":
         from ..tools.sec_filings import build_sec_filings_tools
         return build_sec_filings_tools(tool.config or {})
+    elif tool.type == "code_interpreter":
+        from ..tools.code_interpreter import build_code_interpreter_tools
+        return build_code_interpreter_tools(tool.config or {})
+    elif tool.type == "sql_query":
+        from ..tools.sql_query import build_sql_query_tools
+        return build_sql_query_tools(tool.config or {})
+    elif tool.type == "document_generation":
+        from ..tools.document_generation import build_document_generation_tools
+        return build_document_generation_tools(
+            tool.config or {}, tenant_id=tenant_id
+        )
+    elif tool.type == "browser":
+        from ..tools.browser import build_browser_tools
+        return build_browser_tools(
+            tool.config or {}, tenant_id=tenant_id
+        )
     else:
         logger.warning("Unknown tool type '%s' for tool %s", tool.type, tool.id)
         return []

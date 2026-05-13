@@ -57,6 +57,13 @@ feedparser
 # Rate limiting
 slowapi
 
+# Document generation (Issue #159)
+weasyprint
+markdown
+
+# Browser automation (Issue #159)
+playwright
+
 # Financial / Investor Tools (Issue #158)
 yfinance
 numpy
