@@ -140,6 +140,7 @@ class ToolResponse(BaseModel):
     tenant_id: str
     name: str
     type: str
+    category: str
     config: dict | None
     enabled: bool
     created_at: datetime

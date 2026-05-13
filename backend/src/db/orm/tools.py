@@ -28,6 +28,9 @@ class Tool(Base):
     )
     config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="general", server_default="general"
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
