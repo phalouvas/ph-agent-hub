@@ -25,6 +25,7 @@ import {
   listSkills,
   deleteSkill,
   updateSkill,
+  listTenants,
   SkillData,
 } from "../../services/admin";
 import { SkillForm } from "./SkillForm";
@@ -46,6 +47,13 @@ export function SkillList() {
     queryKey: ["admin-skills", tenantId],
     queryFn: () => listSkills({ tenant_id: tenantId }),
   });
+
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-skill-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteSkill,
@@ -94,6 +102,22 @@ export function SkillList() {
           }
         />
       ),
+    },
+    {
+      title: "Tenant",
+      dataIndex: "tenant_id",
+      key: "tenant_id",
+      width: 130,
+      ellipsis: true,
+      responsive: ["lg" as const],
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? (
+          <Text>{tenantName}</Text>
+        ) : (
+          <Text type="secondary">Unknown tenant</Text>
+        );
+      },
     },
     {
       title: "Actions",

@@ -15,6 +15,7 @@ import {
   Grid,
   List,
   Card,
+  Typography,
 } from "antd";
 import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
@@ -22,11 +23,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listTemplates,
   deleteTemplate,
+  listTenants,
   TemplateData,
 } from "../../services/admin";
 import { TemplateForm } from "./TemplateForm";
 
 const { useBreakpoint } = Grid;
+const { Text } = Typography;
 
 export function TemplateList() {
   const [editingTemplate, setEditingTemplate] = useState<TemplateData | null>(null);
@@ -43,6 +46,13 @@ export function TemplateList() {
     queryFn: () => listTemplates({ tenant_id: tenantId }),
   });
 
+  const { data: tenants } = useQuery({
+    queryKey: ["admin-tenants-template-list"],
+    queryFn: () => listTenants(),
+  });
+
+  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+
   const deleteMutation = useMutation({
     mutationFn: deleteTemplate,
     onSuccess: () => {
@@ -58,6 +68,22 @@ export function TemplateList() {
       dataIndex: "scope",
       key: "scope",
       render: (v: string) => <Tag>{v}</Tag>,
+    },
+    {
+      title: "Tenant",
+      dataIndex: "tenant_id",
+      key: "tenant_id",
+      width: 130,
+      ellipsis: true,
+      responsive: ["lg" as const],
+      render: (v: string) => {
+        const tenantName = tenantNameById.get(v);
+        return tenantName ? (
+          <Text>{tenantName}</Text>
+        ) : (
+          <Text type="secondary">Unknown tenant</Text>
+        );
+      },
     },
     {
       title: "Actions",
