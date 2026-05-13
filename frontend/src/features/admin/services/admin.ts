@@ -64,6 +64,7 @@ export interface ToolData {
   name: string;
   type: string;
   config: Record<string, unknown> | null;
+  code: string | null;
   enabled: boolean;
   is_public: boolean;
   created_at: string;

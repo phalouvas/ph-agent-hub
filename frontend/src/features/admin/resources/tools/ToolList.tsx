@@ -76,7 +76,14 @@ export function ToolList() {
       title: "Type",
       dataIndex: "type",
       key: "type",
-      render: (v: string) => <Tag color="purple">{v}</Tag>,
+      render: (v: string, record: ToolData) => (
+        <Space size={4}>
+          <Tag color="purple">{v}</Tag>
+          {v === "custom" && record.code && (
+            <Tag color="green" style={{ fontSize: 11 }}>code</Tag>
+          )}
+        </Space>
+      ),
     },
     {
       title: "Tenant",
@@ -174,7 +181,12 @@ export function ToolList() {
                 title={tool.name}
                 description={
                   <Space direction="vertical" size={2}>
-                    <Tag color="purple">{tool.type}</Tag>
+                    <Space size={4}>
+                      <Tag color="purple">{tool.type}</Tag>
+                      {tool.type === "custom" && tool.code && (
+                        <Tag color="green" style={{ fontSize: 11 }}>code</Tag>
+                      )}
+                    </Space>
                     <Switch
                       checked={tool.enabled}
                       onChange={(checked) =>

@@ -62,6 +62,7 @@ async def create_tool(
     name: str,
     type: str,
     config: dict | None = None,
+    code: str | None = None,
     enabled: bool = True,
     is_public: bool = False,
 ) -> Tool:
@@ -77,6 +78,7 @@ async def create_tool(
         name=name,
         type=type,
         config=config,
+        code=code,
         enabled=enabled,
         is_public=is_public,
     )
