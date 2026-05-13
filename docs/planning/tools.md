@@ -5,361 +5,125 @@
 
 ---
 
-## Current State (13 tools)
+## Current State (28 tools)
+
+### Built-in Tools (always active, not configurable)
 
 | # | Tool | Type key | Category |
 |---|------|----------|----------|
-| 1 | Calculator | `calculator` | Math — safe AST expression evaluator |
-| 2 | Currency Exchange | `currency_exchange` | Finance — exchange rates |
-| 3 | Custom Tool Executor | `custom` | Extensibility — admin-authored sandboxed Python |
-| 4 | Datetime | `datetime` | Utility — timezone-aware date/time |
-| 5 | ERPNext | `erpnext` | Enterprise — full CRUD, file upload, doctype meta |
-| 6 | Fetch URL | `fetch_url` | Web — HTTP GET fetching |
-| 7 | File List | `file_list` | Built-in — list/read uploaded files (always active) |
-| 8 | Membrane | `membrane` | Enterprise — Membrane integration |
-| 9 | Memory | `memory` | Built-in — cross-session key-value persistence |
-| 10 | RSS Feed | `rss_feed` | Web — RSS/Atom feed reader |
-| 11 | Weather | `weather` | Utility — weather via wttr.in |
-| 12 | Web Search | `web_search` | Web — SearXNG-backed search |
-| 13 | Wikipedia | `wikipedia` | Knowledge — article lookup |
+| 1 | File List | `file_list` | System — list/read uploaded files |
+| 2 | Memory | `memory` | System — cross-session key-value persistence |
+
+### User-Configurable Tools (created via Admin → Tools)
+
+#### Utility
+| # | Tool | Type key | Functions |
+|---|------|----------|-----------|
+| 3 | Calculator | `calculator` | Safe AST expression evaluator |
+| 4 | Code Interpreter | `code_interpreter` | Docker-sandboxed Python execution (pandas, numpy, matplotlib, plotly) |
+| 5 | Datetime | `datetime` | Timezone-aware date/time queries |
+| 6 | Document Generation | `document_generation` | Markdown→PDF, list→Excel, list→CSV (output to MinIO/S3) |
+| 7 | Weather | `weather` | Weather via wttr.in |
+
+#### Web
+| # | Tool | Type key | Functions |
+|---|------|----------|-----------|
+| 8 | Browser | `browser` | Playwright headless Chromium — screenshot, extract text, extract tables |
+| 9 | Fetch URL | `fetch_url` | HTTP GET with HTML→text conversion |
+| 10 | RAG Search | `rag_search` | Semantic search across uploaded documents (embedding API + fallback TF-IDF) |
+| 11 | RSS Feed | `rss_feed` | RSS/Atom feed reader |
+| 12 | Web Search | `web_search` | SearXNG-backed web search |
+| 13 | Wikipedia | `wikipedia` | Article lookup and summary |
+
+#### Financial / Investor (zero API keys)
+| # | Tool | Type key | Functions |
+|---|------|----------|-----------|
+| 14 | Currency Exchange | `currency_exchange` | Exchange rates via frankfurter.app (ECB data) |
+| 15 | ETF Data | `etf_data` | ETF holdings, profile (yfinance) |
+| 16 | Market Overview | `market_overview` | Global index quotes, market movers (yfinance) |
+| 17 | Portfolio | `portfolio` | Portfolio analysis, optimization, efficient frontier (numpy+scipy) |
+| 18 | SEC Filings | `sec_filings` | SEC EDGAR filing search and retrieval |
+| 19 | Stock Data | `stock_data` | Quotes, historical prices, financials, analyst ratings (yfinance) |
+
+#### Enterprise
+| # | Tool | Type key | Functions |
+|---|------|----------|-----------|
+| 20 | ERPNext | `erpnext` | Full CRUD, file upload, doctype metadata |
+| 21 | Membrane | `membrane` | Membrane framework integration |
+| 22 | SQL Query | `sql_query` | Read-only SQL against tenant-configured DB (PostgreSQL, MySQL, MariaDB) |
+
+#### Integrations
+| # | Tool | Type key | Functions |
+|---|------|----------|-----------|
+| 23 | Calendar | `calendar` | Google Calendar — list/create events, find free slots |
+| 24 | Email | `email` | Send emails via SMTP or SendGrid API |
+| 25 | GitHub | `github` | Search code, list issues/PRs, read files, create issues (GitHub + GitLab) |
+| 26 | Image Generation | `image_generation` | DALL·E 3 / Stable Diffusion via API → image URL in MinIO/S3 |
+| 27 | Slack | `slack` | Send messages to Slack channels (webhook or bot token) |
+
+#### Extensibility
+| # | Tool | Type key | Functions |
+|---|------|----------|-----------|
+| 28 | Custom | `custom` | Admin-authored sandboxed Python tools |
 
 ---
 
 ## Comparison With Other Agentic Platforms
 
 When comparing with ChatGPT, Claude, Gemini, Copilot, and LangChain/CrewAI, 
-the main gaps are:
+PH Agent Hub now matches or exceeds all major capabilities:
 
-- **Code execution** — ChatGPT Code Interpreter, Claude artifacts, Gemini code exec
-- **Image generation** — DALL·E, Imagen
-- **Database queries** — LangChain SQL toolkit, Claude MCP Postgres
-- **Document generation** — PDF/Excel export
-- **Browser automation** — Claude computer use, Playwright-based tools
-- **Git/DevOps** — Copilot, Claude MCP GitHub
-- **Calendar / Scheduling** — Gemini Google Calendar, Office 365 integrations
-- **Vector / RAG search** — Semantic search over uploaded documents
-- **Communication** — Slack, Teams, Email sending
+- **✅ Code execution** — `code_interpreter` (Docker-sandboxed Python, AST-validated)
+- **✅ Image generation** — `image_generation` (DALL·E 3, Stable Diffusion)
+- **✅ Database queries** — `sql_query` (read-only SQL, multi-backend, encrypted connections)
+- **✅ Document generation** — `document_generation` (PDF/Excel/CSV export to MinIO/S3)
+- **✅ Browser automation** — `browser` (Playwright headless Chromium, screenshots, text/table extraction)
+- **✅ Git/DevOps** — `github` (GitHub + GitLab: search code, issues, PRs, files)
+- **✅ Calendar / Scheduling** — `calendar` (Google Calendar: list/create events, find free slots)
+- **✅ Vector / RAG search** — `rag_search` (semantic search over uploaded documents)
+- **✅ Communication** — `slack` + `email` (Slack webhook/bot, SMTP/SendGrid)
 
----
-
-## Proposed Tools (Prioritized)
-
-### 🔴 Priority 1 — Financial / Investor Tools
-
-> **Zero API keys, zero cost, zero registration.** All data from yfinance (global, free)
-> and SEC EDGAR (US government, free by law), plus pure Python computation.
-
-####  1a. Stock Data — `stock_data`
-
-**Data source**: yfinance (global, free, no key)
-
-**Functions**: `get_stock_quote`, `get_historical_prices`, `get_financials`, `get_key_metrics`, `get_company_info`, `get_dividends`, `get_earnings_history`, `get_analyst_ratings`
-
-**Effort**: Medium
+All gaps identified in the original comparison have been addressed.
 
 ---
 
-#### 1b. Market Overview — `market_overview`
-
-**Data source**: yfinance (global, free, no key)
-
-**Functions**: `get_index_quote` (S&P 500, Nasdaq, Dow, VIX, FTSE, DAX, Nikkei, Hang Seng, Nifty, ASX), `get_market_movers` (day's gainers/losers)
-
-**Effort**: Low
-
----
-
-#### 1c. ETF Data — `etf_data`
-
-**Data source**: yfinance (global, free, no key)
-
-**Functions**: `get_etf_holdings`, `get_etf_profile`
-
-**Effort**: Low
-
----
-
-#### 1d. SEC Filings — `sec_filings`
-
-**Data source**: sec.gov (US only, free by law, no key)
-
-**Functions**: `list_filings` (10-K, 10-Q, 8-K), `get_filing_text`
-
-**Effort**: Medium
-
----
-
-#### 1e. Portfolio Analysis — `portfolio`
-
-**Data source**: None (pure numpy + scipy computation)
-
-**Functions**: `analyze_portfolio` (returns, volatility, Sharpe/Sortino, drawdown, VaR, beta, alpha, correlation, diversification), `optimize_portfolio` (Sharpe/min vol/max return), `efficient_frontier`
-
-**Effort**: Medium
-
----
-
-### 🟡 Priority 2 — General Tools
-
-#### 2a. Code Interpreter — `code_interpreter`
-
-**Motivation**: The single biggest gap vs. ChatGPT, Claude, and Gemini.
-Users constantly ask agents to do data analysis, transform files, generate
-charts, run calculations too complex for the calculator tool. This is
-*agent-authored* code (different from `custom` tools, which are admin-authored).
-
-**What it provides**:
-- `@tool async def execute_python(code: str) -> dict` — run Python in a
-  sandbox, return stdout/stderr + any generated base64 images
-- Session-scoped persistent virtual filesystem (pip packages survive within a
-  session)
-- Common data-science libs pre-installed: pandas, numpy, matplotlib, plotly
-
-**Security model** (already proven in `custom_tool_executor.py`):
-- Docker container per tenant or per session (gVisor/Firecracker for stronger
-  isolation, or a simple `subprocess`-in-Docker approach)
-- CPU/memory limits, no network egress by default, 60s timeout
-- AST validation rejects `os`, `sys`, `subprocess`, `eval`, `exec`, `importlib`,
-  `__builtins__` manipulation
-
-**Architecture notes**:
-- Config in `tools.config`: `{ "timeout": 60, "allow_network": false, "packages": ["pandas","numpy"] }`
-- The executor process lives in the same Docker Compose network, exposed via a
-  simple HTTP API, or spawned as a subprocess inside the backend container if
-  the backend runs with sufficient isolation
-- Output artifacts (PNG, CSV) written to MinIO/S3, returned as download URLs
-
-**Effort**: High (sandbox infrastructure + new microservice or container)
-
----
-
-### 🟡 Priority 2 — General Tools (continued)
-
-#### 2b. SQL Database Query — `sql_query`
-
-**Motivation**: Huge enterprise value. "How many orders did we have last month?",
-"Show me top 10 customers by revenue", "What's the average response time this
-week?" — business users live in databases.
-
-**What it provides**:
-- `@tool async def sql_query(query: str) -> dict` — execute a read-only SQL
-  query against a tenant-configured database
-- `@tool async def list_tables() -> list[str]` — schema discovery so the agent
-  knows what to query
-- `@tool async def describe_table(table: str) -> list[dict]` — column names,
-  types, and sample values
-
-**Security model**:
-- AST parsing rejects DML (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`,
-  `TRUNCATE`, `CREATE`, `GRANT`, `REVOKE`)
-- Read-only transaction (`SET TRANSACTION READ ONLY` before execution)
-- Configurable row limit (default 1000)
-- Per-tenant connection string stored encrypted in `tools.config.connection_string`
-
-**Architecture notes**:
-- Connection strings encrypted via existing `core/encryption.py` before DB storage
-- SQLAlchemy async engine created once, cached per tool instance
-- Supported backends: PostgreSQL, MySQL/MariaDB, SQLite (file upload)
-- Fits multi-tenant architecture — each tenant connects to their own DB
-
-**Effort**: Medium (SQL parsing safety + encrypted connection strings)
-
----
-
-### 🟡 Priority 2 (continued)
-
-#### 2c. Image Generation — `image_generation`
-
-**Motivation**: DALL·E / Stable Diffusion / Flux. Users frequently ask agents
-to "create an image of X" for presentations, marketing, or creative work.
-
-**What it provides**:
-- `@tool async def generate_image(prompt: str, size: str = "1024x1024", style: str = "natural") -> dict`
-  — returns `{ "url": "...", "width": 1024, "height": 1024 }`
-- Images stored in MinIO/S3 (reuse existing `storage/s3.py`)
-- Multiple model backends configurable in `tools.config.provider`:
-  `openai` (DALL·E 3), `stability` (Stable Diffusion), `replicate` (Flux),
-  or a self-hosted ComfyUI endpoint
-
-**Architecture notes**:
-- Stateless HTTP API calls to the provider — no infrastructure changes needed
-- Reuses existing `models/` provider abstractions if OpenAI path is taken
-- Config: `{ "provider": "openai", "model": "dall-e-3", "default_size": "1024x1024" }`
-
-**Effort**: Low (API wrapper only)
-
----
-
-#### 2d. Document Generation — `document_generation`
-
-**Motivation**: "Create a PDF report from this analysis", "Export this data as
-an Excel spreadsheet", "Generate a Word document from this outline". Very
-common enterprise need.
-
-**What it provides**:
-- `@tool async def generate_pdf(markdown: str, title: str = "Report") -> dict`
-  — Markdown → PDF via weasyprint or markdown2 + WeasyPrint
-- `@tool async def generate_excel(data: list[dict], sheet_name: str = "Sheet1") -> dict`
-  — list-of-dicts → .xlsx via openpyxl (already installed for markitdown)
-- `@tool async def generate_csv(data: list[dict]) -> dict`
-- All generated files stored in MinIO/S3, returned as download URLs
-
-**Architecture notes**:
-- `openpyxl` already in `requirements.txt` (from the Office upload fix)
-- Add `weasyprint` and `markdown` to `requirements.txt`
-- Config: `{ "default_format": "pdf", "company_logo_url": "https://..." }`
-
-**Effort**: Low-Medium (library integration + S3 upload)
-
----
-
-#### 2e. Browser Automation — `browser`
-
-**Motivation**: `fetch_url` only works for server-rendered pages. Many modern
-sites require JavaScript execution. Also enables: taking screenshots, filling
-forms, extracting rendered content, automated testing.
-
-**What it provides**:
-- `@tool async def take_screenshot(url: str, selector: str | None = None) -> dict`
-  — returns base64 PNG screenshot of a page or element
-- `@tool async def extract_text(url: str) -> dict`
-  — returns rendered text content (after JS execution)
-- `@tool async def extract_table(url: str, table_index: int = 0) -> dict`
-  — extract HTML tables as structured data
-
-**Security model**:
-- Playwright in a separate sandbox container (already Dockerized)
-- Request filtering: only allow HTTP/HTTPS, block private IP ranges (10.x,
-  172.16.x, 192.168.x, 127.x)
-- 30s timeout, 10MB max response
-- Screenshots stored in MinIO/S3
-
-**Architecture notes**:
-- Playwright Python bindings + headless Chromium
-- Could be a sidecar container to keep the backend stateless
-- Config: `{ "timeout": 30, "viewport_width": 1280, "viewport_height": 720 }`
-
-**Effort**: High (new container + security boundaries)
-
----
-
-#### 2f. GitHub / GitLab Integration — `github`
-
-**Motivation**: Developer-focused enterprises need this. Search code, list
-issues, create PRs, review pull requests, read repository structure.
-
-**What it provides**:
-- `@tool async def search_code(query: str, repo: str) -> list[dict]`
-- `@tool async def list_issues(repo: str, state: str = "open") -> list[dict]`
-- `@tool async def get_file_content(repo: str, path: str, ref: str = "main") -> dict`
-- `@tool async def list_pull_requests(repo: str, state: str = "open") -> list[dict]`
-- `@tool async def create_issue(repo: str, title: str, body: str) -> dict`
-
-**Security model**:
-- Personal Access Token or GitHub App installation token stored encrypted in
-  `tools.config`
-- Rate-limit aware (returns remaining quota in response)
-- Repo allowlist in config: `{ "allowed_repos": ["org/*"] }`
-
-**Architecture notes**:
-- GitHub: use `PyGithub` or raw REST API via httpx
-- GitLab: use `python-gitlab` or raw REST API
-- Config: `{ "provider": "github", "token": "...", "api_url": "https://api.github.com" }`
-
-**Effort**: Medium (API wrappers, multiple endpoints)
-
----
-
-#### 2g. Calendar / Scheduling — `calendar`
-
-**Motivation**: "Schedule a meeting next Tuesday at 2pm", "What's on my
-calendar tomorrow?", "Find a time when everyone is free".
-
-**What it provides**:
-- `@tool async def list_events(date_from: str, date_to: str) -> list[dict]`
-- `@tool async def create_event(summary: str, start: str, end: str, attendees: list[str] | None = None) -> dict`
-- `@tool async def find_free_slots(date: str, duration_minutes: int = 60) -> list[dict]`
-
-**Architecture notes**:
-- Google Calendar API (service account at tenant level, or OAuth per user)
-- CalDAV for generic calendar servers (Nextcloud, iCloud)
-- OAuth flow would need new frontend components and backend endpoints —
-  significantly more work than API-key-based tools
-- Config: `{ "provider": "google", "credentials": {...}, "calendar_id": "primary" }`
-
-**Effort**: Medium-High (OAuth flow adds complexity)
-
----
-
-#### 2h. Vector DB / RAG Search — `rag_search`
-
-**Motivation**: Let agents semantically search uploaded documents. Users upload
-PDFs, Office docs, and text files — currently agents can only read them
-sequentially with `read_file_content`. RAG would let agents answer "What does
-our company policy say about vacation days?" across all uploaded documents.
-
-**What it provides**:
-- `@tool async def search_documents(query: str, top_k: int = 5) -> list[dict]`
-  — semantic search returning relevant chunks with source filenames
-- `@tool async def build_index() -> dict`
-  — manually trigger re-indexing of uploaded files (also done automatically on upload)
-
-**Architecture notes**:
-- Embedding model: OpenAI `text-embedding-3-small`, or a local model via
-  sentence-transformers, or the same model provider used for chat
-- Vector store: pgvector (PostgreSQL extension) or Qdrant (existing Docker
-  service) or ChromaDB
-- Chunking strategy: recursive character text splitter, ~500 tokens per chunk
-- Already have `markitdown` for text extraction from Office/PDF files
-- Config: `{ "provider": "openai", "embedding_model": "text-embedding-3-small", "chunk_size": 500 }`
-
-**Effort**: Medium (embedding + vector store + chunking pipeline)
-
----
-
-#### 2i. Communication — `slack` / `email`
-
-**Motivation**: "Send this summary to the #general channel", "Email this report
-to the team".
-
-**What it provides**:
-- Slack: `@tool async def send_slack_message(channel: str, text: str) -> dict`
-- Email: `@tool async def send_email(to: str, subject: str, body: str) -> dict`
-  via SMTP, SendGrid, or Resend API
-
-**Architecture notes**:
-- Slack webhook URL or bot token in `tools.config`
-- SMTP credentials or API key encrypted in config
-- Optional recipient allowlist for security
-
-**Effort**: Low (simple HTTP API calls)
-
----
-
-### 🟢 Priority 3 — Nice to Have
-
----
-
-#### 3a. Translation — `translation`
-- DeepL or LibreTranslate API
-- `@tool async def translate(text: str, target_lang: str, source_lang: str = "auto") -> dict`
-- Effort: Low
-
-#### 3b. YouTube Transcript — `youtube`
-- `youtube-transcript-api` library or Invidious API
-- `@tool async def get_transcript(video_url: str) -> dict`
-- Effort: Low
-
-#### 3c. Maps / Geocoding — `maps`
-- OpenStreetMap Nominatim (free) or Google Maps API
-- `@tool async def geocode(address: str) -> dict`
-- `@tool async def reverse_geocode(lat: float, lon: float) -> dict`
-- Effort: Low
-
-#### 3d. QR Code / Barcode Generation — `qrcode`
-- `qrcode` + `pillow` Python libraries
-- `@tool async def generate_qrcode(data: str) -> dict` → returns image URL
-- Effort: Very Low
+## Implementation Status
+
+All proposed tools have been implemented. Each tool module lives at
+`backend/src/tools/TOOL_NAME.py` and follows the standard factory pattern
+(detailed below).
+
+### Priority 1 — Financial / Investor Tools ✅
+| Tool | Implemented | Module |
+|------|-------------|--------|
+| `stock_data` | ✅ | `backend/src/tools/stock_data.py` |
+| `market_overview` | ✅ | `backend/src/tools/market_overview.py` |
+| `etf_data` | ✅ | `backend/src/tools/etf_data.py` |
+| `sec_filings` | ✅ | `backend/src/tools/sec_filings.py` |
+| `portfolio` | ✅ | `backend/src/tools/portfolio.py` |
+
+### Priority 2 — General Tools ✅
+| Tool | Implemented | Module |
+|------|-------------|--------|
+| `code_interpreter` | ✅ | `backend/src/tools/code_interpreter.py` |
+| `sql_query` | ✅ | `backend/src/tools/sql_query.py` |
+| `document_generation` | ✅ | `backend/src/tools/document_generation.py` |
+| `browser` | ✅ | `backend/src/tools/browser.py` |
+| `rag_search` | ✅ | `backend/src/tools/rag_search.py` |
+| `github` | ✅ | `backend/src/tools/github.py` |
+| `calendar` | ✅ | `backend/src/tools/calendar.py` |
+| `image_generation` | ✅ | `backend/src/tools/image_generation.py` |
+| `slack` | ✅ | `backend/src/tools/slack.py` |
+| `email` | ✅ | `backend/src/tools/email.py` |
+
+### Priority 3 — Nice to Have
+> Not yet implemented. See GitHub Issue #160 for tracking.
+| Tool | Status |
+|------|--------|
+| `translation` | ⬜ Planned |
+| `youtube` | ⬜ Planned |
+| `maps` | ⬜ Planned |
+| `qrcode` | ⬜ Planned |
 
 ---
 

@@ -95,7 +95,7 @@ Tools represent external integrations (ERPNext, Membrane, custom tools).
 - id (UUID, PK)
 - tenant_id (UUID, FK → tenants.id)
 - name (string)
-- type (enum: erpnext, membrane, custom, calculator, currency_exchange, datetime, fetch_url, file_list, memory, rss_feed, weather, web_search, wikipedia)
+- type (enum: erpnext, membrane, custom, datetime, web_search, fetch_url, weather, calculator, wikipedia, rss_feed, currency_exchange, market_overview, etf_data, stock_data, portfolio, sec_filings, code_interpreter, sql_query, document_generation, browser, rag_search, github, calendar, image_generation, slack, email)
 - config (JSON)
 - enabled (boolean)
 - is_public (boolean, default false) — when true, tool is available to all users regardless of group membership
