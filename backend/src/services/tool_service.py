@@ -12,11 +12,17 @@ from ..db.orm.tools import Tool
 VALID_TOOL_TYPES = {
     "erpnext", "membrane", "custom", "datetime", "web_search",
     "fetch_url", "weather", "calculator", "wikipedia", "rss_feed",
-    "currency_exchange",
+    "currency_exchange", "market_overview", "etf_data", "stock_data",
+    "portfolio", "sec_filings",
 }
 
 TOOL_TYPE_TO_CATEGORY = {
     "currency_exchange": "financial",
+    "market_overview": "financial",
+    "etf_data": "financial",
+    "stock_data": "financial",
+    "portfolio": "financial",
+    "sec_filings": "financial",
     "web_search": "web",
     "fetch_url": "web",
     "rss_feed": "web",

@@ -56,3 +56,9 @@ feedparser
 
 # Rate limiting
 slowapi
+
+# Financial / Investor Tools (Issue #158)
+yfinance
+numpy
+scipy
+beautifulsoup4
