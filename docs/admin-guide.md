@@ -156,25 +156,88 @@ Tools extend agent capabilities — they can call external APIs, query ERPNext i
 
 ### 6.1 Tool Types
 
-| Type | Description |
-|---|---|
-| **erpnext** | ERPNext instance integration. Requires an ERPNext instance record. |
-| **membrane** | Membrane framework tools for web scraping and browser automation. |
-| **custom** | Custom tools defined by your organization. |
+| Type | Category | Description | Configuration |
+|---|---|---|---|
+| **browser** | Web | Playwright headless Chromium — screenshot pages, extract text, extract tables | `timeout`, `viewport_width`, `viewport_height` |
+| **calculator** | Utility | Safe AST expression evaluator | None |
+| **calendar** | Productivity | Google Calendar — list/create events, find free slots | `provider`, `credentials`, `calendar_id`, `timezone` |
+| **code_interpreter** | Utility | Docker-sandboxed Python execution (pandas, numpy, matplotlib, plotly) | `timeout`, `allow_network` |
+| **currency_exchange** | Financial | Exchange rates via frankfurter.app (ECB data) | `base_currency`, `timeout` |
+| **custom** | Extensibility | Admin-authored sandboxed Python tools | `code` (Python), `config` (JSON) |
+| **datetime** | Utility | Timezone-aware date/time queries | `timezone` |
+| **document_generation** | Utility | Markdown→PDF (weasyprint), list→Excel (openpyxl), list→CSV | `company_logo_url` |
+| **email** | Communication | Send emails via SMTP or SendGrid API | `provider`, `smtp_host`, `smtp_port`, `smtp_username`, `smtp_password`, `api_key`, `from_email`, `from_name`, `allowed_recipients` |
+| **erpnext** | Enterprise | ERPNext full CRUD, file upload, doctype metadata | `base_url`, `api_key`, `api_secret` |
+| **etf_data** | Financial | ETF holdings and profiles (yfinance) | None |
+| **fetch_url** | Web | HTTP GET fetching with HTML→text conversion | `timeout`, `user_agent` |
+| **github** | DevOps | GitHub/GitLab — search code, list issues/PRs, read files, create issues | `provider`, `token`, `api_base`, `allowed_repos` |
+| **image_generation** | Creative | DALL·E 3 / Stable Diffusion — text prompt → image (stored in MinIO/S3) | `provider`, `api_key`, `model`, `default_size`, `default_quality` |
+| **market_overview** | Financial | Global index quotes, market movers (yfinance) | None |
+| **membrane** | Enterprise | Membrane framework integration | (provider-specific) |
+| **portfolio** | Financial | Portfolio analysis, optimization, efficient frontier (numpy+scipy) | None |
+| **rag_search** | Web | Semantic search across uploaded documents (embedding API + fallback TF-IDF) | `embedding_model`, `api_key`, `base_url`, `chunk_size`, `top_k` |
+| **rss_feed** | Web | RSS/Atom feed reader | `timeout` |
+| **sec_filings** | Financial | SEC EDGAR filing search and retrieval (US gov, free) | None |
+| **slack** | Communication | Send messages to Slack channels | `webhook_url`, `bot_token`, `default_channel`, `allowed_channels` |
+| **sql_query** | Enterprise | Read-only SQL against tenant-configured DB (PostgreSQL, MySQL, MariaDB) | `connection_string`, `row_limit` |
+| **stock_data** | Financial | Stock quotes, historical prices, financials, analyst ratings (yfinance) | None |
+| **weather** | Utility | Weather via wttr.in | None |
+| **web_search** | Web | SearXNG-backed web search | `searxng_url` |
+| **wikipedia** | Knowledge | Article lookup and summary | `language` |
 
 ### 6.2 Add a Tool
 
 1. Go to **Admin Area → Tools**
 2. Click **Create**
-3. Set the tool name, type, and tenant
-4. If type is `erpnext`, also create an ERPNext instance record under **Tools → ERPNext Instances**
+3. Set the tool **Name**, **Type**, and **Tenant**
+4. Depending on the tool type, fill in the **Configuration (JSON)** field:
 
-### 6.3 ERPNext Instances
+**ERPNext example:**
+```json
+{"base_url": "https://erp.example.com", "api_key": "...", "api_secret": "..."}
+```
 
-ERPNext instances store connection details:
-- **URL**: Your ERPNext site URL
-- **API Key & API Secret**: Both encrypted at rest
-- **Tenant**: Which tenant this instance belongs to
+**SQL Query example:**
+```json
+{"connection_string": "mysql://user:pass@host:3306/dbname", "row_limit": 1000}
+```
+
+**GitHub example:**
+```json
+{"provider": "github", "token": "ghp_...", "allowed_repos": ["myorg/*"]}
+```
+
+**Image Generation example:**
+```json
+{"provider": "openai", "api_key": "sk-...", "model": "dall-e-3", "default_size": "1024x1024"}
+```
+
+**Slack example:**
+```json
+{"webhook_url": "https://hooks.slack.com/services/...", "default_channel": "#general"}
+```
+
+**Email example:**
+```json
+{"provider": "smtp", "smtp_host": "smtp.gmail.com", "smtp_port": 587, "smtp_username": "...", "smtp_password": "...", "from_email": "noreply@example.com"}
+```
+
+5. Set **Enabled** to ON
+6. Configure **Public** access — when ON, all tenant users can use the tool regardless of group membership
+
+> **Note:** API keys and secrets in the config JSON are **not** automatically encrypted. Use the `EncryptedString` format in the database, or encrypt values manually with the Fernet key before storing them in config JSON. Tools that expect encrypted values (`github.token`, `image_generation.api_key`, `slack.bot_token`, `email.smtp_password`, `email.api_key`, `calendar.credentials`, `sql_query.connection_string`) will attempt decryption at runtime and fall back to plaintext if decryption fails.
+
+### 6.3 Tool-Specific Notes
+
+**Financial tools** (`stock_data`, `market_overview`, `etf_data`, `sec_filings`, `portfolio`, `currency_exchange`): No API keys required. All data comes from free public sources (yfinance, SEC EDGAR, ECB).
+
+**Code Interpreter**: Executes user-submitted Python code in a subprocess. AST-validated for safety — blocks `os`, `sys`, `subprocess`, `eval`, `exec`. Configurable timeout (default 60s) and network access (default off).
+
+**Browser**: Uses Playwright with headless Chromium. Blocks internal/private IPs for security. Screenshots stored in MinIO/S3.
+
+**RAG Search**: Falls back to local TF-IDF embeddings when no embedding API key is configured. For production use, configure an OpenAI-compatible embedding endpoint.
+
+**Calendar**: Currently supports Google Calendar only (API key for read-only, OAuth/service account for write). CalDAV support planned.
 
 ---
 

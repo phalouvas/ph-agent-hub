@@ -15,6 +15,8 @@ VALID_TOOL_TYPES = {
     "currency_exchange", "market_overview", "etf_data", "stock_data",
     "portfolio", "sec_filings",
     "code_interpreter", "sql_query", "document_generation", "browser",
+    "rag_search", "github", "calendar", "image_generation",
+    "slack", "email",
 }
 
 TOOL_TYPE_TO_CATEGORY = {
@@ -38,6 +40,12 @@ TOOL_TYPE_TO_CATEGORY = {
     "sql_query": "enterprise",
     "document_generation": "utility",
     "browser": "web",
+    "rag_search": "web",
+    "github": "devops",
+    "calendar": "productivity",
+    "image_generation": "creative",
+    "slack": "communication",
+    "email": "communication",
     "file_list": "system",
     "memory": "system",
 }

@@ -118,9 +118,22 @@ Tenant skills (created by admins) are available to everyone in your tenant. You 
 
 ## 6. Tools
 
-Tools let the AI interact with external systems — query databases, call APIs, or perform actions.
+Tools let the AI interact with external systems — query databases, call APIs, generate documents, or perform actions. Your administrator controls which tools are available.
 
-### 6.1 Activate Tools
+### 6.1 Available Tool Categories
+
+| Category | Tools | What the AI can do |
+|---|---|---|
+| **Web** | Web Search, Fetch URL, Browser, RSS Feed, Wikipedia, RAG Search | Search the internet, read web pages, take screenshots, extract tables, search your uploaded documents |
+| **Financial** | Stock Data, Market Overview, ETF Data, Currency Exchange, Portfolio, SEC Filings | Get stock quotes, analyze portfolios, check exchange rates, read SEC filings |
+| **Enterprise** | ERPNext, SQL Query | Query your ERP system, run read-only SQL on your database |
+| **Utility** | Calculator, Code Interpreter, Datetime, Document Generation, Weather | Do math, run Python code, check dates/times, generate PDFs/Excel/CSV, check weather |
+| **Communication** | Slack, Email | Send messages to Slack channels, send emails |
+| **Creative** | Image Generation | Generate images from text descriptions (DALL·E 3, Stable Diffusion) |
+| **Productivity** | Calendar | Check your calendar, schedule meetings, find free time slots |
+| **DevOps** | GitHub | Search code, list issues/PRs, read files from GitHub/GitLab repos |
+
+### 6.2 Activate Tools
 
 1. Click the **Tools** button in the input area
 2. Toggle on the tools you want the AI to use in this session
@@ -128,13 +141,21 @@ Tools let the AI interact with external systems — query databases, call APIs, 
 
 You can only activate tools that your administrator has approved for your tenant.
 
-### 6.2 Always-On Tools
+### 6.3 Always-On Tools
 
 You can mark a tool as **always-on** — it will be automatically activated for every new session you create. In the tool selector, toggle the always-on switch next to a tool. Your preference is saved and applied to all future sessions.
 
-### 6.3 Deactivate Tools
+### 6.4 Deactivate Tools
 
 Toggle a tool off to prevent the AI from using it. The change takes effect immediately.
+
+### 6.5 Tips for Using Tools
+
+- **Be specific** — "Show me the stock price of AAPL for the last 30 days" works better than "What's happening with Apple?"
+- **Activate only what you need** — too many active tools can slow down responses
+- **Check tool results** — the AI shows you what each tool returned so you can verify accuracy
+- **Financial tools are free** — stock data, market overview, and currency exchange require no API keys
+- **Generated files** — PDFs, Excel files, images, and screenshots appear as download links in the chat
 
 ---
 

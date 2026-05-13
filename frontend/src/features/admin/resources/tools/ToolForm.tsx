@@ -276,19 +276,25 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
             options={[
               { label: "Browser", value: "browser" },
               { label: "Calculator", value: "calculator" },
+              { label: "Calendar", value: "calendar" },
               { label: "Code Interpreter", value: "code_interpreter" },
               { label: "Currency Exchange", value: "currency_exchange" },
               { label: "Custom", value: "custom" },
               { label: "Datetime", value: "datetime" },
               { label: "Document Generation", value: "document_generation" },
+              { label: "Email", value: "email" },
               { label: "ERPNext", value: "erpnext" },
               { label: "ETF Data", value: "etf_data" },
               { label: "Fetch URL", value: "fetch_url" },
+              { label: "GitHub", value: "github" },
+              { label: "Image Generation", value: "image_generation" },
               { label: "Market Overview", value: "market_overview" },
               { label: "Membrane", value: "membrane" },
               { label: "Portfolio", value: "portfolio" },
+              { label: "RAG Search", value: "rag_search" },
               { label: "RSS Feed", value: "rss_feed" },
               { label: "SEC Filings", value: "sec_filings" },
+              { label: "Slack", value: "slack" },
               { label: "SQL Query", value: "sql_query" },
               { label: "Stock Data", value: "stock_data" },
               { label: "Weather", value: "weather" },
@@ -358,6 +364,20 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
               <Input placeholder="https://example.com/logo.png" />
             </Form.Item>
           </>
+        )}
+
+        {/* Generic config JSON for tools without structured fields */}
+        {!["erpnext", "sql_query", "document_generation", "custom"].includes(toolType) && (
+          <Form.Item
+            name="config_json"
+            label="Configuration (JSON)"
+            extra="Optional JSON configuration for this tool (e.g., API keys, endpoints, options)"
+          >
+            <TextArea
+              rows={6}
+              placeholder='{"api_key": "...", "provider": "openai"}'
+            />
+          </Form.Item>
         )}
 
         {/* Custom type: code editor + config JSON */}
