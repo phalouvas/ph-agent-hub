@@ -675,13 +675,23 @@ export function ChatWindow({
               }}
             />
           )}
-          <Button
-            size="small"
-            icon={<SettingOutlined />}
-            onClick={() => setSettingsOpen(true)}
-          >
-            Options
-          </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 120 }}>
+            <Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+              Temperature
+            </Text>
+            <Slider
+              min={0}
+              max={2}
+              step={0.1}
+              value={sessionTemperature ?? 0.7}
+              onChange={(v) => {
+                const val = v as number;
+                setSessionTemperature(val);
+                onSessionUpdate?.({ temperature: val });
+              }}
+              style={{ width: 80, margin: 0 }}
+            />
+          </div>
         </div>
       )}
       <Drawer
@@ -753,7 +763,7 @@ export function ChatWindow({
           <div style={{ width: "100%" }}>
             <Space direction="vertical" style={{ width: "100%" }}>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                Temperature: {sessionTemperature?.toFixed(1) ?? "Model default"}
+                Temperature
               </Text>
               <Slider
                 min={0}

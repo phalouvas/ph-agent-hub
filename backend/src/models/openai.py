@@ -7,7 +7,7 @@ from agent_framework.openai import OpenAIChatClient
 from ..db.orm.models import Model
 
 
-def build_openai_client(model: Model, temperature: float = 0.7) -> OpenAIChatClient:
+def build_openai_client(model: Model) -> OpenAIChatClient:
     """Build an OpenAI chat client from a Model record.
 
     The model.api_key is already decrypted by the EncryptedString ORM type.
@@ -27,5 +27,4 @@ def build_openai_client(model: Model, temperature: float = 0.7) -> OpenAIChatCli
     return OpenAIChatClient(
         model=model.model_id or model.name,
         async_client=openai.AsyncOpenAI(**openai_client_args),
-        temperature=temperature,
     )

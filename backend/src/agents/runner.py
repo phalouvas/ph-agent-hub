@@ -117,8 +117,8 @@ async def _resolve_session_config(
     if temperature is None:
         temperature = getattr(model, "temperature", 0.7)
 
-    # Rebuild model_client with thinking_enabled and temperature
-    model_client = get_chat_client(model, thinking_enabled=thinking_enabled, temperature=temperature)
+    # Rebuild model_client with thinking_enabled
+    model_client = get_chat_client(model, thinking_enabled=thinking_enabled)
 
     # Look up tenant name for denormalized usage logging
     tenant_name = ""
@@ -726,6 +726,7 @@ async def run_agent(
                     tools=cfg.active_tool_callables,
                     user_message=contextualized_message,
                     agent_name=cfg.agent_name,
+                    temperature=cfg.temperature,
                 )
         except Exception as exc:
             logger.error("Agent run failed: %s", exc)
@@ -1205,6 +1206,7 @@ async def _run_agent(
     tools: list,
     user_message: str,
     agent_name: str,
+    temperature: float = 0.7,
 ) -> tuple[str, int, int, int]:
     """Run a simple MAF Agent.
 
@@ -1218,6 +1220,7 @@ async def _run_agent(
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
+        default_options={"temperature": temperature},
     )
 
     result = await agent.run(user_message)
@@ -1276,6 +1279,7 @@ async def _run_workflow(
         tools=tools,
         user_message=user_message,
         agent_name=agent_name,
+        temperature=temperature,
     )
 
 
@@ -1572,6 +1576,7 @@ async def run_agent_stream(
                 session_id=session_id,
                 message_id=message_id,
                 token_counts=_stream_token_info,
+                temperature=cfg.temperature,
             )
 
         async for event_dict in stream:
@@ -1812,6 +1817,7 @@ async def _run_agent_stream(
     session_id: str,
     message_id: str,
     token_counts: dict | None = None,
+    temperature: float = 0.7,
 ) -> AsyncIterator[dict]:
     """Run a MAF Agent in streaming mode, yielding SSE event dicts.
 
@@ -1829,6 +1835,7 @@ async def _run_agent_stream(
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
+        default_options={"temperature": temperature},
     )
 
     response_stream = agent.run(user_message, stream=True)
@@ -1972,6 +1979,7 @@ async def _run_workflow_stream(
         session_id=session_id,
         message_id=message_id,
         token_counts=token_counts,
+        temperature=temperature,
     ):
         yield event_dict
 

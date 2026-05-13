@@ -7,7 +7,7 @@ from agent_framework.anthropic import AnthropicClient
 from ..db.orm.models import Model
 
 
-def build_anthropic_client(model: Model, temperature: float = 0.7) -> AnthropicClient:
+def build_anthropic_client(model: Model) -> AnthropicClient:
     """Build an Anthropic chat client from a Model record.
 
     The model.api_key is already decrypted by the EncryptedString ORM type.
@@ -16,5 +16,4 @@ def build_anthropic_client(model: Model, temperature: float = 0.7) -> AnthropicC
         model=model.model_id or model.name,
         api_key=model.api_key,
         base_url=model.base_url,
-        temperature=temperature,
     )
