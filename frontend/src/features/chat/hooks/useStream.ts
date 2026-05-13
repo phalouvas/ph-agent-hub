@@ -163,6 +163,7 @@ export function useStream() {
       sessionId: string,
       content: string,
       fileIds: string[] | undefined,
+      temperature: number | undefined,
       handlers: {
         onToken?: (token: string, messageId: string) => void;
         onToolStart?: (data: ToolStartEvent["data"]) => void;
@@ -197,6 +198,7 @@ export function useStream() {
             body: JSON.stringify({
               content,
               file_ids: fileIds || [],
+              ...(temperature !== undefined ? { temperature } : {}),
             }),
             openWhenHidden: true,
             signal: controller.signal,
@@ -450,6 +452,7 @@ export function useStream() {
       sessionId: string,
       messageId: string,
       content: string,
+      temperature: number | undefined,
       handlers: {
         onToken?: (token: string, messageId: string) => void;
         onToolStart?: (data: ToolStartEvent["data"]) => void;
@@ -480,7 +483,10 @@ export function useStream() {
               Accept: "text/event-stream",
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({ content }),
+            body: JSON.stringify({
+              content,
+              ...(temperature !== undefined ? { temperature } : {}),
+            }),
             openWhenHidden: true,
             signal: controller.signal,
             async onopen(response) {

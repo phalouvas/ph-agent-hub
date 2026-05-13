@@ -28,6 +28,7 @@ export interface SessionData {
   selected_skill_id: string | null;
   selected_model_id: string | null;
   thinking_enabled?: boolean | null;
+  temperature?: number | null;
   tags?: TagData[];
   created_at: string;
   updated_at: string;

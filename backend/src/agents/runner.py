@@ -66,6 +66,7 @@ class SessionConfig:
     execution_type: str
     agent_name: str
     thinking_enabled: bool
+    temperature: float = 0.7
     tenant_name: str = ""
     cleanup_clients: list = field(default_factory=list)
 
@@ -109,6 +110,13 @@ async def _resolve_session_config(
     if thinking_enabled is None:
         thinking_enabled = getattr(model, "thinking_enabled", False)
 
+    # 7. Resolve temperature: message override > session override > model default
+    temperature = session_data.get("_message_temperature")
+    if temperature is None:
+        temperature = session_data.get("temperature")
+    if temperature is None:
+        temperature = getattr(model, "temperature", 0.7)
+
     # Rebuild model_client with thinking_enabled
     model_client = get_chat_client(model, thinking_enabled=thinking_enabled)
 
@@ -134,6 +142,7 @@ async def _resolve_session_config(
         execution_type=execution_type,
         agent_name=agent_name,
         thinking_enabled=thinking_enabled,
+        temperature=temperature,
         tenant_name=tenant_name,
         cleanup_clients=cleanup_clients,
     )
@@ -348,6 +357,7 @@ async def _generate_summary(
     model: Model,
     model_client: Any,
     messages_to_summarize: list,
+    temperature: float = 0.3,
 ) -> str | None:
     """Use the configured model to generate a concise summary of past messages.
 
@@ -448,7 +458,7 @@ async def _generate_summary(
             model=model_name,
             messages=messages_payload,
             max_tokens=300,
-            temperature=0.3,  # Low temp for factual summary
+            temperature=temperature,
         )
         summary = response.choices[0].message.content if response.choices else ""
         summary = (summary or "").strip()
@@ -537,6 +547,7 @@ async def _maybe_summarize_and_build_context(
                 model=cfg.model,
                 model_client=cfg.model_client,
                 messages_to_summarize=messages_to_summarize,
+                temperature=cfg.temperature,
             )
 
             if summary_text:
@@ -715,6 +726,7 @@ async def run_agent(
                     tools=cfg.active_tool_callables,
                     user_message=contextualized_message,
                     agent_name=cfg.agent_name,
+                    temperature=cfg.temperature,
                 )
         except Exception as exc:
             logger.error("Agent run failed: %s", exc)
@@ -1194,6 +1206,7 @@ async def _run_agent(
     tools: list,
     user_message: str,
     agent_name: str,
+    temperature: float = 0.7,
 ) -> tuple[str, int, int, int]:
     """Run a simple MAF Agent.
 
@@ -1207,6 +1220,7 @@ async def _run_agent(
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
+        default_options={"temperature": temperature},
     )
 
     result = await agent.run(user_message)
@@ -1265,6 +1279,7 @@ async def _run_workflow(
         tools=tools,
         user_message=user_message,
         agent_name=agent_name,
+        temperature=temperature,
     )
 
 
@@ -1561,6 +1576,7 @@ async def run_agent_stream(
                 session_id=session_id,
                 message_id=message_id,
                 token_counts=_stream_token_info,
+                temperature=cfg.temperature,
             )
 
         async for event_dict in stream:
@@ -1689,6 +1705,7 @@ async def run_agent_stream(
         session_id=session_id,
         tenant_id=tenant_id,
         is_temporary=is_temporary,
+        temperature=cfg.temperature,
     )
 
 
@@ -1705,6 +1722,7 @@ def _schedule_post_response_tasks(
     session_id: str,
     tenant_id: str,
     is_temporary: bool,
+    temperature: float = 0.7,
 ) -> None:
     """Launch follow-up generation and auto-tagging as background tasks.
 
@@ -1722,6 +1740,7 @@ def _schedule_post_response_tasks(
                     system_prompt=system_prompt,
                     user_message=user_message,
                     assistant_response=assistant_response,
+                    temperature=temperature,
                 )
                 if questions:
                     await store_follow_up_questions(session_id, questions)
@@ -1755,6 +1774,7 @@ def _schedule_post_response_tasks(
                             assistant_response=assistant_response,
                             session_id=session_id,
                             tenant_id=tenant_id,
+                            temperature=temperature,
                         )
                         if tag_names:
                             from ..services import session_service as _tag_svc
@@ -1797,6 +1817,7 @@ async def _run_agent_stream(
     session_id: str,
     message_id: str,
     token_counts: dict | None = None,
+    temperature: float = 0.7,
 ) -> AsyncIterator[dict]:
     """Run a MAF Agent in streaming mode, yielding SSE event dicts.
 
@@ -1814,6 +1835,7 @@ async def _run_agent_stream(
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
+        default_options={"temperature": temperature},
     )
 
     response_stream = agent.run(user_message, stream=True)
@@ -1957,6 +1979,7 @@ async def _run_workflow_stream(
         session_id=session_id,
         message_id=message_id,
         token_counts=token_counts,
+        temperature=temperature,
     ):
         yield event_dict
 
@@ -2201,6 +2224,7 @@ async def _generate_follow_up_questions(
     system_prompt: str,
     user_message: str,
     assistant_response: str,
+    temperature: float = 0.7,
 ) -> list[str]:
     """Generate 3 follow-up questions based on the conversation context.
 
@@ -2242,7 +2266,7 @@ async def _generate_follow_up_questions(
             model=model_name,
             messages=messages,
             max_tokens=200,
-            temperature=0.7,
+            temperature=temperature,
         )
         text = response.choices[0].message.content if response.choices else ""
 
@@ -2273,6 +2297,7 @@ async def _auto_tag_session(
     assistant_response: str,
     session_id: str,
     tenant_id: str,
+    temperature: float = 0.5,
 ) -> list[str]:
     """Generate 3–5 concise lowercase tags based on the conversation.
 
@@ -2311,7 +2336,7 @@ async def _auto_tag_session(
             model=model_name,
             messages=messages,
             max_tokens=300,
-            temperature=0.5,
+            temperature=temperature,
         )
         text = response.choices[0].message.content if response.choices else ""
         text = (text or "").strip()
