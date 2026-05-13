@@ -4,6 +4,9 @@
 
 # --- Environment (contains secrets) ---
 infrastructure/env
+infrastructure/.env
+.env
+.env.local
 
 # --- Python ---
 __pycache__/
@@ -21,6 +24,7 @@ env/
 node_modules/
 dist/
 .vite/
+frontend/dev-dist/
 
 # --- IDE ---
 .vscode/
@@ -32,6 +36,9 @@ dist/
 # --- OS ---
 .DS_Store
 Thumbs.db
+
+# --- Logs ---
+*.log
 
 # --- Docker ---
 .docker/
