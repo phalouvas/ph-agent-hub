@@ -14,6 +14,7 @@ VALID_TOOL_TYPES = {
     "fetch_url", "weather", "calculator", "wikipedia", "rss_feed",
     "currency_exchange", "market_overview", "etf_data", "stock_data",
     "portfolio", "sec_filings",
+    "code_interpreter", "sql_query", "document_generation", "browser",
 }
 
 TOOL_TYPE_TO_CATEGORY = {
@@ -33,6 +34,10 @@ TOOL_TYPE_TO_CATEGORY = {
     "datetime": "utility",
     "weather": "utility",
     "custom": "custom",
+    "code_interpreter": "utility",
+    "sql_query": "enterprise",
+    "document_generation": "utility",
+    "browser": "web",
     "file_list": "system",
     "memory": "system",
 }

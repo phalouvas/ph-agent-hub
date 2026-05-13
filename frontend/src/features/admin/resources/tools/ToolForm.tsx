@@ -72,6 +72,13 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
           fields.erpnext_api_key = duplicateFrom.config.api_key || "";
           fields.erpnext_api_secret = duplicateFrom.config.api_secret || "";
         }
+        if (duplicateFrom.type === "sql_query" && duplicateFrom.config) {
+          fields.sql_connection_string = duplicateFrom.config.connection_string || "";
+          fields.sql_row_limit = duplicateFrom.config.row_limit || 1000;
+        }
+        if (duplicateFrom.type === "document_generation" && duplicateFrom.config) {
+          fields.doc_company_logo_url = duplicateFrom.config.company_logo_url || "";
+        }
         if (duplicateFrom.type === "custom") {
           fields.config_json = duplicateFrom.config
             ? JSON.stringify(duplicateFrom.config, null, 2)
@@ -93,6 +100,15 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
           fields.erpnext_base_url = tool.config.base_url || "";
           fields.erpnext_api_key = tool.config.api_key || "";
           fields.erpnext_api_secret = tool.config.api_secret || "";
+        }
+        // Populate sql_query fields from config
+        if (tool.type === "sql_query" && tool.config) {
+          fields.sql_connection_string = tool.config.connection_string || "";
+          fields.sql_row_limit = tool.config.row_limit || 1000;
+        }
+        // Populate document_generation fields from config
+        if (tool.type === "document_generation" && tool.config) {
+          fields.doc_company_logo_url = tool.config.company_logo_url || "";
         }
         // Populate config_json and code for custom type
         if (tool.type === "custom") {
@@ -128,6 +144,18 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
         delete data.erpnext_base_url;
         delete data.erpnext_api_key;
         delete data.erpnext_api_secret;
+      } else if (data.type === "sql_query") {
+        data.config = {
+          connection_string: data.sql_connection_string || "",
+          row_limit: data.sql_row_limit ? parseInt(data.sql_row_limit as string, 10) : 1000,
+        };
+        delete data.sql_connection_string;
+        delete data.sql_row_limit;
+      } else if (data.type === "document_generation") {
+        data.config = {
+          company_logo_url: data.doc_company_logo_url || "",
+        };
+        delete data.doc_company_logo_url;
       } else if (typeof data.config_json === "string" && data.config_json.trim()) {
         try {
           data.config = JSON.parse(data.config_json as string);
@@ -167,6 +195,18 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
         delete data.erpnext_base_url;
         delete data.erpnext_api_key;
         delete data.erpnext_api_secret;
+      } else if (data.type === "sql_query") {
+        data.config = {
+          connection_string: data.sql_connection_string || "",
+          row_limit: data.sql_row_limit ? parseInt(data.sql_row_limit as string, 10) : 1000,
+        };
+        delete data.sql_connection_string;
+        delete data.sql_row_limit;
+      } else if (data.type === "document_generation") {
+        data.config = {
+          company_logo_url: data.doc_company_logo_url || "",
+        };
+        delete data.doc_company_logo_url;
       } else if (typeof data.config_json === "string" && data.config_json.trim()) {
         try {
           data.config = JSON.parse(data.config_json as string);
@@ -234,10 +274,13 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
         >
           <Select
             options={[
+              { label: "Browser", value: "browser" },
               { label: "Calculator", value: "calculator" },
+              { label: "Code Interpreter", value: "code_interpreter" },
               { label: "Currency Exchange", value: "currency_exchange" },
               { label: "Custom", value: "custom" },
               { label: "Datetime", value: "datetime" },
+              { label: "Document Generation", value: "document_generation" },
               { label: "ERPNext", value: "erpnext" },
               { label: "ETF Data", value: "etf_data" },
               { label: "Fetch URL", value: "fetch_url" },
@@ -246,6 +289,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
               { label: "Portfolio", value: "portfolio" },
               { label: "RSS Feed", value: "rss_feed" },
               { label: "SEC Filings", value: "sec_filings" },
+              { label: "SQL Query", value: "sql_query" },
               { label: "Stock Data", value: "stock_data" },
               { label: "Weather", value: "weather" },
               { label: "Web Search", value: "web_search" },
@@ -278,6 +322,40 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
               rules={[{ required: true, message: "API Secret is required" }]}
             >
               <Input.Password placeholder="Your ERPNext API secret" />
+            </Form.Item>
+          </>
+        )}
+
+        {/* SQL Query-specific structured fields */}
+        {toolType === "sql_query" && (
+          <>
+            <Form.Item
+              name="sql_connection_string"
+              label="Connection String"
+              rules={[{ required: true, message: "Database connection string is required" }]}
+              extra="Supports postgresql://, mysql://, or mariadb:// schemes"
+            >
+              <Input placeholder="mysql://user:pass@host:3306/dbname" />
+            </Form.Item>
+            <Form.Item
+              name="sql_row_limit"
+              label="Row Limit"
+              extra="Maximum number of rows returned per query (default 1000)"
+            >
+              <Input type="number" placeholder="1000" />
+            </Form.Item>
+          </>
+        )}
+
+        {/* Document Generation-specific structured fields */}
+        {toolType === "document_generation" && (
+          <>
+            <Form.Item
+              name="doc_company_logo_url"
+              label="Company Logo URL"
+              extra="Optional URL to a logo image for PDF headers"
+            >
+              <Input placeholder="https://example.com/logo.png" />
             </Form.Item>
           </>
         )}
