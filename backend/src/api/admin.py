@@ -264,7 +264,6 @@ class ToolCreate(BaseModel):
     code: str | None = None
     enabled: bool = True
     is_public: bool = False
-    category: str | None = None
 
 
 class ToolUpdate(BaseModel):
@@ -275,7 +274,6 @@ class ToolUpdate(BaseModel):
     code: str | None = None
     enabled: bool | None = None
     is_public: bool | None = None
-    category: str | None = None
 
 
 class ToolResponse(BaseModel):
@@ -836,7 +834,6 @@ async def create_tool(
         code=body.code,
         enabled=body.enabled,
         is_public=body.is_public,
-        category=body.category or "general",
     )
     await write_audit_log(
         db,
@@ -888,8 +885,6 @@ async def update_tool(
         update_kwargs["enabled"] = body.enabled
     if body.is_public is not None:
         update_kwargs["is_public"] = body.is_public
-    if body.category is not None:
-        update_kwargs["category"] = body.category
     if body.tenant_id is not None:
         if current_user.role == "manager" and body.tenant_id != current_user.tenant_id:
             raise ForbiddenError("Managers can only assign tools to their own tenant")

@@ -15,9 +15,26 @@ VALID_TOOL_TYPES = {
     "currency_exchange",
 }
 
-VALID_TOOL_CATEGORIES = {
-    "financial", "web", "enterprise", "utility", "custom", "system", "general",
+TOOL_TYPE_TO_CATEGORY = {
+    "currency_exchange": "financial",
+    "web_search": "web",
+    "fetch_url": "web",
+    "rss_feed": "web",
+    "wikipedia": "web",
+    "erpnext": "enterprise",
+    "membrane": "enterprise",
+    "calculator": "utility",
+    "datetime": "utility",
+    "weather": "utility",
+    "custom": "custom",
+    "file_list": "system",
+    "memory": "system",
 }
+
+
+def derive_tool_category(tool_type: str) -> str:
+    """Map tool type to category. Unknown types fall back to general."""
+    return TOOL_TYPE_TO_CATEGORY.get(tool_type, "general")
 
 
 async def list_tools(
@@ -69,18 +86,12 @@ async def create_tool(
     code: str | None = None,
     enabled: bool = True,
     is_public: bool = False,
-    category: str = "general",
 ) -> Tool:
-    """Create a new tool. Raises ValidationError if type or category is invalid."""
+    """Create a new tool. Raises ValidationError if type is invalid."""
     if type not in VALID_TOOL_TYPES:
         raise ValidationError(
             f"Invalid tool type '{type}'. "
             f"Must be one of: {', '.join(sorted(VALID_TOOL_TYPES))}"
-        )
-    if category not in VALID_TOOL_CATEGORIES:
-        raise ValidationError(
-            f"Invalid tool category '{category}'. "
-            f"Must be one of: {', '.join(sorted(VALID_TOOL_CATEGORIES))}"
         )
 
     tool = Tool(
@@ -91,7 +102,7 @@ async def create_tool(
         code=code,
         enabled=enabled,
         is_public=is_public,
-        category=category,
+        category=derive_tool_category(type),
     )
     db.add(tool)
     await db.commit()
@@ -111,11 +122,11 @@ async def update_tool(db: AsyncSession, tool_id: str, **fields) -> Tool:
             f"Invalid tool type '{fields['type']}'. "
             f"Must be one of: {', '.join(sorted(VALID_TOOL_TYPES))}"
         )
-    if "category" in fields and fields["category"] not in VALID_TOOL_CATEGORIES:
-        raise ValidationError(
-            f"Invalid tool category '{fields['category']}'. "
-            f"Must be one of: {', '.join(sorted(VALID_TOOL_CATEGORIES))}"
-        )
+    # Category is system-derived from type and not user-editable.
+    fields.pop("category", None)
+
+    if "type" in fields:
+        fields["category"] = derive_tool_category(fields["type"])
 
     for key, value in fields.items():
         if hasattr(tool, key):
