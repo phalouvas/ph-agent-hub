@@ -207,6 +207,7 @@ class ModelCreate(BaseModel):
     max_tokens: int = 4096
     temperature: float = 0.7
     thinking_enabled: bool = False
+    reasoning_effort: str | None = None
     follow_up_questions_enabled: bool = False
     context_length: int | None = None
     input_price_per_1m: float | None = None
@@ -226,6 +227,7 @@ class ModelUpdate(BaseModel):
     max_tokens: int | None = None
     temperature: float | None = None
     thinking_enabled: bool | None = None
+    reasoning_effort: str | None = None
     follow_up_questions_enabled: bool | None = None
     context_length: int | None = None
     input_price_per_1m: float | None = None
@@ -245,6 +247,7 @@ class ModelResponse(BaseModel):
     max_tokens: int
     temperature: float
     thinking_enabled: bool
+    reasoning_effort: str | None = None
     follow_up_questions_enabled: bool = False
     context_length: int | None = None
     input_price_per_1m: float | None = None
@@ -721,6 +724,8 @@ async def update_model(
         update_kwargs["temperature"] = body.temperature
     if body.thinking_enabled is not None:
         update_kwargs["thinking_enabled"] = body.thinking_enabled
+    if body.reasoning_effort is not None:
+        update_kwargs["reasoning_effort"] = body.reasoning_effort
     if body.follow_up_questions_enabled is not None:
         update_kwargs["follow_up_questions_enabled"] = body.follow_up_questions_enabled
     if body.context_length is not None:

@@ -24,8 +24,9 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
     ``Content`` items of type ``text_reasoning``.
     """
 
-    def __init__(self, *args: Any, thinking_enabled: bool = False, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, thinking_enabled: bool = False, reasoning_effort: str | None = None, **kwargs: Any) -> None:
         self._thinking_enabled = thinking_enabled
+        self._reasoning_effort = reasoning_effort
         super().__init__(*args, **kwargs)
 
     # ---- Overrides --------------------------------------------------------
@@ -54,6 +55,10 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
             )
             if not has_tool_result:
                 thinking_type = "enabled"
+
+        # Inject reasoning_effort when thinking is enabled and a value is set
+        if thinking_type == "enabled" and self._reasoning_effort:
+            result["reasoning_effort"] = self._reasoning_effort
 
         result["extra_body"] = {
             "thinking": {"type": thinking_type}
@@ -207,6 +212,7 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
 def build_deepseek_client(
     model: Model,
     thinking_enabled: bool = False,
+    reasoning_effort: str | None = None,
 ) -> DeepSeekThinkingClient:
     """Build a DeepSeek chat client from a Model record.
 
@@ -236,4 +242,5 @@ def build_deepseek_client(
         model=model.model_id or model.name,
         async_client=openai_client,
         thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
     )

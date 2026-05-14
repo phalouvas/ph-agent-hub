@@ -66,6 +66,7 @@ class SessionConfig:
     execution_type: str
     agent_name: str
     thinking_enabled: bool
+    reasoning_effort: str | None = None
     temperature: float = 0.7
     tenant_name: str = ""
     cleanup_clients: list = field(default_factory=list)
@@ -110,15 +111,28 @@ async def _resolve_session_config(
     if thinking_enabled is None:
         thinking_enabled = getattr(model, "thinking_enabled", False)
 
-    # 7. Resolve temperature: message override > session override > model default
+    # 7. Resolve reasoning_effort: session override > model default > None
+    #    Only applies when thinking is enabled.
+    reasoning_effort = session_data.get("reasoning_effort")
+    if reasoning_effort is None:
+        reasoning_effort = getattr(model, "reasoning_effort", None)
+    # Clear reasoning_effort if thinking is disabled (no effect)
+    if not thinking_enabled:
+        reasoning_effort = None
+
+    # 8. Resolve temperature: message override > session override > model default
     temperature = session_data.get("_message_temperature")
     if temperature is None:
         temperature = session_data.get("temperature")
     if temperature is None:
         temperature = getattr(model, "temperature", 0.7)
 
-    # Rebuild model_client with thinking_enabled
-    model_client = get_chat_client(model, thinking_enabled=thinking_enabled)
+    # Rebuild model_client with resolved thinking_enabled and reasoning_effort
+    model_client = get_chat_client(
+        model,
+        thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
+    )
 
     # Look up tenant name for denormalized usage logging
     tenant_name = ""
@@ -142,6 +156,7 @@ async def _resolve_session_config(
         execution_type=execution_type,
         agent_name=agent_name,
         thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
         temperature=temperature,
         tenant_name=tenant_name,
         cleanup_clients=cleanup_clients,
@@ -716,6 +731,8 @@ async def run_agent(
                     tools=cfg.active_tool_callables,
                     user_message=contextualized_message,
                     agent_name=cfg.agent_name,
+                    temperature=cfg.temperature,
+                    reasoning_effort=cfg.reasoning_effort,
                 )
                 cache_hit_tokens = 0
             else:
@@ -727,6 +744,7 @@ async def run_agent(
                     user_message=contextualized_message,
                     agent_name=cfg.agent_name,
                     temperature=cfg.temperature,
+                    reasoning_effort=cfg.reasoning_effort,
                 )
         except Exception as exc:
             logger.error("Agent run failed: %s", exc)
@@ -1261,6 +1279,7 @@ async def _run_agent(
     user_message: str,
     agent_name: str,
     temperature: float = 0.7,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, int, int, int]:
     """Run a simple MAF Agent.
 
@@ -1269,12 +1288,16 @@ async def _run_agent(
     """
     from agent_framework import Agent
 
+    default_options: dict = {"temperature": temperature}
+    if reasoning_effort:
+        default_options["reasoning_effort"] = reasoning_effort
+
     agent = Agent(
         client=model_client,
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
-        default_options={"temperature": temperature},
+        default_options=default_options,
     )
 
     result = await agent.run(user_message)
@@ -1303,6 +1326,8 @@ async def _run_workflow(
     tools: list,
     user_message: str,
     agent_name: str,
+    temperature: float = 0.7,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, int, int]:
     """Run a MAF Workflow via the registry.
 
@@ -1334,6 +1359,7 @@ async def _run_workflow(
         user_message=user_message,
         agent_name=agent_name,
         temperature=temperature,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -1618,6 +1644,8 @@ async def run_agent_stream(
                 session_id=session_id,
                 message_id=message_id,
                 token_counts=_stream_token_info,
+                temperature=cfg.temperature,
+                reasoning_effort=cfg.reasoning_effort,
             )
         else:
             stream = _run_agent_stream(
@@ -1631,6 +1659,7 @@ async def run_agent_stream(
                 message_id=message_id,
                 token_counts=_stream_token_info,
                 temperature=cfg.temperature,
+                reasoning_effort=cfg.reasoning_effort,
             )
 
         async for event_dict in stream:
@@ -1872,6 +1901,7 @@ async def _run_agent_stream(
     message_id: str,
     token_counts: dict | None = None,
     temperature: float = 0.7,
+    reasoning_effort: str | None = None,
 ) -> AsyncIterator[dict]:
     """Run a MAF Agent in streaming mode, yielding SSE event dicts.
 
@@ -1884,12 +1914,16 @@ async def _run_agent_stream(
     """
     from agent_framework import Agent
 
+    default_options: dict = {"temperature": temperature}
+    if reasoning_effort:
+        default_options["reasoning_effort"] = reasoning_effort
+
     agent = Agent(
         client=model_client,
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
-        default_options={"temperature": temperature},
+        default_options=default_options,
     )
 
     response_stream = agent.run(user_message, stream=True)
@@ -1990,6 +2024,8 @@ async def _run_workflow_stream(
     session_id: str,
     message_id: str,
     token_counts: dict | None = None,
+    temperature: float = 0.7,
+    reasoning_effort: str | None = None,
 ) -> AsyncIterator[dict]:
     """Run a MAF Workflow in streaming mode.
 
@@ -2034,6 +2070,7 @@ async def _run_workflow_stream(
         message_id=message_id,
         token_counts=token_counts,
         temperature=temperature,
+        reasoning_effort=reasoning_effort,
     ):
         yield event_dict
 
