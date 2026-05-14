@@ -8,8 +8,8 @@
 #   ``run_agent_stream()`` — SSE streaming (Phase 7)
 #
 # Resolution chain (model):
-#   session.selected_model_id → skill.default_model_id
-#   → template.default_model_id → ValidationError
+#   session.selected_model_id → user.default_model_id
+#   → skill.default_model_id → first accessible enabled model → ValidationError
 #
 # System prompt construction:
 #   template.system_prompt + memory injection
@@ -823,9 +823,8 @@ async def _resolve_model(
     1. session.selected_model_id
     2. user.default_model_id
     3. skill.default_model_id
-    4. template.default_model_id
-    5. first accessible enabled model for the user
-    6. ValidationError
+    4. first accessible enabled model for the user
+    5. ValidationError
     """
     tenant_id = session_data.get("tenant_id", "")
     user_id = session_data.get("user_id", "")
@@ -860,22 +859,7 @@ async def _resolve_model(
             if model:
                 return model
 
-    # 4. template.default_model_id
-    template_id = session_data.get("selected_template_id")
-    if template_id:
-        result = await db.execute(
-            select(Template).where(Template.id == template_id)
-        )
-        template = result.scalar_one_or_none()
-        if template and template.default_model_id:
-            result = await db.execute(
-                select(Model).where(Model.id == template.default_model_id)
-            )
-            model = result.scalar_one_or_none()
-            if model:
-                return model
-
-    # 5. first accessible enabled model
+    # 4. first accessible enabled model
     from ..services.model_service import list_models as _svc_list_models
     models = await _svc_list_models(
         db, tenant_id=tenant_id, user_id=user_id
@@ -886,7 +870,7 @@ async def _resolve_model(
 
     raise ValidationError(
         "No model configured. Please select a model for this session, "
-        "or configure a default model on your profile, skill, or template."
+        "or configure a default model on your profile or skill."
     )
 
 

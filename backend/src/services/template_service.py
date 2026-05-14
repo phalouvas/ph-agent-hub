@@ -53,7 +53,6 @@ async def create_template(
     system_prompt: str,
     scope: str,
     description: str | None = None,
-    default_model_id: str | None = None,
     assigned_user_id: str | None = None,
 ) -> Template:
     """Create a new template."""
@@ -63,7 +62,6 @@ async def create_template(
         description=description,
         system_prompt=system_prompt,
         scope=scope,
-        default_model_id=default_model_id,
         assigned_user_id=assigned_user_id,
     )
     db.add(template)

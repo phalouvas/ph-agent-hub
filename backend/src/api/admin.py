@@ -952,7 +952,6 @@ class AdminTemplateCreate(BaseModel):
     description: str | None = None
     system_prompt: str
     scope: str = "tenant"
-    default_model_id: str | None = None
     assigned_user_id: str | None = None
 
 
@@ -962,7 +961,6 @@ class AdminTemplateUpdate(BaseModel):
     description: str | None = None
     system_prompt: str | None = None
     scope: str | None = None
-    default_model_id: str | None = None
     assigned_user_id: str | None = None
 
 
@@ -973,7 +971,6 @@ class AdminTemplateResponse(BaseModel):
     description: str | None
     system_prompt: str
     scope: str
-    default_model_id: str | None
     assigned_user_id: str | None
     created_at: datetime
     updated_at: datetime
@@ -1024,7 +1021,6 @@ async def admin_create_template(
         description=body.description,
         system_prompt=body.system_prompt,
         scope=body.scope,
-        default_model_id=body.default_model_id,
         assigned_user_id=body.assigned_user_id,
     )
     resp = AdminTemplateResponse.model_validate(template)
@@ -1064,8 +1060,6 @@ async def admin_update_template(
         update_kwargs["system_prompt"] = body.system_prompt
     if body.scope is not None:
         update_kwargs["scope"] = body.scope
-    if body.default_model_id is not None:
-        update_kwargs["default_model_id"] = body.default_model_id
     if body.assigned_user_id is not None:
         update_kwargs["assigned_user_id"] = body.assigned_user_id
     if body.tenant_id is not None:

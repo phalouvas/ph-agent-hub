@@ -12,7 +12,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ..base import Base
 from .tenants import Tenant
 from .users import User
-from .models import Model
 
 
 class Template(Base):
@@ -27,9 +26,6 @@ class Template(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    default_model_id: Mapped[str | None] = mapped_column(
-        CHAR(36), ForeignKey("models.id"), nullable=True
-    )
     scope: Mapped[str] = mapped_column(
         Enum("tenant", "role", "user", name="template_scope_enum"), nullable=False
     )
