@@ -6,7 +6,7 @@
 
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout, Empty, Button, Typography, Spin } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SessionSidebar } from "../components/SessionSidebar";
 import { ChatWindow } from "../components/ChatWindow";
@@ -41,6 +41,18 @@ export function ChatPage() {
     }
   };
 
+  const handleNewTemporaryChat = async () => {
+    try {
+      const session = await createSession({
+        title: "New Chat",
+        is_temporary: true,
+      });
+      navigate(`/chat/${session.id}`);
+    } catch {
+      // Error creating session
+    }
+  };
+
   return (
     <Layout style={{ height: "100vh" }}>
       <SessionSidebar />
@@ -62,14 +74,23 @@ export function ChatPage() {
             <Text type="secondary">
               Select a conversation from the sidebar or start a new one
             </Text>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              size="large"
-              onClick={handleNewChat}
-            >
-              New Chat
-            </Button>
+            <div style={{ display: "flex", gap: 12 }}>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                size="large"
+                onClick={handleNewChat}
+              >
+                New Chat
+              </Button>
+              <Button
+                icon={<ThunderboltOutlined />}
+                size="large"
+                onClick={handleNewTemporaryChat}
+              >
+                New Temporary Chat
+              </Button>
+            </div>
           </div>
         ) : loadingSession ? (
           <div
