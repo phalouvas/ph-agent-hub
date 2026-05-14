@@ -765,7 +765,7 @@ async def run_agent(
         )
 
         # ---- 9. Link file uploads to the user message ------------------------
-        if file_ids:
+        if file_ids and not is_temporary:
             from ..services import upload_service as _upload_svc
 
             await _upload_svc.link_uploads_to_message(
@@ -1068,7 +1068,11 @@ async def _resolve_tool_callables(
     # the session without polluting the user message with injected text.
     try:
         from ..tools.file_list import build_file_list_tool
-        file_list_tools = build_file_list_tool(db, session_id, tenant_id)
+        file_list_tools = build_file_list_tool(
+            db, session_id, tenant_id,
+            is_temporary=is_temporary,
+            uploaded_file_ids=session_data.get("uploaded_file_ids"),
+        )
         callables.extend(file_list_tools)
     except Exception:
         logger.warning(
@@ -1596,7 +1600,7 @@ async def run_agent_stream(
     )
 
     # Link file uploads to the user message
-    if file_ids:
+    if file_ids and not is_temporary:
         from ..services import upload_service as _upload_svc
 
         await _upload_svc.link_uploads_to_message(
@@ -1696,6 +1700,22 @@ async def run_agent_stream(
 
     except Exception as exc:
         logger.exception("Agent stream failed for session %s", session_id)
+        # Persist whatever we accumulated before the error
+        if accumulated_text or accumulated_reasoning or accumulated_tool_events:
+            try:
+                await _persist_assistant_message(
+                    db=db,
+                    session_id=session_id,
+                    is_temporary=is_temporary,
+                    assistant_response=accumulated_text,
+                    model_id=getattr(cfg, "model", Model(id="unknown", name="unknown", provider="unknown")).id if cfg else "unknown",
+                    tool_events=accumulated_tool_events,
+                    tokens_in=0,
+                    tokens_out=0,
+                    reasoning=accumulated_reasoning,
+                )
+            except Exception:
+                logger.exception("Failed to persist partial message after stream error")
         yield {
             "event": "error",
             "data": json.dumps({

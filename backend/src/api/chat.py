@@ -489,13 +489,17 @@ async def delete_session(
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(get_current_user),
 ):
-    """Delete a session (DB or Redis)."""
+    """Delete a session (DB or Redis). Cleans up file uploads for temp sessions."""
     data = await _load_session(db, session_id)
     await _require_session_owner(data, current_user)
 
     is_temp = data.get("is_temporary", False)
 
     if is_temp:
+        # Clean up associated file uploads (MinIO + DB) before deleting Redis keys
+        uploaded_ids: list[str] = data.get("uploaded_file_ids", [])
+        for file_id in uploaded_ids:
+            await upload_service._delete_temp_upload_by_id(db, file_id)
         await delete_temp_session(session_id)
     else:
         await session_service.delete_session(db, session_id)
@@ -1452,6 +1456,8 @@ async def list_uploads(
         db=db,
         session_id=session_id,
         user_id=current_user.id,
+        is_temporary=data.get("is_temporary", False),
+        file_ids=data.get("uploaded_file_ids"),
     )
     return [
         FileUploadResponse(

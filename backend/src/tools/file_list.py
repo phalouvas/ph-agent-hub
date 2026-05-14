@@ -22,6 +22,8 @@ def build_file_list_tool(
     db: AsyncSession,
     session_id: str,
     tenant_id: str,
+    is_temporary: bool = False,
+    uploaded_file_ids: list[str] | None = None,
 ) -> list:
     """Return built-in MAF @tools for file discovery and content reading.
 
@@ -29,6 +31,8 @@ def build_file_list_tool(
         db: Active async DB session.
         session_id: Current session ID.
         tenant_id: Current tenant ID.
+        is_temporary: Whether the session is temporary (changes DB query).
+        uploaded_file_ids: Specific file IDs for temp sessions (from Redis).
     """
     from ..db.orm.file_uploads import FileUpload
 
@@ -42,12 +46,27 @@ def build_file_list_tool(
         Call this when a user mentions a file and you need its exact name
         (e.g. for the ERPNext ``upload_file`` tool).
         """
-        result = await db.execute(
-            select(FileUpload).where(
-                FileUpload.session_id == session_id,
-                FileUpload.tenant_id == tenant_id,
+        if is_temporary and uploaded_file_ids:
+            result = await db.execute(
+                select(FileUpload).where(
+                    FileUpload.id.in_(uploaded_file_ids),
+                    FileUpload.tenant_id == tenant_id,
+                )
             )
-        )
+        elif is_temporary:
+            # No file IDs tracked — return empty
+            result = await db.execute(
+                select(FileUpload).where(
+                    FileUpload.id.in_([]),
+                )
+            )
+        else:
+            result = await db.execute(
+                select(FileUpload).where(
+                    FileUpload.session_id == session_id,
+                    FileUpload.tenant_id == tenant_id,
+                )
+            )
         uploads = result.scalars().all()
 
         files: list[dict[str, Any]] = []

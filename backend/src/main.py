@@ -5,6 +5,7 @@
 # and API router stubs wired in.
 # =============================================================================
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -29,9 +30,24 @@ from .core.limiter import limiter, RateLimitExceeded
 # ---------------------------------------------------------------------------
 
 
+async def _cleanup_orphaned_temp_uploads() -> None:
+    """Periodic background task: delete file uploads for expired temp sessions."""
+    from .db.base import AsyncSessionLocal
+    from .services.upload_service import delete_orphaned_temp_uploads
+
+    interval = settings.TEMPORARY_SESSION_TTL_SECONDS  # same cadence as TTL
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with AsyncSessionLocal() as db:
+                await delete_orphaned_temp_uploads(db)
+        except Exception:
+            pass  # Best-effort: never let a cleanup failure crash the task
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: scan MAF registry, load agent identity. Shutdown: no-op."""
+    """Startup: scan MAF registry, load agent identity, start cleanup task."""
     from .agents.registry import startup_scan
     from .agents.runner import load_agent_identity
     from .db.base import AsyncSessionLocal
@@ -41,7 +57,12 @@ async def lifespan(app: FastAPI):
     async with AsyncSessionLocal() as db:
         await startup_scan(db)
 
+    # Start background cleanup for orphaned temp uploads
+    task = asyncio.create_task(_cleanup_orphaned_temp_uploads())
+
     yield
+
+    task.cancel()
 
 
 app = FastAPI(title="PH Agent Hub", version="1.5.1", lifespan=lifespan)
