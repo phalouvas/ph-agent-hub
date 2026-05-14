@@ -32,7 +32,7 @@ Click **New Session** in the left sidebar, or start typing a message — a sessi
 
 Sessions can be:
 - **Permanent**: Saved to the database. Appears in your session list. Supports all features.
-- **Temporary**: Lives only in Redis. Disappears after inactivity. Does not support file uploads, branching, or editing.
+- **Temporary**: Lives only in Redis. Disappears after inactivity. Does not support branching or editing.
 
 ### 2.2 Pin a Session
 
@@ -174,7 +174,6 @@ You can attach files to your chat sessions for the AI to reference.
 
 ### 7.2 File Limitations
 
-- File uploads are only available for **permanent sessions** (not temporary ones)
 - Uploaded files are stored securely and scoped to your session
 
 ### 7.3 Delete an Upload
@@ -286,7 +285,7 @@ Only models enabled by your administrator for your tenant appear in the selector
 
 - Check the file type is supported (see §7.1)
 - Check the file is under 20 MB
-- Make sure you're in a permanent session, not a temporary one
+- Check your session is active (temporary sessions expire after inactivity)
 
 ### I see an error message
 

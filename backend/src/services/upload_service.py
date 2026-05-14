@@ -14,7 +14,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.config import settings
-from ..core.exceptions import ForbiddenError, NotFoundError, ValidationError
+from ..core.exceptions import NotFoundError, ValidationError
 from ..db.orm.file_uploads import FileUpload
 from ..db.orm.users import User
 from ..storage import s3
@@ -146,9 +146,8 @@ async def create_upload(
             f"{settings.UPLOAD_MAX_SIZE_BYTES} bytes"
         )
 
-    # 3. Reject temporary sessions
-    if session_data.get("is_temporary", False):
-        raise ForbiddenError("Uploads are disabled for temporary sessions")
+    # 3. Determine if this is a temporary session
+    is_temp = session_data.get("is_temporary", False)
 
     # 4. Build storage path
     file_id = str(uuid.uuid4())
@@ -180,18 +179,30 @@ async def create_upload(
         id=file_id,
         tenant_id=current_user.tenant_id,
         user_id=current_user.id,
-        session_id=session_data["id"],
+        session_id=None if is_temp else session_data["id"],
         original_filename=original_filename,
         content_type=resolved_type,
         size_bytes=len(file_bytes),
         storage_key=key,
         bucket=bucket,
-        is_temporary=False,
+        is_temporary=is_temp,
         extracted_text=extracted_text,
     )
     db.add(upload)
     await db.commit()
     await db.refresh(upload)
+
+    # 7. Track file ID in Redis for temp sessions (cleanup on delete / TTL expiry)
+    if is_temp:
+        from ..core.redis import get_temp_session, store_temp_session
+
+        redis_data = await get_temp_session(session_data["id"])
+        if redis_data is not None:
+            uploaded_ids: list[str] = redis_data.get("uploaded_file_ids", [])
+            uploaded_ids.append(file_id)
+            redis_data["uploaded_file_ids"] = uploaded_ids
+            await store_temp_session(session_data["id"], redis_data)
+
     return upload
 
 
@@ -199,16 +210,37 @@ async def list_uploads(
     db: AsyncSession,
     session_id: str,
     user_id: str,
+    is_temporary: bool = False,
+    file_ids: list[str] | None = None,
 ) -> list[FileUpload]:
-    """List all file uploads for a session owned by a user."""
-    result = await db.execute(
-        select(FileUpload)
-        .where(
-            FileUpload.session_id == session_id,
-            FileUpload.user_id == user_id,
+    """List all file uploads for a session owned by a user.
+
+    For temp sessions, *file_ids* should be the ``uploaded_file_ids``
+    from the Redis session blob.  When omitted for temp sessions the
+    result will be empty (prevents cross-session leakage).
+    """
+    if is_temporary and file_ids:
+        result = await db.execute(
+            select(FileUpload)
+            .where(
+                FileUpload.id.in_(file_ids),
+                FileUpload.user_id == user_id,
+            )
+            .order_by(FileUpload.created_at.desc())
         )
-        .order_by(FileUpload.created_at.desc())
-    )
+    elif is_temporary:
+        result = await db.execute(
+            select(FileUpload).where(FileUpload.id.in_([]))
+        )
+    else:
+        result = await db.execute(
+            select(FileUpload)
+            .where(
+                FileUpload.session_id == session_id,
+                FileUpload.user_id == user_id,
+            )
+            .order_by(FileUpload.created_at.desc())
+        )
     return list(result.scalars().all())
 
 
@@ -349,6 +381,61 @@ async def list_uploads_for_message(
         .order_by(FileUpload.created_at.asc())
     )
     return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Temporary session cleanup
+# ---------------------------------------------------------------------------
+
+
+async def delete_orphaned_temp_uploads(db: AsyncSession) -> None:
+    """Delete file uploads belonging to temp sessions whose Redis TTL has expired.
+
+    Queries ``FileUpload`` rows where ``is_temporary = True`` and
+    ``created_at`` is older than ``TEMPORARY_SESSION_TTL_SECONDS`` plus a
+    1-hour grace period, then removes the MinIO object and DB row.
+    Commits at the end.
+    """
+    from datetime import datetime, timezone, timedelta
+
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=settings.TEMPORARY_SESSION_TTL_SECONDS + 3600  # +1h grace
+    )
+
+    result = await db.execute(
+        select(FileUpload).where(
+            FileUpload.is_temporary == True,  # noqa: E712
+            FileUpload.created_at < cutoff,
+        )
+    )
+    uploads = list(result.scalars().all())
+
+    for upload in uploads:
+        try:
+            await s3.delete_object(bucket=upload.bucket, key=upload.storage_key)
+        except Exception:
+            pass  # Best-effort: MinIO object may already be gone
+
+    if uploads:
+        ids = [u.id for u in uploads]
+        await db.execute(delete(FileUpload).where(FileUpload.id.in_(ids)))
+        await db.commit()
+
+
+async def _delete_temp_upload_by_id(db: AsyncSession, file_id: str) -> None:
+    """Delete a single temp upload by file_id.  Not exposed as an endpoint."""
+    result = await db.execute(
+        select(FileUpload).where(FileUpload.id == file_id)
+    )
+    upload = result.scalar_one_or_none()
+    if upload is None:
+        return
+    try:
+        await s3.delete_object(bucket=upload.bucket, key=upload.storage_key)
+    except Exception:
+        pass
+    await db.execute(delete(FileUpload).where(FileUpload.id == file_id))
+    await db.flush()
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 // =============================================================================
 // PH Agent Hub — FileUpload
 // =============================================================================
-// Ant Design Upload; POST /chat/session/:id/upload; disabled for temporary sessions.
+// Ant Design Upload; POST /chat/session/:id/upload.
 // =============================================================================
 
 import React from "react";

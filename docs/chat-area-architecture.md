@@ -130,7 +130,8 @@ The chat area is a thin client. It renders state returned by the backend but doe
 - Temporary sessions are held in Redis with a TTL; they are not written to MariaDB
 - Temporary sessions are automatically deleted on logout or TTL expiry
 - Memory writes are disabled for temporary sessions
-- File uploads and RAG embedding are disabled for temporary sessions
+- File uploads are supported for both permanent and temporary sessions (auto-cleaned on session expiry)
+- RAG embedding is disabled for temporary sessions
 - The UI prominently marks temporary sessions so the user always knows the session will not be saved
 
 ### **4.9 Message Management**

@@ -1008,7 +1008,7 @@ export function ChatWindow({
               await handleFileUpload(file);
               return false;
             }}
-            disabled={streaming || isTemporary || !!editingMsgId}
+            disabled={streaming || !!editingMsgId}
             accept={
               ".pdf,.csv,.txt,.md,.json,.png,.jpg,.jpeg,.gif,.webp,.xlsx,.docx,.pptx," +
               "application/pdf,text/csv,text/plain,text/markdown," +
@@ -1020,7 +1020,7 @@ export function ChatWindow({
           >
             <Button
               icon={<PaperClipOutlined />}
-              disabled={streaming || isTemporary || !!editingMsgId}
+              disabled={streaming || !!editingMsgId}
               loading={uploading}
               title="Attach files"
             />
