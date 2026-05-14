@@ -12,6 +12,12 @@ import { getToken } from "../../../services/api";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "/api";
 
+// Accepted file types for the HTML file picker — mirrors the backend
+// UPLOAD_ALLOWED_TYPES configuration.  The backend performs the
+// authoritative validation; this is a UX convenience only.
+const ACCEPT =
+  ".txt,.csv,.md,.pdf,.json,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx";
+
 interface FileUploadProps {
   sessionId: string;
   disabled?: boolean;
@@ -45,6 +51,7 @@ export function FileUpload({
       }}
       disabled={disabled}
       multiple={multiple}
+      accept={ACCEPT}
       showUploadList={{ showRemoveIcon: true }}
     >
       <Button icon={<UploadOutlined />} disabled={disabled}>

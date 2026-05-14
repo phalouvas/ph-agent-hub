@@ -5,6 +5,7 @@
 # Only ``storage/s3.py`` calls ``boto3`` (single-module rule).
 # =============================================================================
 
+import mimetypes
 import tempfile
 import os
 import uuid
@@ -28,6 +29,9 @@ _EXTRACTABLE_MIME_TYPES = frozenset({
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
 })
 
 # Image MIME types (no text extraction)
@@ -37,6 +41,74 @@ _IMAGE_MIME_TYPES = frozenset({
     "image/gif",
     "image/webp",
 })
+
+# Generic / unknown MIME types reported by browsers that should trigger
+# extension-based fallback detection
+_GENERIC_MIME_TYPES = frozenset({
+    "application/octet-stream",
+    "application/x-octet-stream",
+    "binary/octet-stream",
+})
+
+
+# ---------------------------------------------------------------------------
+# MIME type resolution with extension fallback
+# ---------------------------------------------------------------------------
+
+# Extended mapping for common Office file extensions that Python's
+# mimetypes module may not know about or may report differently than
+# the IANA / official MIME types used in UPLOAD_ALLOWED_TYPES.
+_EXTENSION_MIME_OVERRIDES: dict[str, str] = {
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".csv": "text/csv",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".json": "application/json",
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
+def _resolve_content_type(content_type: str, filename: str) -> str:
+    """Resolve the effective MIME type for a file.
+
+    When the browser reports a generic / opaque content type (e.g.
+    ``application/octet-stream``), this function falls back to
+    extension-based detection so that Word, Excel, and other Office
+    files are still accepted.
+
+    Returns the original *content_type* unchanged when it is already
+    specific enough, or the detected type when a fallback is needed.
+    """
+    if content_type and content_type not in _GENERIC_MIME_TYPES:
+        return content_type
+
+    # Try extension-based detection
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower()
+
+    # Check override mapping first (handles Office formats that
+    # mimetypes may not know about)
+    if ext in _EXTENSION_MIME_OVERRIDES:
+        return _EXTENSION_MIME_OVERRIDES[ext]
+
+    # Fall back to Python's mimetypes module
+    guessed, _ = mimetypes.guess_type(filename)
+    if guessed:
+        return guessed
+
+    # Nothing worked — return the original (will fail validation
+    # with a clear error message)
+    return content_type
 
 
 async def create_upload(
@@ -53,13 +125,17 @@ async def create_upload(
         ValidationError: content_type not allowed or file too large.
         ForbiddenError: session is temporary.
     """
+    # 0. Resolve effective content type (fallback from extension when
+    #    the browser reports a generic type like application/octet-stream)
+    resolved_type = _resolve_content_type(content_type, original_filename)
+
     # 1. Validate content type
     allowed_types = [
         t.strip() for t in settings.UPLOAD_ALLOWED_TYPES.split(",") if t.strip()
     ]
-    if content_type not in allowed_types:
+    if resolved_type not in allowed_types:
         raise ValidationError(
-            f"File type '{content_type}' is not allowed. "
+            f"File type '{resolved_type}' is not allowed. "
             f"Allowed types: {settings.UPLOAD_ALLOWED_TYPES}"
         )
 
@@ -82,18 +158,18 @@ async def create_upload(
         f"{file_id}-{original_filename}"
     )
 
-    # 5. Upload to MinIO
+    # 5. Upload to MinIO (use resolved_type for storage accuracy)
     await s3.ensure_bucket_exists(bucket)
-    await s3.upload_object(bucket, key, file_bytes, content_type)
+    await s3.upload_object(bucket, key, file_bytes, resolved_type)
 
     # 5a. Extract text for document types via markitdown
     extracted_text: str | None = None
-    if content_type in _EXTRACTABLE_MIME_TYPES:
+    if resolved_type in _EXTRACTABLE_MIME_TYPES:
         try:
             extracted_text = await _extract_text(
                 file_bytes=file_bytes,
                 filename=original_filename,
-                content_type=content_type,
+                content_type=resolved_type,
             )
         except Exception:
             # Best-effort: extraction failure should not block upload
@@ -106,7 +182,7 @@ async def create_upload(
         user_id=current_user.id,
         session_id=session_data["id"],
         original_filename=original_filename,
-        content_type=content_type,
+        content_type=resolved_type,
         size_bytes=len(file_bytes),
         storage_key=key,
         bucket=bucket,
