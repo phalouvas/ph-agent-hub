@@ -2,13 +2,16 @@
 # PH Agent Hub — SEC Filings Tool Factory (sec.gov EDGAR)
 # =============================================================================
 # Builds MAF @tool-decorated async functions for listing and reading SEC
-# EDGAR filings. Uses direct HTTPS requests to sec.gov — free by US law,
-# no API key required. Uses beautifulsoup4 for HTML parsing.
+# EDGAR filings.  Uses the edgartools library for reliable SEC access with
+# proper rate limiting, identity, and complete filing history since 1994.
 # =============================================================================
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import re
+from datetime import datetime
 
 import httpx
 from agent_framework import tool
@@ -16,19 +19,24 @@ from agent_framework import tool
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# edgartools initialisation
+# ---------------------------------------------------------------------------
+
+try:
+    from edgar import Company, set_identity
+
+    set_identity("phalouvas@gmail.com")
+    _EDGAR_AVAILABLE = True
+except ImportError:
+    _EDGAR_AVAILABLE = False
+    logger.warning("edgartools not installed — SEC tools will be unavailable")
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 SEC_BASE: str = "https://www.sec.gov"
-SEC_CIK_LOOKUP: str = "https://www.sec.gov/cgi-bin/browse-edgar"
-SEC_SUBMISSIONS: str = "https://data.sec.gov/submissions"
-DEFAULT_TIMEOUT: float = 30.0
-DEFAULT_USER_AGENT: str = (
-    "ph-agent-hub/1.0 (contact@example.com)"
-)
 DEFAULT_LIMIT: int = 10
-
-# SEC requires a User-Agent with contact info per fair access rules
-# See: https://www.sec.gov/privacy
+DEFAULT_MAX_CHARS: int = 500_000
 
 
 # ---------------------------------------------------------------------------
@@ -36,138 +44,154 @@ DEFAULT_LIMIT: int = 10
 # ---------------------------------------------------------------------------
 
 
-def _safe_float(val) -> float | None:
-    """Convert a value to float, returning None on failure."""
-    if val is None:
-        return None
-    try:
-        return float(val)
-    except (TypeError, ValueError):
-        return None
+def _parse_acc_num_and_cik(url: str) -> tuple[str, str]:
+    """Extract ``(accession_number, cik)`` from an SEC URL.
 
-
-def _clean_html(html_text: str) -> str:
-    """Extract readable text from SEC filing HTML.
-
-    Uses beautifulsoup4 to parse and extract text, removing tables
-    and scripts while preserving document structure.
+    Handles multiple EDGAR URL patterns.  Returns ``("", "")`` on failure.
     """
-    from bs4 import BeautifulSoup
+    acc = ""
+    cik = ""
 
+    # Pattern A: ?accession_number=0001564590-22-026876  (viewer query)
+    m = re.search(r"accession_number=([^&]+)", url)
+    if m:
+        acc = m.group(1)
+
+    # Pattern B: ix?doc=/Archives/edgar/data/CIK/ACCNODASH/FILENAME
+    m = re.search(r"ix\?doc=/Archives/edgar/data/(\d+)/(\d+)/", url)
+    if m:
+        acc_no_dash = m.group(2)
+        # Convert 000095017025100235 → 0000950170-25-100235
+        if len(acc_no_dash) >= 16 and not acc:
+            acc = f"{acc_no_dash[:10]}-{acc_no_dash[10:12]}-{acc_no_dash[12:]}"
+
+    # Pattern C: …/data/CIK/ACCNODASHES/ACC-ESSION-NUMBER-index.htm[l]  (browse, two-segment)
+    if not acc:
+        m = re.search(
+            r"/data/\d+/([^/]+)/(\d{10}-\d{2}-\d{6})-index\.html?", url
+        )
+        if m:
+            acc = m.group(2)
+
+    # Pattern C2: …/data/CIK/ACC-ESSION-NUMBER-index.html  (flat, no subfolder)
+    if not acc:
+        m = re.search(
+            r"/data/\d+/(\d{10}-\d{2}-\d{6})-index\.html?", url
+        )
+        if m:
+            acc = m.group(1)
+
+    # Pattern D: …/data/CIK/ACCNODASH/FILENAME.htm  (direct document)
+    if not acc:
+        m = re.search(r"/data/(\d+)/(\d{10,})/[^/]+\.html?", url)
+        if m:
+            acc_no_dash = m.group(2)
+            if len(acc_no_dash) >= 16:
+                acc = (
+                    f"{acc_no_dash[:10]}-{acc_no_dash[10:12]}-"
+                    f"{acc_no_dash[12:]}"
+                )
+
+    # CIK from any path variant  …/data/CIK/…
+    m = re.search(r"/data/(\d+)/", url)
+    if m:
+        cik = m.group(1).lstrip("0")
+
+    return acc, cik
+
+
+async def _fetch_url_direct(
+    url: str, headers: dict, timeout: float
+) -> tuple[str, str]:
+    """Fallback: fetch and clean a filing via direct HTTP when edgartools
+    cannot resolve the URL."""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.get(url, headers=headers, follow_redirects=True)
+        resp.raise_for_status()
+    html = resp.text
+
+    # Resolve indirect pages
+
+    # Case: inline XBRL viewer (ix?doc=…) — extract real document path
+    if "ix?doc=" in url:
+        m = re.search(r"ix\?doc=(/Archives/edgar/data/\d+/\d+/\S+)", url)
+        if m:
+            doc_path = m.group(1).rstrip("&")
+            real_url = f"{SEC_BASE}{doc_path}"
+            async with httpx.AsyncClient(timeout=timeout) as c2:
+                r2 = await c2.get(
+                    real_url, headers=headers, follow_redirects=True
+                )
+                r2.raise_for_status()
+                html = r2.text
+                url = real_url
+
+    if "/cgi-bin/viewer" in url:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        iframe = soup.find("iframe")
+        if iframe and iframe.get("src"):
+            doc_url = iframe["src"]
+            if doc_url.startswith("/"):
+                doc_url = f"{SEC_BASE}{doc_url}"
+            async with httpx.AsyncClient(timeout=timeout) as c2:
+                r2 = await c2.get(doc_url, headers=headers, follow_redirects=True)
+                r2.raise_for_status()
+                html = r2.text
+                url = doc_url
+    elif "-index.htm" in url or "-index.html" in url:
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html, "html.parser")
+        doc_link: str | None = None
+        for table in soup.find_all("table"):
+            for row in table.find_all("tr"):
+                for cell in row.find_all("td"):
+                    link = cell.find("a")
+                    if not link:
+                        continue
+                    href = (link.get("href") or "").strip()
+                    if not href:
+                        continue
+                    lo = href.lower()
+                    if lo.endswith(("_cal.xml", "_def.xml", "_lab.xml",
+                                    "_pre.xml", ".xsd", ".txt", ".xml")):
+                        continue
+                    if lo.endswith((".htm", ".html")):
+                        if href.startswith("/"):
+                            doc_link = f"{SEC_BASE}{href}"
+                        elif href.startswith("http"):
+                            doc_link = href
+                        else:
+                            doc_link = f'{url.rsplit("/", 1)[0]}/{href}'
+                        break
+                if doc_link:
+                    break
+            if doc_link:
+                break
+        if doc_link:
+            async with httpx.AsyncClient(timeout=timeout) as c2:
+                r2 = await c2.get(doc_link, headers=headers, follow_redirects=True)
+                r2.raise_for_status()
+                html = r2.text
+                url = doc_link
+
+    # Clean HTML
     try:
-        soup = BeautifulSoup(html_text, "html.parser")
+        from bs4 import BeautifulSoup
 
-        # Remove script, style, and hidden elements
+        soup = BeautifulSoup(html, "html.parser")
         for tag in soup(["script", "style", "noscript", "meta", "link"]):
             tag.decompose()
-
-        # Remove hidden divs
-        for tag in soup.find_all(attrs={"style": re.compile(r"display\s*:\s*none", re.I)}):
-            tag.decompose()
-
-        # Get text with reasonable formatting
         text = soup.get_text(separator="\n", strip=True)
-
-        # Clean up: remove excessive blank lines
-        lines = [line.strip() for line in text.split("\n")]
-        lines = [line for line in lines if line]
-        # Remove lines that are just punctuation or very short
-        cleaned = []
-        for line in lines:
-            if len(line) > 2 or line.isdigit():
-                cleaned.append(line)
-
-        return "\n".join(cleaned)
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        text = "\n".join(l for l in lines if len(l) > 2 or l.isdigit())
     except Exception:
-        # Fallback: basic tag stripping
-        text = re.sub(r"<[^>]+>", " ", html_text)
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text).strip()
 
-
-def _extract_filing_links(html_content: str, base_url: str) -> list[dict]:
-    """Parse the EDGAR browse page to extract filing entries."""
-    from bs4 import BeautifulSoup
-
-    filings = []
-    try:
-        soup = BeautifulSoup(html_content, "html.parser")
-
-        # Find the filings table
-        table = soup.find("table", class_="tableFile2")
-        if not table:
-            table = soup.find("table", summary="Results")
-
-        if not table:
-            return filings
-
-        rows = table.find_all("tr")
-        for row in rows:
-            cells = row.find_all("td")
-            if len(cells) < 4:
-                continue
-
-            # Filing type
-            filing_type = cells[0].get_text(strip=True) if len(cells) > 0 else ""
-
-            # Description / link
-            desc_cell = cells[1] if len(cells) > 1 else None
-            description = ""
-            doc_link = ""
-            if desc_cell:
-                link = desc_cell.find("a")
-                if link:
-                    description = link.get_text(strip=True)
-                    href = link.get("href", "")
-                    if href.startswith("/"):
-                        doc_link = f"{SEC_BASE}{href}"
-                    elif href.startswith("http"):
-                        doc_link = href
-
-            # Filing date
-            filing_date = cells[3].get_text(strip=True) if len(cells) > 3 else ""
-
-            # Try to get the actual document link
-            if doc_link:
-                # The link usually goes to the filing detail page
-                # We construct the direct document URL pattern
-                filings.append({
-                    "filing_type": filing_type,
-                    "description": description,
-                    "filing_date": filing_date,
-                    "detail_url": doc_link,
-                })
-
-    except Exception as exc:
-        logger.warning("_extract_filing_links parse error: %s", exc)
-
-    return filings
-
-
-async def _resolve_cik(
-    ticker: str, client: httpx.AsyncClient, headers: dict
-) -> str | None:
-    """Resolve a ticker symbol to a CIK number.
-
-    SEC requires a 10-digit zero-padded CIK for API calls.
-    """
-    # Use the SEC company tickers JSON
-    url = "https://www.sec.gov/files/company_tickers.json"
-    try:
-        response = await client.get(url, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-
-        ticker_upper = ticker.upper().strip()
-        for company_id, info in data.items():
-            if info.get("ticker", "").upper() == ticker_upper:
-                cik = str(info.get("cik_str", ""))
-                return cik.zfill(10)
-
-    except Exception as exc:
-        logger.warning("_resolve_cik: company_tickers.json failed: %s", exc)
-
-    return None
+    return text, url
 
 
 # ---------------------------------------------------------------------------
@@ -178,255 +202,372 @@ async def _resolve_cik(
 def build_sec_filings_tools(tool_config: dict | None = None) -> list:
     """Return a list of MAF @tool-decorated SEC filing functions.
 
+    Requires the ``edgartools`` Python package (``pip install edgartools``).
+
     Provides:
-    - ``list_sec_filings``: list recent SEC filings for a company
-    - ``get_filing_text``: extract readable text from a filing HTML page
+    - ``list_sec_filings``: list SEC filings for a company (full history)
+    - ``get_filing_text``: extract readable text from a filing URL
+    - ``get_filing_section``: extract a named section from a filing
 
     Args:
         tool_config: Optional ``Tool.config`` JSON dict. May include:
-            - ``user_agent`` (str): custom User-Agent for SEC requests
+            - ``user_agent`` (str): custom User-Agent for direct HTTP fallback
             - ``timeout`` (float): request timeout (default 30)
             - ``default_limit`` (int): default max filings to list (default 10)
+            - ``max_chars`` (int): max chars for ``get_filing_text``
+              (default 500 000; set to 0 for no limit)
 
     Returns:
         A list of callables ready to pass to ``Agent(tools=...)``.
     """
-    config = tool_config or {}
-    user_agent: str = config.get("user_agent", DEFAULT_USER_AGENT)
-    timeout: float = float(config.get("timeout", DEFAULT_TIMEOUT))
-    default_limit: int = int(config.get("default_limit", DEFAULT_LIMIT))
+    if not _EDGAR_AVAILABLE:
+        # Return stubs that report the missing dependency
+        @tool
+        async def _missing(*args, **kwargs) -> dict:
+            return {"error": "edgartools library is not installed"}
 
+        return [_missing, _missing, _missing]
+
+    config = tool_config or {}
+    user_agent: str = config.get(
+        "user_agent", "ph-agent-hub/1.0 (phalouvas@gmail.com)"
+    )
+    timeout: float = float(config.get("timeout", 30))
+    default_limit: int = int(config.get("default_limit", DEFAULT_LIMIT))
+    max_chars_cfg: int = int(config.get("max_chars", DEFAULT_MAX_CHARS))
+
+    # ---------------------------------------------------------------
+    # list_sec_filings
+    # ---------------------------------------------------------------
     @tool
     async def list_sec_filings(
         ticker: str,
         form_types: list[str] | None = None,
         limit: int | None = None,
+        filing_date_from: str | None = None,
     ) -> dict:
-        """List recent SEC EDGAR filings for a US-listed company.
+        """List SEC EDGAR filings for a US-listed company.
 
-        Data from sec.gov — free by US law, no API key required.
-        Only works for US-listed companies.
+        Uses the edgartools library — full filing history since 1994,
+        proper rate limiting, no API key required.
 
         Args:
             ticker: Stock ticker symbol (e.g. "AAPL", "MSFT").
             form_types: Optional list of form types to filter by.
-                Common types: "10-K" (annual report), "10-Q" (quarterly),
-                "8-K" (material events), "S-1" (IPO registration),
-                "DEF 14A" (proxy statement). Default returns all types.
+                Common types: "10-K", "10-Q", "8-K", "S-1",
+                "DEF 14A".  Default searches 10-K, 10-Q, 8-K, S-1.
             limit: Max filings to return (default 10, max 50).
+            filing_date_from: Earliest filing date in YYYY-MM-DD format
+                (e.g. "2024-01-01").  Filters to filings on or after
+                this date.
 
         Returns:
             A dict with:
             - ``ticker``, ``cik``
             - ``filings``: list of dicts with ``filing_type``,
-              ``description``, ``filing_date``, ``detail_url``
+              ``description``, ``filing_date``, ``accession_number``,
+              ``detail_url``, ``document_url``
             - ``count``: number of filings returned
-            - ``source``: "SEC EDGAR"
+            - ``source``: "SEC EDGAR (edgartools)"
         """
-        lim = limit if limit is not None else default_limit
-        lim = min(lim, 50)
-
+        lim = min(limit if limit is not None else default_limit, 50)
         sym = ticker.upper().strip()
         logger.info("list_sec_filings: %s (limit=%d)", sym, lim)
 
-        headers = {
-            "User-Agent": user_agent,
-            "Accept": "application/json, text/plain, */*",
-        }
-
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                # Resolve ticker to CIK
-                cik = await _resolve_cik(sym, client, headers)
+            company = await asyncio.to_thread(Company, sym)
 
-                if not cik:
+            forms = form_types if form_types else ["10-K", "10-Q", "8-K", "S-1"]
+
+            # Gather filings for each requested form type
+            all_filings: list = []
+            for form in forms:
+                try:
+                    batch = await asyncio.to_thread(
+                        company.get_filings, form=form
+                    )
+                    # edgartools Filings objects are iterable
+                    all_filings.extend(list(batch))
+                except Exception as exc:
+                    logger.debug("No %s filings for %s: %s", form, sym, exc)
+
+            # Apply date filter client-side
+            if filing_date_from:
+                try:
+                    cutoff = datetime.strptime(
+                        filing_date_from, "%Y-%m-%d"
+                    ).date()
+                except ValueError:
                     return {
                         "ticker": sym,
-                        "error": f"Could not resolve ticker '{sym}' to a CIK. "
-                        "Check that it is a valid US-listed company ticker.",
+                        "error": (
+                            "filing_date_from must be YYYY-MM-DD, "
+                            f"got '{filing_date_from}'"
+                        ),
                     }
+                all_filings = [
+                    f for f in all_filings
+                    if getattr(f, "filing_date", None) and f.filing_date >= cutoff
+                ]
 
-                # Use the EDGAR submissions API for recent filings
-                cik_no_pad = cik.lstrip("0")
-                submissions_url = f"{SEC_SUBMISSIONS}/CIK{cik}.json"
-                resp = await client.get(submissions_url, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-
-                filings_raw = data.get("filings", {}).get("recent", {})
-                if not filings_raw:
-                    return {
-                        "ticker": sym,
-                        "cik": cik,
-                        "filings": [],
-                        "count": 0,
-                        "source": "SEC EDGAR",
-                    }
-
-                # Build filing list
-                form_list = filings_raw.get("form", [])
-                desc_list = filings_raw.get("primaryDocument", [])
-                date_list = filings_raw.get("filingDate", [])
-                acc_list = filings_raw.get("accessionNumber", [])
-
-                filings = []
-                ft_upper = [f.upper() for f in (form_types or [])]
-
-                for i in range(min(len(form_list), lim * 3)):  # search more to account for filtering
-                    form = form_list[i] if i < len(form_list) else ""
-                    if ft_upper and form.upper() not in ft_upper:
-                        continue
-
-                    acc_num = acc_list[i] if i < len(acc_list) else ""
-                    acc_num_f = acc_num.replace("-", "") if acc_num else ""
-                    primary_doc = desc_list[i] if i < len(desc_list) else ""
-
-                    # Build detail URL (SEC viewer)
-                    detail_url = ""
-                    if acc_num and cik_no_pad:
-                        detail_url = (
-                            f"{SEC_BASE}/cgi-bin/viewer?"
-                            f"action=view&cik={cik_no_pad}&"
-                            f"accession_number={acc_num}"
-                        )
-
-                    # Build direct document URL
-                    document_url = ""
-                    if acc_num_f and cik_no_pad and primary_doc:
-                        document_url = (
-                            f"{SEC_BASE}/Archives/edgar/data/"
-                            f"{cik_no_pad}/{acc_num_f}/{primary_doc}"
-                        )
-
-                    filings.append({
-                        "filing_type": form,
-                        "description": primary_doc,
-                        "filing_date": date_list[i] if i < len(date_list) else "",
-                        "accession_number": acc_num,
-                        "detail_url": detail_url,
-                        "document_url": document_url,
-                    })
-
-                    if len(filings) >= lim:
-                        break
-
-                return {
-                    "ticker": sym,
-                    "cik": cik,
-                    "company_name": data.get("name", ""),
-                    "filings": filings,
-                    "count": len(filings),
-                    "source": "SEC EDGAR",
-                }
-
-        except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "list_sec_filings: HTTP %d for %s",
-                exc.response.status_code,
-                sym,
+            # Sort by date descending
+            all_filings.sort(
+                key=lambda f: getattr(f, "filing_date", datetime.min),
+                reverse=True,
             )
+            all_filings = all_filings[:lim]
+
+            # Serialise to JSON-safe dicts
+            results: list[dict] = []
+            for f in all_filings:
+                acc = getattr(f, "accession_number", "") or ""
+                acc_f = acc.replace("-", "")
+                cik = str(getattr(company, "cik", "")).lstrip("0")
+                primary = getattr(f, "primary_document", "") or ""
+                results.append({
+                    "filing_type": getattr(f, "form", ""),
+                    "description": primary,
+                    "filing_date": str(getattr(f, "filing_date", "")),
+                    "accession_number": acc,
+                    "detail_url": (
+                        getattr(f, "homepage_url", "")
+                        or getattr(f, "url", "")
+                    ),
+                    "document_url": (
+                        f"{SEC_BASE}/Archives/edgar/data/"
+                        f"{cik}/{acc_f}/{primary}"
+                        if acc_f and cik and primary
+                        else ""
+                    ),
+                })
+
             return {
                 "ticker": sym,
-                "error": f"SEC EDGAR returned HTTP {exc.response.status_code}",
+                "cik": getattr(company, "cik", ""),
+                "filings": results,
+                "count": len(results),
+                "source": "SEC EDGAR (edgartools)",
             }
-        except httpx.TimeoutException:
-            logger.warning("list_sec_filings: timeout for %s", sym)
-            return {"ticker": sym, "error": "Request timed out"}
+
         except Exception as exc:
             logger.exception("list_sec_filings failed for %s", sym)
             return {"ticker": sym, "error": str(exc)}
 
+    # ---------------------------------------------------------------
+    # get_filing_text
+    # ---------------------------------------------------------------
     @tool
-    async def get_filing_text(url: str) -> dict:
-        """Extract readable text from an SEC filing HTML page.
+    async def get_filing_text(
+        url: str, max_chars: int | None = None
+    ) -> dict:
+        """Extract readable text from an SEC filing.
 
-        Fetches the filing from sec.gov, cleans HTML, and returns
-        plain text. Use in conjunction with list_sec_filings to first
-        find filings, then read their contents.
+        For the full text of large filings (10-K, 10-Q) consider using
+        ``get_filing_section`` instead to retrieve only the sections
+        you need.
 
         Args:
-            url: The URL of the SEC filing page. Can be the detail_url
-                returned by list_sec_filings, or a direct link to the
-                filing document (.htm, .html).
+            url: The URL of the SEC filing page or document.
+            max_chars: Override the configured character limit.
+                Set to 0 for no limit.
 
         Returns:
             A dict with:
             - ``url``: the URL fetched
             - ``text``: cleaned plain text of the filing
-            - ``text_length``: character count of the text
-            - ``truncated``: whether the text was truncated (max ~100k chars)
+            - ``text_length``: character count
+            - ``truncated``: whether the text was truncated
             - ``source``: "SEC EDGAR"
         """
         logger.info("get_filing_text: %s", url)
+        limit = max_chars_cfg if max_chars is None else max_chars
 
-        # Validate URL
-        if not (url.startswith("https://www.sec.gov/") or url.startswith("http://www.sec.gov/")):
+        if not (
+            url.startswith("https://www.sec.gov/")
+            or url.startswith("http://www.sec.gov/")
+        ):
             return {
                 "url": url,
-                "error": "Only sec.gov URLs are supported for filing text extraction.",
+                "error": "Only sec.gov URLs are supported.",
             }
 
-        max_chars = 100_000
         headers = {
             "User-Agent": user_agent,
             "Accept": "text/html, application/xhtml+xml, */*",
         }
 
+        # Try edgartools first (resolves by accession number)
+        acc, cik = _parse_acc_num_and_cik(url)
+
+        if acc and cik:
+            try:
+                company = await asyncio.to_thread(Company, cik)
+                # Search filings for matching accession number
+                filings = await asyncio.to_thread(
+                    company.get_filings, accession_number=acc
+                )
+                filing_list = list(filings) if filings else []
+                if filing_list:
+                    filing = filing_list[0]
+                    text = await asyncio.to_thread(filing.text)
+                    truncated = limit > 0 and len(text) > limit
+                    if truncated:
+                        text = text[:limit]
+                    return {
+                        "url": url,
+                        "text": text,
+                        "text_length": len(text),
+                        "truncated": truncated,
+                        "source": "SEC EDGAR (edgartools)",
+                    }
+            except Exception as exc:
+                logger.debug(
+                    "edgartools lookup failed for %s: %s — falling back to HTTP",
+                    url, exc,
+                )
+
+        # Fallback: direct HTTP fetch + clean
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(url, headers=headers, follow_redirects=True)
-                response.raise_for_status()
-
-            html_content = response.text
-
-            # If the detail page was given (viewer), try to find the actual document link
-            if "/cgi-bin/viewer" in url and "document/archive" not in url:
-                # Try to extract the direct document URL
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(html_content, "html.parser")
-
-                # Look for the iframe or direct document link
-                iframe = soup.find("iframe")
-                if iframe and iframe.get("src"):
-                    doc_url = iframe["src"]
-                    if doc_url.startswith("/"):
-                        doc_url = f"{SEC_BASE}{doc_url}"
-                    # Fetch the actual document
-                    async with httpx.AsyncClient(timeout=timeout) as client2:
-                        doc_resp = await client2.get(doc_url, headers=headers, follow_redirects=True)
-                        doc_resp.raise_for_status()
-                        html_content = doc_resp.text
-                        url = doc_url
-
-            # Clean the HTML
-            text = await asyncio.to_thread(_clean_html, html_content)
-            truncated = len(text) > max_chars
+            text, resolved_url = await _fetch_url_direct(
+                url, headers, timeout
+            )
+            truncated = limit > 0 and len(text) > limit
             if truncated:
-                text = text[:max_chars]
-
+                text = text[:limit]
             return {
-                "url": url,
+                "url": resolved_url,
                 "text": text,
                 "text_length": len(text),
                 "truncated": truncated,
                 "source": "SEC EDGAR",
             }
-
         except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "get_filing_text: HTTP %d for %s",
-                exc.response.status_code,
-                url,
-            )
             return {
                 "url": url,
                 "error": f"SEC EDGAR returned HTTP {exc.response.status_code}",
             }
         except httpx.TimeoutException:
-            logger.warning("get_filing_text: timeout for %s", url)
             return {"url": url, "error": "Request timed out"}
         except Exception as exc:
             logger.exception("get_filing_text failed for %s", url)
             return {"url": url, "error": str(exc)}
 
-    return [list_sec_filings, get_filing_text]
+    # ---------------------------------------------------------------
+    # get_filing_section
+    # ---------------------------------------------------------------
+    @tool
+    async def get_filing_section(url: str, section: str) -> dict:
+        """Extract a specific named section from an SEC filing.
+
+        Uses edgartools' built-in section extraction which recognises
+        standard SEC headings (Risk Factors, MD&A, etc.).
+
+        Args:
+            url: The URL of the SEC filing page.
+            section: Name of the section to extract.  Case-insensitive
+                partial match (e.g. ``"Risk Factors"``, ``"MD&A"``,
+                ``"Item 2"``).  If not found, ``available_sections``
+                is returned so you can retry.
+
+        Returns:
+            A dict with:
+            - ``url``, ``section``, ``text``, ``text_length``
+            - ``available_sections``: list of all detected section names
+            - ``source``: "SEC EDGAR"
+        """
+        logger.info("get_filing_section: %s [section=%s]", url, section)
+
+        acc, cik = _parse_acc_num_and_cik(url)
+
+        if not (acc and cik):
+            return {
+                "url": url,
+                "error": (
+                    "Could not parse accession number / CIK from URL. "
+                    "Only sec.gov EDGAR URLs are supported."
+                ),
+            }
+
+        try:
+            company = await asyncio.to_thread(Company, cik)
+            filings = await asyncio.to_thread(
+                company.get_filings, accession_number=acc
+            )
+            filing_list = list(filings) if filings else []
+            if not filing_list:
+                return {
+                    "url": url,
+                    "error": f"No filing found for accession {acc}",
+                }
+
+            filing = filing_list[0]
+
+            # Get full text and split by SEC Part/Item headings
+            full_text = await asyncio.to_thread(filing.text)
+            sections = _split_filing_sections(full_text)
+
+            available = list(sections.keys())
+
+            # Case-insensitive partial match
+            target = section.strip().lower()
+            matched = None
+            for key in available:
+                if target in key.lower():
+                    matched = key
+                    break
+
+            if matched is None:
+                return {
+                    "url": url,
+                    "section": section,
+                    "error": (
+                        f"Section '{section}' not found. "
+                        f"Available sections: {available}"
+                    ),
+                    "available_sections": available,
+                    "source": "SEC EDGAR",
+                }
+
+            return {
+                "url": url,
+                "section": matched,
+                "text": sections[matched],
+                "text_length": len(sections[matched]),
+                "available_sections": available,
+                "source": "SEC EDGAR (edgartools)",
+            }
+
+        except Exception as exc:
+            logger.exception("get_filing_section failed for %s", url)
+            return {"url": url, "error": str(exc)}
+
+    return [list_sec_filings, get_filing_text, get_filing_section]
+
+
+# ---------------------------------------------------------------------------
+# Fallback section splitter (used when edgartools has no sections)
+# ---------------------------------------------------------------------------
+def _split_filing_sections(text: str) -> dict[str, str]:
+    """Split cleaned filing text into named sections based on SEC headings."""
+    heading = re.compile(
+        r"^\s*(PART\s+(?:I|II|III|IV|V)[\s.\-]*.*|"
+        r"Item\s+\d+[A-Z]?[\s.\-]*.*)$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    matches = list(heading.finditer(text))
+    if not matches:
+        return {"_full": text}
+
+    sections: dict[str, str] = {}
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        name = m.group(1).strip().rstrip(".-")
+        body = text[start:end].strip()
+        key = name
+        counter = 2
+        while key in sections:
+            key = f"{name} ({counter})"
+            counter += 1
+        sections[key] = body
+    return sections

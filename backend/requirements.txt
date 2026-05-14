@@ -69,3 +69,4 @@ yfinance
 numpy
 scipy
 beautifulsoup4
+edgartools
