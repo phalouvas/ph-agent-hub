@@ -61,12 +61,12 @@ async def main() -> None:
         result = await db.execute(
             select(Tenant).where(Tenant.name == DEFAULT_TENANT_NAME)
         )
-        tenant = result.scalar_one_or_none()
+        tenant = result.scalars().first()
 
         if tenant is None:
             # No tenant with the configured name — check if ANY tenant exists
             result = await db.execute(select(Tenant).limit(1))
-            existing = result.scalar_one_or_none()
+            existing = result.scalars().first()
 
             if existing is not None:
                 tenant = existing
@@ -86,7 +86,7 @@ async def main() -> None:
         result = await db.execute(
             select(User).where(User.email == ADMIN_EMAIL)
         )
-        admin = result.scalar_one_or_none()
+        admin = result.scalars().first()
 
         if admin is None:
             admin = User(
@@ -111,7 +111,7 @@ async def main() -> None:
                 Tool.name == "Current Time",
             )
         )
-        datetime_tool = result.scalar_one_or_none()
+        datetime_tool = result.scalars().first()
 
         if datetime_tool is None:
             datetime_tool = Tool(
@@ -136,7 +136,7 @@ async def main() -> None:
                 Tool.name == "Web Search",
             )
         )
-        web_search_tool = result.scalar_one_or_none()
+        web_search_tool = result.scalars().first()
 
         if web_search_tool is None:
             web_search_tool = Tool(
@@ -166,7 +166,7 @@ async def main() -> None:
                 Tool.name == "Fetch URL",
             )
         )
-        fetch_url_tool = result.scalar_one_or_none()
+        fetch_url_tool = result.scalars().first()
 
         if fetch_url_tool is None:
             fetch_url_tool = Tool(
@@ -191,7 +191,7 @@ async def main() -> None:
                 Tool.name == "Weather",
             )
         )
-        weather_tool = result.scalar_one_or_none()
+        weather_tool = result.scalars().first()
 
         if weather_tool is None:
             weather_tool = Tool(
@@ -216,7 +216,7 @@ async def main() -> None:
                 Tool.name == "Calculator",
             )
         )
-        calculator_tool = result.scalar_one_or_none()
+        calculator_tool = result.scalars().first()
 
         if calculator_tool is None:
             calculator_tool = Tool(
@@ -241,7 +241,7 @@ async def main() -> None:
                 Tool.name == "Wikipedia",
             )
         )
-        wikipedia_tool = result.scalar_one_or_none()
+        wikipedia_tool = result.scalars().first()
 
         if wikipedia_tool is None:
             wikipedia_tool = Tool(
@@ -266,7 +266,7 @@ async def main() -> None:
                 Tool.name == "Currency Exchange",
             )
         )
-        currency_tool = result.scalar_one_or_none()
+        currency_tool = result.scalars().first()
 
         if currency_tool is None:
             currency_tool = Tool(
