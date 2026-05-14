@@ -1,0 +1,40 @@
+# Python virtual environment (Dockerfile installs its own deps)
+.venv
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+
+# Linting
+.ruff_cache
+.mypy_cache
+.pytest_cache
+
+# Git
+.git
+.gitignore
+
+# Environment
+.env
+.env.local
+.env.*
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Docs
+*.md
