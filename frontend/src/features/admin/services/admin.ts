@@ -49,6 +49,7 @@ export interface ModelData {
   temperature: number;
   routing_priority: number;
   thinking_enabled: boolean;
+  reasoning_effort: string | null;
   follow_up_questions_enabled: boolean;
   context_length: number | null;
   input_price_per_1m: number | null;

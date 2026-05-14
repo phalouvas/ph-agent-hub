@@ -26,6 +26,7 @@ class ModelResponse(BaseModel):
     max_tokens: int
     temperature: float
     thinking_enabled: bool
+    reasoning_effort: str | None = None
     follow_up_questions_enabled: bool
     created_at: datetime
     updated_at: datetime

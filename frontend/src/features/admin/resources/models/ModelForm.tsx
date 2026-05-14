@@ -104,6 +104,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
           max_tokens: duplicateFrom.max_tokens,
           temperature: duplicateFrom.temperature,
           thinking_enabled: duplicateFrom.thinking_enabled,
+          reasoning_effort: duplicateFrom.reasoning_effort,
           follow_up_questions_enabled: duplicateFrom.follow_up_questions_enabled,
           context_length: duplicateFrom.context_length,
           input_price_per_1m: duplicateFrom.input_price_per_1m,
@@ -126,6 +127,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
           temperature: model.temperature,
 
           thinking_enabled: model.thinking_enabled,
+          reasoning_effort: model.reasoning_effort,
           follow_up_questions_enabled: model.follow_up_questions_enabled,
           context_length: model.context_length,
           input_price_per_1m: model.input_price_per_1m,
@@ -142,6 +144,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
           temperature: 0.7,
           api_key: "",
           thinking_enabled: false,
+          reasoning_effort: "high",
           follow_up_questions_enabled: false,
           context_length: undefined,
           input_price_per_1m: undefined,
@@ -296,14 +299,30 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
         <Form.Item shouldUpdate noStyle>
           {() =>
             form.getFieldValue("provider") === "deepseek" ? (
-              <Form.Item
-                name="thinking_enabled"
-                label="Enable Thinking Mode"
-                valuePropName="checked"
-                tooltip="When enabled, DeepSeek will emit reasoning tokens between <think> tags, displayed as a collapsible panel in chat"
-              >
-                <Switch />
-              </Form.Item>
+              <>
+                <Form.Item
+                  name="thinking_enabled"
+                  label="Enable Thinking Mode"
+                  valuePropName="checked"
+                  tooltip="When enabled, DeepSeek will emit reasoning tokens between <think> tags, displayed as a collapsible panel in chat"
+                >
+                  <Switch />
+                </Form.Item>
+                {form.getFieldValue("thinking_enabled") && (
+                  <Form.Item
+                    name="reasoning_effort"
+                    label="Reasoning Effort"
+                    tooltip="Controls reasoning depth in thinking mode. 'high' for most tasks, 'max' for complex agent requests."
+                  >
+                    <Select
+                      options={[
+                        { label: "High", value: "high" },
+                        { label: "Max", value: "max" },
+                      ]}
+                    />
+                  </Form.Item>
+                )}
+              </>
             ) : null
           }
         </Form.Item>
