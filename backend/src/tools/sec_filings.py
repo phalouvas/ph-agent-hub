@@ -502,21 +502,9 @@ def build_sec_filings_tools(tool_config: dict | None = None) -> list:
 
             filing = filing_list[0]
 
-            # edgartools filing.sections() returns a list of Section objects
-            sections_raw = await asyncio.to_thread(filing.sections)
-            sections: dict[str, str] = {}
-            if sections_raw:
-                if isinstance(sections_raw, dict):
-                    sections = sections_raw
-                elif isinstance(sections_raw, list):
-                    for item in sections_raw:
-                        name = getattr(item, "name", None) or getattr(item, "section", "") or str(item)
-                        body = getattr(item, "text", None) or getattr(item, "content", "") or ""
-                        sections[str(name)] = str(body)
-            if not sections:
-                # Fallback: try to get full text and split ourselves
-                full_text = await asyncio.to_thread(filing.text)
-                sections = _split_filing_sections(full_text)
+            # Get full text and split by SEC Part/Item headings
+            full_text = await asyncio.to_thread(filing.text)
+            sections = _split_filing_sections(full_text)
 
             available = list(sections.keys())
 
