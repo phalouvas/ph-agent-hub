@@ -17,7 +17,6 @@ import {
   createTemplate,
   updateTemplate,
   TemplateData,
-  listModels,
   listTenants,
   listUsers,
 } from "../../services/admin";
@@ -39,13 +38,6 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
   const scope = Form.useWatch("scope", form);
-  const tenantId = Form.useWatch("tenant_id", form);
-
-  const { data: models } = useQuery({
-    queryKey: ["admin-models", tenantId],
-    queryFn: () => listModels({ tenant_id: tenantId }),
-    enabled: open,
-  });
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
@@ -68,7 +60,6 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
           description: duplicateFrom.description,
           system_prompt: duplicateFrom.system_prompt,
           scope: duplicateFrom.scope,
-          default_model_id: duplicateFrom.default_model_id,
           assigned_user_id: duplicateFrom.assigned_user_id,
         });
       } else if (template) {
@@ -78,7 +69,6 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
           description: template.description,
           system_prompt: template.system_prompt,
           scope: template.scope,
-          default_model_id: template.default_model_id,
           assigned_user_id: template.assigned_user_id,
         });
       } else {
@@ -197,16 +187,6 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
             />
           </Form.Item>
         )}
-        <Form.Item name="default_model_id" label="Default Model">
-          <Select
-            allowClear
-            placeholder="Select default model"
-            options={(models || []).map((m) => ({
-              label: `${m.name} (${m.provider})`,
-              value: m.id,
-            }))}
-          />
-        </Form.Item>
       </Form>
     </Modal>
   );

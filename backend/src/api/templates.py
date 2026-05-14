@@ -24,7 +24,6 @@ class TemplateResponse(BaseModel):
     description: str | None
     system_prompt: str
     scope: str
-    default_model_id: str | None
     assigned_user_id: str | None
     created_at: datetime
     updated_at: datetime

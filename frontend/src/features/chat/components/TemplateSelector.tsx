@@ -18,7 +18,6 @@ interface TemplateData {
   description: string;
   system_prompt: string;
   scope: string;
-  default_model_id: string | null;
   assigned_user_id: string | null;
   created_at: string;
   updated_at: string;

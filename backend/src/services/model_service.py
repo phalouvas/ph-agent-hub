@@ -9,7 +9,6 @@ from ..core.exceptions import NotFoundError
 from ..db.orm.models import Model
 from ..db.orm.groups import ModelGroup, UserGroupMember
 from ..db.orm.sessions import Session
-from ..db.orm.templates import Template
 
 
 async def list_models(
@@ -125,13 +124,6 @@ async def delete_model(db: AsyncSession, model_id: str) -> None:
         update(Session)
         .where(Session.selected_model_id == model_id)
         .values(selected_model_id=None)
-    )
-
-    # Clear default_model_id in templates that reference this model
-    await db.execute(
-        update(Template)
-        .where(Template.default_model_id == model_id)
-        .values(default_model_id=None)
     )
 
     await db.delete(model)
