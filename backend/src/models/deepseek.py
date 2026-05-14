@@ -59,6 +59,10 @@ class DeepSeekThinkingClient(OpenAIChatCompletionClient):
         # Inject reasoning_effort when thinking is enabled and a value is set
         if thinking_type == "enabled" and self._reasoning_effort:
             result["reasoning_effort"] = self._reasoning_effort
+        elif "reasoning_effort" in result:
+            # Base class may have propagated reasoning_effort from options;
+            # DeepSeek requires it not be set when thinking is disabled.
+            del result["reasoning_effort"]
 
         result["extra_body"] = {
             "thinking": {"type": thinking_type}
