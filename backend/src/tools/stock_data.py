@@ -598,7 +598,7 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
             except Exception:
                 pass
 
-            divs = await asyncio.to_thread(t.dividends)
+            divs = await asyncio.to_thread(lambda: t.dividends)
             import pandas as pd
 
             history = []
