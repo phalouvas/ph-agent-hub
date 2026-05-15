@@ -63,15 +63,15 @@ def _df_to_dicts(df, date_key: str = "date") -> list[dict]:
 def build_stock_data_tools(tool_config: dict | None = None) -> list:
     """Return a list of MAF @tool-decorated stock data functions.
 
-    Provides:
-    - ``get_stock_quote``: real-time stock quote
-    - ``get_historical_prices``: OHLCV historical data
+    Provides (6 tools, consolidated from 8):
+    - ``get_stock_snapshot``: price quote, key metrics, company profile,
+      and analyst consensus in a single call (merges 4 old tools)
     - ``get_financials``: income statement, balance sheet, cash flow
-    - ``get_key_metrics``: P/E, P/B, ROE, etc.
-    - ``get_company_info``: company profile and description
-    - ``get_dividends``: dividend history
-    - ``get_earnings_history``: earnings history
-    - ``get_analyst_ratings``: analyst recommendations and price targets
+    - ``get_earnings``: past EPS history, earnings calendar with reported
+      EPS, upcoming dates, and trailing/forward EPS
+    - ``get_historical_prices``: OHLCV historical data
+    - ``get_dividends``: dividend history and yield
+    - ``get_company_news``: recent news articles from Yahoo Finance
 
     Args:
         tool_config: Optional ``Tool.config`` JSON dict. Currently unused.
@@ -81,27 +81,61 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
     """
     _ = tool_config
 
+    # =========================================================================
+    # 1. get_stock_snapshot — merges quote, metrics, company info, analyst
+    # =========================================================================
     @tool
-    async def get_stock_quote(symbol: str) -> dict:
-        """Get a real-time stock quote with key trading data.
+    async def get_stock_snapshot(symbol: str) -> dict:
+        """Get a comprehensive stock snapshot: price, key metrics,
+        company profile, and analyst consensus.
 
-        Uses yfinance — free, no API key required.
+        Uses yfinance — free, no API key required.  Reads ``ticker.info``
+        once internally so the four data sections are served in a single
+        HTTP call.
 
         Args:
-            symbol: Stock ticker symbol (e.g. "AAPL", "MSFT", "GOOGL").
+            symbol: Stock ticker symbol (e.g. "AAPL", "MSFT", "0700.HK").
 
         Returns:
-            A dict with: ``symbol``, ``name``, ``price``, ``previous_close``,
-            ``change``, ``change_pct``, ``day_high``, ``day_low``,
-            ``day_open``, ``volume``, ``avg_volume``, ``market_cap``,
-            ``bid``, ``ask``, ``fifty_two_week_high``,
-            ``fifty_two_week_low``, ``currency``, ``exchange``,
-            ``market_state``, ``source``.
+            A dict with four sections:
+
+            ``quote``:
+                ``price``, ``previous_close``, ``change``, ``change_pct``,
+                ``day_high``, ``day_low``, ``day_open``, ``volume``,
+                ``avg_volume``, ``market_cap``, ``bid``, ``ask``,
+                ``fifty_two_week_high``, ``fifty_two_week_low``,
+                ``currency``, ``exchange``, ``market_state``.
+
+            ``metrics``:
+                ``pe_ratio``, ``forward_pe``, ``peg_ratio``, ``pb_ratio``,
+                ``ps_ratio``, ``roe``, ``roa``, ``debt_to_equity``,
+                ``current_ratio``, ``quick_ratio``, ``gross_margins``,
+                ``operating_margins``, ``profit_margins``,
+                ``eps_trailing``, ``eps_forward``, ``revenue_per_share``,
+                ``dividend_yield``, ``payout_ratio``, ``beta``,
+                ``revenue_growth``, ``earnings_growth``,
+                ``free_cashflow``, ``enterprise_value``, ``ev_to_revenue``,
+                ``ev_to_ebitda``, ``short_ratio``, ``short_pct_float``.
+
+            ``company``:
+                ``name``, ``description``, ``sector``, ``industry``,
+                ``website``, ``country``, ``state``, ``city``,
+                ``employees``, ``ipo_date``, ``exchange``, ``currency``,
+                ``phone``, ``fax``, ``address``, ``officers`` (list of
+                dicts with ``name``, ``title``, ``age``, ``year_born``).
+
+            ``analyst``:
+                ``recommendation``, ``target_mean``, ``target_high``,
+                ``target_low``, ``target_median``, ``number_of_analysts``,
+                ``recommendations`` (list of rating changes with ``date``,
+                ``firm``, ``to_grade``, ``from_grade``, ``action``).
+
+            Top-level keys: ``symbol``, ``name``, ``source``.
         """
         import yfinance as yf
 
         sym = symbol.upper().strip()
-        logger.info("get_stock_quote: %s", sym)
+        logger.info("get_stock_snapshot: %s", sym)
 
         try:
             t = await asyncio.to_thread(yf.Ticker, sym)
@@ -111,6 +145,7 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
             except Exception:
                 pass
 
+            # ---- quote ----
             price = (
                 _safe_float(info.get("regularMarketPrice"))
                 or _safe_float(info.get("currentPrice"))
@@ -125,9 +160,7 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
                 change = round(price - prev_close, 2)
                 change_pct = round((change / prev_close) * 100, 2)
 
-            return {
-                "symbol": sym,
-                "name": info.get("shortName") or info.get("longName") or sym,
+            quote = {
                 "price": price,
                 "previous_close": prev_close,
                 "change": change,
@@ -145,65 +178,120 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
                 "currency": info.get("currency", ""),
                 "exchange": info.get("exchange") or info.get("fullExchangeName") or "",
                 "market_state": info.get("marketState", ""),
-                "source": "yfinance",
             }
 
-        except Exception as exc:
-            logger.exception("get_stock_quote failed for %s", sym)
-            return {"symbol": sym, "error": str(exc)}
+            # ---- metrics ----
+            metrics = {
+                "pe_ratio": _safe_float(info.get("trailingPE")),
+                "forward_pe": _safe_float(info.get("forwardPE")),
+                "peg_ratio": _safe_float(info.get("pegRatio")),
+                "pb_ratio": _safe_float(info.get("priceToBook")),
+                "ps_ratio": _safe_float(info.get("priceToSalesTrailing12Months")),
+                "roe": _safe_float(info.get("returnOnEquity")),
+                "roa": _safe_float(info.get("returnOnAssets")),
+                "debt_to_equity": _safe_float(info.get("debtToEquity")),
+                "current_ratio": _safe_float(info.get("currentRatio")),
+                "quick_ratio": _safe_float(info.get("quickRatio")),
+                "gross_margins": _safe_float(info.get("grossMargins")),
+                "operating_margins": _safe_float(info.get("operatingMargins")),
+                "profit_margins": _safe_float(info.get("profitMargins")),
+                "eps_trailing": _safe_float(info.get("trailingEps")),
+                "eps_forward": _safe_float(info.get("forwardEps")),
+                "revenue_per_share": _safe_float(info.get("revenuePerShare")),
+                "dividend_yield": _safe_float(info.get("dividendYield")),
+                "payout_ratio": _safe_float(info.get("payoutRatio")),
+                "beta": _safe_float(info.get("beta")),
+                "revenue_growth": _safe_float(info.get("revenueGrowth")),
+                "earnings_growth": _safe_float(info.get("earningsGrowth")),
+                "free_cashflow": _safe_float(info.get("freeCashflow")),
+                "enterprise_value": _safe_float(info.get("enterpriseValue")),
+                "ev_to_revenue": _safe_float(info.get("enterpriseToRevenue")),
+                "ev_to_ebitda": _safe_float(info.get("enterpriseToEbitda")),
+                "short_ratio": _safe_float(info.get("shortRatio")),
+                "short_pct_float": _safe_float(info.get("shortPercentOfFloat")),
+            }
 
-    @tool
-    async def get_historical_prices(
-        symbol: str,
-        period: str = "1mo",
-        interval: str = "1d",
-    ) -> dict:
-        """Get historical OHLCV price data for a stock.
+            # ---- company ----
+            officers = []
+            raw_officers = info.get("companyOfficers") or []
+            if isinstance(raw_officers, list):
+                for o in raw_officers:
+                    if isinstance(o, dict):
+                        officers.append({
+                            "name": o.get("name", ""),
+                            "title": o.get("title", ""),
+                            "age": o.get("age"),
+                            "year_born": o.get("yearBorn"),
+                        })
 
-        Uses yfinance — free, no API key required.
+            company = {
+                "name": info.get("shortName") or info.get("longName") or sym,
+                "description": info.get("longBusinessSummary", ""),
+                "sector": info.get("sector", ""),
+                "industry": info.get("industry", ""),
+                "website": info.get("website", ""),
+                "country": info.get("country", ""),
+                "state": info.get("state", ""),
+                "city": info.get("city", ""),
+                "employees": _safe_float(info.get("fullTimeEmployees")),
+                "ipo_date": str(info.get("ipoDate", "")),
+                "exchange": info.get("exchange") or info.get("fullExchangeName") or "",
+                "currency": info.get("currency", ""),
+                "phone": info.get("phone", ""),
+                "fax": info.get("fax", ""),
+                "address": (
+                    f"{info.get('address1', '')} {info.get('address2', '')}".strip()
+                    if info.get("address1")
+                    else ""
+                ),
+                "officers": officers,
+            }
 
-        Args:
-            symbol: Stock ticker symbol (e.g. "AAPL").
-            period: Time period — "1d", "5d", "1mo", "3mo", "6mo", "1y",
-                "2y", "5y", "10y", "ytd", "max". Default "1mo".
-            interval: Data interval — "1m", "5m", "15m", "30m", "1h",
-                "1d", "1wk", "1mo". Default "1d".
-                Note: minute-level intervals only available for recent periods.
+            # ---- analyst ----
+            recommendations = []
+            try:
+                recs = t.recommendations
+                if recs is not None:
+                    import pandas as pd
+                    if isinstance(recs, pd.DataFrame) and not recs.empty:
+                        for _, row in recs.head(20).iterrows():
+                            recommendations.append({
+                                "date": str(row.get("Date", row.get("date", ""))),
+                                "firm": str(row.get("Firm", row.get("firm", ""))),
+                                "to_grade": str(row.get("To Grade", row.get("toGrade", ""))),
+                                "from_grade": str(row.get("From Grade", row.get("fromGrade", ""))),
+                                "action": str(row.get("Action", row.get("action", ""))),
+                            })
+            except Exception:
+                pass
 
-        Returns:
-            A dict with:
-            - ``symbol``: the stock ticker
-            - ``period``, ``interval``: as requested
-            - ``prices``: list of OHLCV dicts with ``date``, ``open``,
-              ``high``, ``low``, ``close``, ``volume``, ``dividends``,
-              ``stock_splits``
-            - ``count``: number of data points
-            - ``source``: "yfinance"
-        """
-        import yfinance as yf
+            analyst = {
+                "recommendation": info.get("recommendationKey", info.get("recommendationMean", "")),
+                "target_mean": _safe_float(info.get("targetMeanPrice")),
+                "target_high": _safe_float(info.get("targetHighPrice")),
+                "target_low": _safe_float(info.get("targetLowPrice")),
+                "target_median": _safe_float(info.get("targetMedianPrice")),
+                "number_of_analysts": _safe_float(info.get("numberOfAnalystOpinions")),
+                "recommendations": recommendations,
+            }
 
-        sym = symbol.upper().strip()
-        logger.info("get_historical_prices: %s period=%s interval=%s", sym, period, interval)
-
-        try:
-            t = await asyncio.to_thread(yf.Ticker, sym)
-            df = await asyncio.to_thread(
-                t.history, period=period, interval=interval
-            )
-            prices = _df_to_dicts(df)
             return {
                 "symbol": sym,
-                "period": period,
-                "interval": interval,
-                "prices": prices,
-                "count": len(prices),
+                "name": company["name"],
+                "quote": quote,
+                "metrics": metrics,
+                "company": company,
+                "analyst": analyst,
                 "source": "yfinance",
             }
 
         except Exception as exc:
-            logger.exception("get_historical_prices failed for %s", sym)
+            logger.exception("get_stock_snapshot failed for %s", sym)
             return {"symbol": sym, "error": str(exc)}
 
+    # =========================================================================
+    # 2. get_financials — kept unchanged
+    # =========================================================================
     @tool
     async def get_financials(
         symbol: str,
@@ -226,7 +314,8 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
             - ``statement_type``: the type of statement
             - ``period``: annual or quarterly
             - ``statements``: list of statement dicts, each with ``date``
-              and financial line items
+              and financial line items (transposed so dates are rows)
+            - ``count``: number of statement periods
             - ``source``: "yfinance"
         """
         import yfinance as yf
@@ -288,30 +377,43 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
             logger.exception("get_financials failed for %s", sym)
             return {"symbol": sym, "error": str(exc)}
 
+    # =========================================================================
+    # 3. get_earnings — merges old get_earnings_history + ticker.earnings_dates
+    # =========================================================================
     @tool
-    async def get_key_metrics(symbol: str) -> dict:
-        """Get key valuation and profitability metrics for a stock.
+    async def get_earnings(symbol: str) -> dict:
+        """Get earnings data for a stock: past EPS actuals, earnings calendar
+        with reported EPS, upcoming dates, and trailing/forward EPS.
 
-        Uses yfinance — free, no API key required.
+        Uses three yfinance data pathways in a single Ticker instance:
+        ``.earnings_history`` (QuoteSummary API), ``.earnings_dates``
+        (HTML-scraped calendar with reported EPS), and ``.calendar``
+        (upcoming estimates).
 
         Args:
-            symbol: Stock ticker symbol (e.g. "AAPL").
+            symbol: Stock ticker symbol (e.g. "AAPL", "0700.HK").
 
         Returns:
-            A dict with: ``symbol``, ``name``, and metrics including
-            ``pe_ratio`` (trailing), ``forward_pe``, ``peg_ratio``,
-            ``pb_ratio``, ``ps_ratio``, ``roe``, ``roa``, ``debt_to_equity``,
-            ``current_ratio``, ``quick_ratio``, ``gross_margins``,
-            ``operating_margins``, ``profit_margins``, ``eps_trailing``,
-            ``eps_forward``, ``dividend_yield``, ``payout_ratio``,
-            ``beta``, ``revenue_growth``, ``earnings_growth``,
-            ``free_cashflow``, ``enterprise_value``, ``ev_to_revenue``,
-            ``ev_to_ebitda``, ``short_ratio``, and ``source``.
+            A dict with:
+            - ``symbol``: the stock ticker
+            - ``past_earnings``: list of past quarters with ``date``,
+              ``eps_estimate``, ``eps_actual``, ``surprise_pct``
+              (from earnings_history API — may lag for non-US stocks)
+            - ``calendar``: list of earnings dates with ``date``,
+              ``eps_estimate``, ``reported_eps``, ``surprise_pct``
+              (from earnings_dates HTML scrape — typically fresher
+              for international stocks; reported_eps is null for
+              future dates where earnings haven't been released yet)
+            - ``upcoming_earnings``: list of future earnings dates
+              with ``date``, ``eps_estimate``, ``revenue_estimate``
+            - ``eps_trailing``: trailing 12-month EPS
+            - ``eps_forward``: forward EPS estimate
+            - ``source``: "yfinance"
         """
         import yfinance as yf
 
         sym = symbol.upper().strip()
-        logger.info("get_key_metrics: %s", sym)
+        logger.info("get_earnings: %s", sym)
 
         try:
             t = await asyncio.to_thread(yf.Ticker, sym)
@@ -321,114 +423,146 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
             except Exception:
                 pass
 
+            # ---- past_earnings (from earnings_history API) ----
+            past_earnings = []
+            try:
+                raw_history = t.earnings_history
+                if raw_history is not None:
+                    if hasattr(raw_history, "to_dict"):
+                        import pandas as pd
+                        if isinstance(raw_history, pd.DataFrame) and not raw_history.empty:
+                            for _, row in raw_history.iterrows():
+                                past_earnings.append({
+                                    "date": str(row.get("EPSReportDate", row.get("date", ""))),
+                                    "eps_estimate": _safe_float(row.get("EPSEstimate", row.get("epsEstimate"))),
+                                    "eps_actual": _safe_float(row.get("EPSActual", row.get("epsActual"))),
+                                    "surprise_pct": _safe_float(row.get("Surprise(%)", row.get("surprisePercent"))),
+                                })
+                    elif isinstance(raw_history, dict):
+                        past_earnings = raw_history.get("earnings", [])
+            except Exception:
+                pass
+
+            # ---- calendar (from earnings_dates HTML scrape — fresher pathway) ----
+            calendar = []
+            try:
+                ed = t.earnings_dates
+                if ed is not None:
+                    import pandas as pd
+                    import math
+                    if isinstance(ed, pd.DataFrame) and not ed.empty:
+                        for dt_idx, row in ed.iterrows():
+                            reported = _safe_float(row.get("Reported EPS"))
+                            # Treat NaN as None (not yet reported)
+                            if reported is not None and math.isnan(reported):
+                                reported = None
+                            surprise = _safe_float(row.get("Surprise(%)"))
+                            if surprise is not None and math.isnan(surprise):
+                                surprise = None
+                            calendar.append({
+                                "date": str(dt_idx),
+                                "eps_estimate": _safe_float(row.get("EPS Estimate")),
+                                "reported_eps": reported,
+                                "surprise_pct": surprise,
+                            })
+            except Exception:
+                pass
+
+            # ---- upcoming_earnings (from calendar API) ----
+            upcoming = []
+            try:
+                cal = t.calendar
+                if cal is not None:
+                    if hasattr(cal, "to_dict"):
+                        import pandas as pd
+                        if isinstance(cal, pd.DataFrame) and not cal.empty:
+                            for _, row in cal.iterrows():
+                                upcoming.append({
+                                    "date": str(row.get("Earnings Date", "")),
+                                    "eps_estimate": _safe_float(row.get("Earnings Average", row.get("epsEstimate"))),
+                                    "revenue_estimate": _safe_float(row.get("Revenue Average", row.get("revenueEstimate"))),
+                                })
+                    elif isinstance(cal, dict):
+                        upcoming.append({
+                            "date": str(cal.get("Earnings Date", "")),
+                            "eps_estimate": _safe_float(cal.get("Earnings Average")),
+                            "revenue_estimate": _safe_float(cal.get("Revenue Average")),
+                        })
+            except Exception:
+                pass
+
             return {
                 "symbol": sym,
-                "name": info.get("shortName") or info.get("longName") or sym,
-                "pe_ratio": _safe_float(info.get("trailingPE")),
-                "forward_pe": _safe_float(info.get("forwardPE")),
-                "peg_ratio": _safe_float(info.get("pegRatio")),
-                "pb_ratio": _safe_float(info.get("priceToBook")),
-                "ps_ratio": _safe_float(info.get("priceToSalesTrailing12Months")),
-                "roe": _safe_float(info.get("returnOnEquity")),
-                "roa": _safe_float(info.get("returnOnAssets")),
-                "debt_to_equity": _safe_float(info.get("debtToEquity")),
-                "current_ratio": _safe_float(info.get("currentRatio")),
-                "quick_ratio": _safe_float(info.get("quickRatio")),
-                "gross_margins": _safe_float(info.get("grossMargins")),
-                "operating_margins": _safe_float(info.get("operatingMargins")),
-                "profit_margins": _safe_float(info.get("profitMargins")),
+                "past_earnings": past_earnings,
+                "calendar": calendar,
+                "upcoming_earnings": upcoming,
                 "eps_trailing": _safe_float(info.get("trailingEps")),
                 "eps_forward": _safe_float(info.get("forwardEps")),
-                "revenue_per_share": _safe_float(info.get("revenuePerShare")),
-                "dividend_yield": _safe_float(info.get("dividendYield")),
-                "payout_ratio": _safe_float(info.get("payoutRatio")),
-                "beta": _safe_float(info.get("beta")),
-                "revenue_growth": _safe_float(info.get("revenueGrowth")),
-                "earnings_growth": _safe_float(info.get("earningsGrowth")),
-                "free_cashflow": _safe_float(info.get("freeCashflow")),
-                "enterprise_value": _safe_float(info.get("enterpriseValue")),
-                "ev_to_revenue": _safe_float(info.get("enterpriseToRevenue")),
-                "ev_to_ebitda": _safe_float(info.get("enterpriseToEbitda")),
-                "short_ratio": _safe_float(info.get("shortRatio")),
-                "short_pct_float": _safe_float(info.get("shortPercentOfFloat")),
                 "source": "yfinance",
             }
 
         except Exception as exc:
-            logger.exception("get_key_metrics failed for %s", sym)
+            logger.exception("get_earnings failed for %s", sym)
             return {"symbol": sym, "error": str(exc)}
 
+    # =========================================================================
+    # 4. get_historical_prices — kept unchanged
+    # =========================================================================
     @tool
-    async def get_company_info(symbol: str) -> dict:
-        """Get detailed company profile and business description.
+    async def get_historical_prices(
+        symbol: str,
+        period: str = "1mo",
+        interval: str = "1d",
+    ) -> dict:
+        """Get historical OHLCV price data for a stock.
 
         Uses yfinance — free, no API key required.
 
         Args:
             symbol: Stock ticker symbol (e.g. "AAPL").
+            period: Time period — "1d", "5d", "1mo", "3mo", "6mo", "1y",
+                "2y", "5y", "10y", "ytd", "max". Default "1mo".
+            interval: Data interval — "1m", "5m", "15m", "30m", "1h",
+                "1d", "1wk", "1mo". Default "1d".
+                Note: minute-level intervals only available for recent periods.
 
         Returns:
-            A dict with: ``symbol``, ``name``, ``description``,
-            ``sector``, ``industry``, ``website``, ``country``,
-            ``state``, ``city``, ``employees``, ``ipo_date``,
-            ``exchange``, ``currency``, ``phone``, ``fax``,
-            ``address``, ``officers`` (list), ``source``.
+            A dict with:
+            - ``symbol``: the stock ticker
+            - ``period``, ``interval``: as requested
+            - ``prices``: list of OHLCV dicts with ``date``, ``open``,
+              ``high``, ``low``, ``close``, ``volume``, ``dividends``,
+              ``stock_splits``
+            - ``count``: number of data points
+            - ``source``: "yfinance"
         """
         import yfinance as yf
 
         sym = symbol.upper().strip()
-        logger.info("get_company_info: %s", sym)
+        logger.info("get_historical_prices: %s period=%s interval=%s", sym, period, interval)
 
         try:
             t = await asyncio.to_thread(yf.Ticker, sym)
-            info = {}
-            try:
-                info = t.info or {}
-            except Exception:
-                pass
-
-            # Company officers
-            officers = []
-            raw_officers = info.get("companyOfficers") or []
-            if isinstance(raw_officers, list):
-                for o in raw_officers:
-                    if isinstance(o, dict):
-                        officers.append({
-                            "name": o.get("name", ""),
-                            "title": o.get("title", ""),
-                            "age": o.get("age"),
-                            "year_born": o.get("yearBorn"),
-                        })
-
+            df = await asyncio.to_thread(
+                t.history, period=period, interval=interval
+            )
+            prices = _df_to_dicts(df)
             return {
                 "symbol": sym,
-                "name": info.get("shortName") or info.get("longName") or sym,
-                "description": info.get("longBusinessSummary", ""),
-                "sector": info.get("sector", ""),
-                "industry": info.get("industry", ""),
-                "website": info.get("website", ""),
-                "country": info.get("country", ""),
-                "state": info.get("state", ""),
-                "city": info.get("city", ""),
-                "employees": _safe_float(info.get("fullTimeEmployees")),
-                "ipo_date": str(info.get("ipoDate", "")),
-                "exchange": info.get("exchange") or info.get("fullExchangeName") or "",
-                "currency": info.get("currency", ""),
-                "phone": info.get("phone", ""),
-                "fax": info.get("fax", ""),
-                "address": (
-                    f"{info.get('address1', '')} {info.get('address2', '')}".strip()
-                    if info.get("address1")
-                    else ""
-                ),
-                "officers": officers,
+                "period": period,
+                "interval": interval,
+                "prices": prices,
+                "count": len(prices),
                 "source": "yfinance",
             }
 
         except Exception as exc:
-            logger.exception("get_company_info failed for %s", sym)
+            logger.exception("get_historical_prices failed for %s", sym)
             return {"symbol": sym, "error": str(exc)}
 
+    # =========================================================================
+    # 5. get_dividends — kept unchanged
+    # =========================================================================
     @tool
     async def get_dividends(symbol: str, period: str = "5y") -> dict:
         """Get dividend history for a stock.
@@ -506,170 +640,103 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
             logger.exception("get_dividends failed for %s", sym)
             return {"symbol": sym, "error": str(exc)}
 
+    # =========================================================================
+    # 6. get_company_news — new tool wrapping ticker.get_news()
+    # =========================================================================
     @tool
-    async def get_earnings_history(symbol: str) -> dict:
-        """Get historical and upcoming earnings data for a stock.
+    async def get_company_news(
+        symbol: str,
+        count: int | None = None,
+        tab: str | None = None,
+    ) -> dict:
+        """Get recent news articles for a company from Yahoo Finance.
 
-        Uses yfinance — free, no API key required.
+        Uses yfinance — free, no API key required.  Pulls from Yahoo
+        Finance's news feed via an XHR endpoint.
 
         Args:
-            symbol: Stock ticker symbol (e.g. "AAPL").
+            symbol: Stock ticker symbol (e.g. "AAPL", "0700.HK").
+            count: Number of articles to return (1-25, default 10).
+            tab: News category — "news" (latest news, default),
+                "press releases" (press releases only), or "all"
+                (everything). Default "news".
 
         Returns:
             A dict with:
             - ``symbol``: the stock ticker
-            - ``earnings_history``: list of past earnings with ``date``,
-              ``eps_estimate``, ``eps_actual``, ``surprise_pct``
-            - ``upcoming_earnings``: list of future earnings dates
-              with ``date``, ``eps_estimate``, ``revenue_estimate``
-            - ``earnings_per_share``: trailing and forward EPS
+            - ``count``: number of articles returned
+            - ``articles``: list of article dicts, each with:
+              ``title``, ``published`` (ISO 8601), ``url``,
+              ``provider`` (display name), ``summary`` (first
+              300 characters of the article body)
             - ``source``: "yfinance"
         """
         import yfinance as yf
 
         sym = symbol.upper().strip()
-        logger.info("get_earnings_history: %s", sym)
+        resolved_count = count if count is not None else 10
+        resolved_count = max(1, min(resolved_count, 25))
+        resolved_tab = tab if tab else "news"
+
+        valid_tabs = {"news", "all", "press releases"}
+        if resolved_tab.lower() not in valid_tabs:
+            return {
+                "symbol": sym,
+                "error": f"Invalid tab '{tab}'. Must be one of: news, all, press releases",
+            }
+
+        logger.info(
+            "get_company_news: %s count=%d tab=%s", sym, resolved_count, resolved_tab
+        )
 
         try:
             t = await asyncio.to_thread(yf.Ticker, sym)
-            info = {}
-            try:
-                info = t.info or {}
-            except Exception:
-                pass
+            raw_news = await asyncio.to_thread(
+                t.get_news, count=resolved_count, tab=resolved_tab
+            )
 
-            # Earnings history (past)
-            earnings_history = []
-            try:
-                raw_history = t.earnings_history
-                if raw_history is not None:
-                    if hasattr(raw_history, "to_dict"):
-                        import pandas as pd
-                        if isinstance(raw_history, pd.DataFrame) and not raw_history.empty:
-                            for _, row in raw_history.iterrows():
-                                earnings_history.append({
-                                    "date": str(row.get("EPSReportDate", row.get("date", ""))),
-                                    "eps_estimate": _safe_float(row.get("EPSEstimate", row.get("epsEstimate"))),
-                                    "eps_actual": _safe_float(row.get("EPSActual", row.get("epsActual"))),
-                                    "surprise_pct": _safe_float(row.get("Surprise(%)", row.get("surprisePercent"))),
-                                })
-                    elif isinstance(raw_history, dict):
-                        earnings_history = raw_history.get("earnings", [])
-            except Exception:
-                pass
+            articles = []
+            if isinstance(raw_news, list):
+                for item in raw_news:
+                    content = item.get("content") if isinstance(item, dict) else {}
+                    if not content:
+                        continue
+                    title = content.get("title") or ""
+                    pub_date = content.get("pubDate") or ""
+                    provider = ""
+                    provider_obj = content.get("provider") if isinstance(content.get("provider"), dict) else {}
+                    if isinstance(provider_obj, dict):
+                        provider = provider_obj.get("displayName", "")
+                    url = ""
+                    ctu = content.get("clickThroughUrl") if isinstance(content.get("clickThroughUrl"), dict) else {}
+                    if isinstance(ctu, dict):
+                        url = ctu.get("url", "")
+                    summary = (content.get("summary") or "")[:300]
 
-            # Earnings dates (upcoming)
-            upcoming = []
-            try:
-                cal = t.calendar
-                if cal is not None:
-                    if hasattr(cal, "to_dict"):
-                        import pandas as pd
-                        if isinstance(cal, pd.DataFrame) and not cal.empty:
-                            for _, row in cal.iterrows():
-                                upcoming.append({
-                                    "date": str(row.get("Earnings Date", "")),
-                                    "eps_estimate": _safe_float(row.get("Earnings Average", row.get("epsEstimate"))),
-                                    "revenue_estimate": _safe_float(row.get("Revenue Average", row.get("revenueEstimate"))),
-                                })
-                    elif isinstance(cal, dict):
-                        upcoming.append({
-                            "date": str(cal.get("Earnings Date", "")),
-                            "eps_estimate": _safe_float(cal.get("Earnings Average")),
-                            "revenue_estimate": _safe_float(cal.get("Revenue Average")),
-                        })
-            except Exception:
-                pass
+                    articles.append({
+                        "title": str(title),
+                        "published": str(pub_date),
+                        "url": str(url),
+                        "provider": str(provider),
+                        "summary": str(summary),
+                    })
 
             return {
                 "symbol": sym,
-                "earnings_history": earnings_history,
-                "upcoming_earnings": upcoming,
-                "eps_trailing": _safe_float(info.get("trailingEps")),
-                "eps_forward": _safe_float(info.get("forwardEps")),
+                "count": len(articles),
+                "articles": articles,
                 "source": "yfinance",
             }
 
         except Exception as exc:
-            logger.exception("get_earnings_history failed for %s", sym)
-            return {"symbol": sym, "error": str(exc)}
-
-    @tool
-    async def get_analyst_ratings(symbol: str) -> dict:
-        """Get analyst recommendations and price targets for a stock.
-
-        Uses yfinance — free, no API key required.
-
-        Args:
-            symbol: Stock ticker symbol (e.g. "AAPL").
-
-        Returns:
-            A dict with:
-            - ``symbol``: the stock ticker
-            - ``recommendation``: overall rating (e.g. "buy", "hold", "sell")
-            - ``target_mean``: average analyst price target
-            - ``target_high``: highest price target
-            - ``target_low``: lowest price target
-            - ``target_median``: median price target
-            - ``number_of_analysts``: number of analysts covering
-            - ``recommendations``: list of rating changes with ``date``,
-              ``firm``, ``to_grade``, ``from_grade``, ``action``
-            - ``source``: "yfinance"
-        """
-        import yfinance as yf
-
-        sym = symbol.upper().strip()
-        logger.info("get_analyst_ratings: %s", sym)
-
-        try:
-            t = await asyncio.to_thread(yf.Ticker, sym)
-            info = {}
-            try:
-                info = t.info or {}
-            except Exception:
-                pass
-
-            # Analyst recommendations trend
-            recommendations = []
-            try:
-                recs = t.recommendations
-                if recs is not None:
-                    import pandas as pd
-                    if isinstance(recs, pd.DataFrame) and not recs.empty:
-                        for _, row in recs.head(20).iterrows():
-                            recommendations.append({
-                                "date": str(row.get("Date", row.get("date", ""))),
-                                "firm": str(row.get("Firm", row.get("firm", ""))),
-                                "to_grade": str(row.get("To Grade", row.get("toGrade", ""))),
-                                "from_grade": str(row.get("From Grade", row.get("fromGrade", ""))),
-                                "action": str(row.get("Action", row.get("action", ""))),
-                            })
-            except Exception:
-                pass
-
-            return {
-                "symbol": sym,
-                "recommendation": info.get("recommendationKey", info.get("recommendationMean", "")),
-                "target_mean": _safe_float(info.get("targetMeanPrice")),
-                "target_high": _safe_float(info.get("targetHighPrice")),
-                "target_low": _safe_float(info.get("targetLowPrice")),
-                "target_median": _safe_float(info.get("targetMedianPrice")),
-                "number_of_analysts": _safe_float(info.get("numberOfAnalystOpinions")),
-                "recommendations": recommendations,
-                "source": "yfinance",
-            }
-
-        except Exception as exc:
-            logger.exception("get_analyst_ratings failed for %s", sym)
+            logger.exception("get_company_news failed for %s", sym)
             return {"symbol": sym, "error": str(exc)}
 
     return [
-        get_stock_quote,
-        get_historical_prices,
+        get_stock_snapshot,
         get_financials,
-        get_key_metrics,
-        get_company_info,
+        get_earnings,
+        get_historical_prices,
         get_dividends,
-        get_earnings_history,
-        get_analyst_ratings,
+        get_company_news,
     ]
