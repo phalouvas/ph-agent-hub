@@ -47,7 +47,7 @@ export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProp
 
   const { data: tools } = useQuery({
     queryKey: ["admin-tools", tenantId],
-    queryFn: () => listTools({ tenant_id: tenantId }).then(r => r.items),
+    queryFn: () => listTools({ tenant_id: tenantId, page_size: 500, enabled: true }).then(r => r.items),
     enabled: open,
   });
 
@@ -266,7 +266,11 @@ export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProp
           <Select
             mode="multiple"
             allowClear
+            showSearch
             placeholder="Select tools"
+            filterOption={(input, option) =>
+              (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+            }
             options={(tools || []).map((t) => ({
               label: t.name,
               value: t.id,

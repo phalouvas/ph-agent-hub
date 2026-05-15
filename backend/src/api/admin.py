@@ -874,6 +874,9 @@ async def list_tools(
         items=[ToolResponse.model_validate(t) for t in tools],
         total=total, page=page, page_size=page_size, total_pages=total_pages,
     )
+
+
+@router.delete("/models/{model_id}", status_code=204)
 async def delete_model(
     model_id: str,
     request: Request,
