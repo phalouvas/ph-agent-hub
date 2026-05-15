@@ -32,7 +32,7 @@ async def list_skills(
     enabled: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
-    page: int = 1,
+    page: int | None = None,
     page_size: int = 25,
 ) -> tuple[list[Skill], int]:
     """Return skills with optional filtering, sorting, and pagination.

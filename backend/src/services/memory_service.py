@@ -39,7 +39,7 @@ async def list_all_memories(
     user_id: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
-    page: int = 1,
+    page: int | None = None,
     page_size: int = 25,
 ) -> tuple[list[Memory], int]:
     """List all memory entries (admin) with filtering, sorting, pagination."""

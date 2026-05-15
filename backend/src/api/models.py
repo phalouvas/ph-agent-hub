@@ -44,7 +44,7 @@ async def list_models(
     Models are filtered by group access control:
     is_public=True OR model assigned to a group the user belongs to.
     """
-    models = await _svc_list_models(
+    models, _ = await _svc_list_models(
         db, tenant_id=current_user.tenant_id, user_id=current_user.id
     )
     enabled = [m for m in models if m.enabled]

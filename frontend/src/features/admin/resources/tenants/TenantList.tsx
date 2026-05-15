@@ -4,7 +4,7 @@
 // Admin only; Ant Design Table/List with server-side search, sorting, pagination.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Table,
   Button,
@@ -44,10 +44,14 @@ export function TenantList() {
 
   const debouncedSearch = useDebounce(searchText, 300);
 
-  const { data, isLoading, updateParams, handleTableChange } = useAdminTable(
+  const { data, isLoading, updateParams, handleTableChange, setSearch } = useAdminTable(
     ["admin-tenants"],
-    (p) => listTenants({ ...p, search: debouncedSearch || undefined }),
+    (p) => listTenants({ ...p }),
   );
+
+  useEffect(() => {
+    setSearch(debouncedSearch || undefined);
+  }, [debouncedSearch, setSearch]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteTenant(id, { force: forceDelete }),

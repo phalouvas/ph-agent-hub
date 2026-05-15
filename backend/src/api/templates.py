@@ -37,7 +37,7 @@ async def list_templates(
     current_user: UserORM = Depends(get_current_user),
 ):
     """Return templates visible to the requesting user within their tenant."""
-    templates = await _svc_list_templates(
+    templates, _ = await _svc_list_templates(
         db, tenant_id=current_user.tenant_id, current_user=current_user
     )
     return [TemplateResponse.model_validate(t) for t in templates]
