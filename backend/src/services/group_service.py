@@ -18,15 +18,32 @@ from ..db.orm.users import User
 
 
 async def list_groups(
-    db: AsyncSession, tenant_id: str | None = None
-) -> list[UserGroup]:
-    """Return all groups, optionally filtered by tenant_id."""
+    db: AsyncSession,
+    tenant_id: str | None = None,
+    *,
+    search: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[UserGroup], int]:
+    """Return groups with optional filtering, sorting, and pagination."""
     stmt = select(UserGroup)
     if tenant_id is not None:
         stmt = stmt.where(UserGroup.tenant_id == tenant_id)
-    stmt = stmt.order_by(UserGroup.name)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(stmt, search, [UserGroup.name])
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "name": UserGroup.name,
+            "created_at": UserGroup.created_at,
+        },
+        default_sort=UserGroup.name,
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
 
 
 async def get_group_by_id(db: AsyncSession, group_id: str) -> UserGroup | None:

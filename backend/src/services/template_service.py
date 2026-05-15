@@ -11,21 +11,32 @@ from ..db.orm.users import User
 
 
 async def list_templates(
-    db: AsyncSession, tenant_id: str, current_user: User
-) -> list[Template]:
-    """Return templates visible to the current user within their tenant.
+    db: AsyncSession,
+    tenant_id: str | None = None,
+    current_user: User | None = None,
+    *,
+    search: str | None = None,
+    scope: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Template], int]:
+    """Return templates with optional filtering, sorting, and pagination.
 
-    Visibility rules:
+    Visibility rules (when current_user is provided):
     - scope=tenant: visible to all users in the tenant
     - scope=user: visible only to the assigned user
     - scope=role: visible to admin/manager roles (pending clarification)
-    """
-    stmt = select(Template).where(Template.tenant_id == tenant_id)
 
-    if current_user.role in ("admin", "manager"):
-        # Admin/manager sees all templates in their tenant
-        pass
-    else:
+    When current_user is None (admin listing), returns all templates.
+    """
+    stmt = select(Template)
+
+    if tenant_id is not None:
+        stmt = stmt.where(Template.tenant_id == tenant_id)
+
+    if current_user is not None and current_user.role not in ("admin", "manager"):
         # Regular users see tenant-scoped + their own user-scoped templates
         stmt = stmt.where(
             (Template.scope == "tenant")
@@ -34,10 +45,29 @@ async def list_templates(
                 & (Template.assigned_user_id == current_user.id)
             )
         )
+    elif tenant_id is None and current_user is None:
+        # No tenant scoping for admin listing — return all
+        pass
 
-    stmt = stmt.order_by(Template.created_at)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    if scope is not None:
+        stmt = stmt.where(Template.scope == scope)
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(
+        stmt, search,
+        [Template.title, Template.description],
+    )
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "title": Template.title,
+            "scope": Template.scope,
+            "created_at": Template.created_at,
+        },
+        default_sort=Template.created_at,
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
 
 
 async def get_template_by_id(db: AsyncSession, template_id: str) -> Template | None:

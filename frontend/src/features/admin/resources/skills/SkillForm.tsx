@@ -47,31 +47,31 @@ export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProp
 
   const { data: tools } = useQuery({
     queryKey: ["admin-tools", tenantId],
-    queryFn: () => listTools({ tenant_id: tenantId }),
+    queryFn: () => listTools({ tenant_id: tenantId }).then(r => r.items),
     enabled: open,
   });
 
   const { data: models } = useQuery({
     queryKey: ["admin-models", tenantId],
-    queryFn: () => listModels({ tenant_id: tenantId }),
+    queryFn: () => listModels({ tenant_id: tenantId }).then(r => r.items),
     enabled: open,
   });
 
   const { data: templates } = useQuery({
     queryKey: ["admin-templates", tenantId],
-    queryFn: () => listTemplates({ tenant_id: tenantId }),
+    queryFn: () => listTemplates({ tenant_id: tenantId }).then(r => r.items),
     enabled: open,
   });
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: () => listTenants(),
+    queryFn: () => listTenants().then(r => r.items),
     enabled: open && isAdmin,
   });
 
   const { data: users } = useQuery({
     queryKey: ["admin-users"],
-    queryFn: () => listUsers(),
+    queryFn: () => listUsers().then(r => r.items),
     enabled: open,
   });
 
@@ -81,7 +81,7 @@ export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProp
         form.setFieldsValue({
           tenant_id: duplicateFrom.tenant_id,
           user_id: duplicateFrom.user_id,
-          title: `${duplicateFrom.title} (Copy)`,
+          title: duplicateFrom.title,
           description: duplicateFrom.description,
           execution_type: duplicateFrom.execution_type,
           maf_target_key: duplicateFrom.maf_target_key,

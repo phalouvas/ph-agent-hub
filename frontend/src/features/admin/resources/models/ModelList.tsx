@@ -1,7 +1,8 @@
 // =============================================================================
 // PH Agent Hub — Admin ModelList
 // =============================================================================
-// Ant Design Table/List; api_key field masked.
+// Ant Design Table/List with server-side search, provider/enabled filters,
+// sorting, pagination. api_key field masked.
 // =============================================================================
 
 import { useState } from "react";
@@ -17,8 +18,10 @@ import {
   List,
   Card,
   Typography,
+  Select,
+  Input,
 } from "antd";
-import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined, SearchOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,6 +31,8 @@ import {
   listTenants,
   ModelData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 import { ModelForm } from "./ModelForm";
 
 const { useBreakpoint } = Grid;
@@ -37,23 +42,32 @@ export function ModelList() {
   const [editingModel, setEditingModel] = useState<ModelData | null>(null);
   const [duplicatingModel, setDuplicatingModel] = useState<ModelData | null>(null);
   const [creating, setCreating] = useState(false);
+  const [searchText, setSearchText] = useState("");
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || undefined;
 
-  const { data: models, isLoading } = useQuery({
-    queryKey: ["admin-models", tenantId],
-    queryFn: () => listModels({ tenant_id: tenantId }),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
+
+  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+    ["admin-models"],
+    (p) =>
+      listModels({
+        ...p,
+        tenant_id: tenantId,
+        search: debouncedSearch || undefined,
+      }),
+    { tenant_id: tenantId },
+  );
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-model-list"],
     queryFn: () => listTenants(),
   });
 
-  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+  const tenantNameById = new Map((tenants?.items || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteModel,
@@ -88,11 +102,12 @@ export function ModelList() {
   });
 
   const columns = [
-    { title: "Name", dataIndex: "name", key: "name" },
+    { title: "Name", dataIndex: "name", key: "name", sorter: true },
     {
       title: "Provider",
       dataIndex: "provider",
       key: "provider",
+      sorter: true,
       render: (v: string) => <Tag>{v}</Tag>,
     },
     {
@@ -111,6 +126,7 @@ export function ModelList() {
       title: "Max Tokens",
       dataIndex: "max_tokens",
       key: "max_tokens",
+      sorter: true,
     },
     {
       title: "Enabled",
@@ -181,18 +197,67 @@ export function ModelList() {
     },
   ];
 
+  const modelsData = data?.items || [];
+  const totalModels = data?.total || 0;
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button type="primary" onClick={() => setCreating(true)}>
-          Add Model
+          Create Model
         </Button>
+        <Input
+          placeholder="Search by name, model ID…"
+          prefix={<SearchOutlined />}
+          allowClear
+          value={searchText}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
+        />
+        <Select
+          placeholder="Provider"
+          allowClear
+          style={{ width: 140 }}
+          value={params.provider as string | undefined}
+          onChange={(value) => updateParams({ provider: value, page: 1 })}
+          options={[
+            { label: "OpenAI", value: "openai" },
+            { label: "Anthropic", value: "anthropic" },
+            { label: "DeepSeek", value: "deepseek" },
+          ]}
+        />
+        <Select
+          placeholder="Status"
+          allowClear
+          style={{ width: 120 }}
+          value={params.enabled !== undefined ? String(params.enabled) : undefined}
+          onChange={(value) =>
+            updateParams({
+              enabled: value !== undefined ? value === "true" : undefined,
+              page: 1,
+            })
+          }
+          options={[
+            { label: "Enabled", value: "true" },
+            { label: "Disabled", value: "false" },
+          ]}
+        />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={models || []}
+          dataSource={modelsData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalModels,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           renderItem={(model) => (
             <Card
               size="small"
@@ -244,9 +309,18 @@ export function ModelList() {
       ) : (
         <Table
           columns={columns}
-          dataSource={models || []}
+          dataSource={modelsData}
           rowKey="id"
           loading={isLoading}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalModels,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange}
         />
       )}
 

@@ -1,7 +1,8 @@
 // =============================================================================
 // PH Agent Hub — Admin TemplateList
 // =============================================================================
-// Ant Design Table/List.
+// Ant Design Table/List with server-side search, scope filtering,
+// sorting, pagination.
 // =============================================================================
 
 import { useState } from "react";
@@ -16,8 +17,10 @@ import {
   List,
   Card,
   Typography,
+  Select,
+  Input,
 } from "antd";
-import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined, SearchOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,6 +29,8 @@ import {
   listTenants,
   TemplateData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 import { TemplateForm } from "./TemplateForm";
 
 const { useBreakpoint } = Grid;
@@ -35,23 +40,32 @@ export function TemplateList() {
   const [editingTemplate, setEditingTemplate] = useState<TemplateData | null>(null);
   const [duplicatingTemplate, setDuplicatingTemplate] = useState<TemplateData | null>(null);
   const [creating, setCreating] = useState(false);
+  const [searchText, setSearchText] = useState("");
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || undefined;
 
-  const { data: templates, isLoading } = useQuery({
-    queryKey: ["admin-templates", tenantId],
-    queryFn: () => listTemplates({ tenant_id: tenantId }),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
+
+  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+    ["admin-templates"],
+    (p) =>
+      listTemplates({
+        ...p,
+        tenant_id: tenantId,
+        search: debouncedSearch || undefined,
+      }),
+    { tenant_id: tenantId },
+  );
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-template-list"],
     queryFn: () => listTenants(),
   });
 
-  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+  const tenantNameById = new Map((tenants?.items || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteTemplate,
@@ -62,11 +76,12 @@ export function TemplateList() {
   });
 
   const columns = [
-    { title: "Title", dataIndex: "title", key: "title" },
+    { title: "Title", dataIndex: "title", key: "title", sorter: true },
     {
       title: "Scope",
       dataIndex: "scope",
       key: "scope",
+      sorter: true,
       render: (v: string) => <Tag>{v}</Tag>,
     },
     {
@@ -112,18 +127,51 @@ export function TemplateList() {
     },
   ];
 
+  const templatesData = data?.items || [];
+  const totalTemplates = data?.total || 0;
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button type="primary" onClick={() => setCreating(true)}>
           Create Template
         </Button>
+        <Input
+          placeholder="Search by title…"
+          prefix={<SearchOutlined />}
+          allowClear
+          value={searchText}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
+        />
+        <Select
+          placeholder="Scope"
+          allowClear
+          style={{ width: 120 }}
+          value={params.scope as string | undefined}
+          onChange={(value) => updateParams({ scope: value, page: 1 })}
+          options={[
+            { label: "Tenant", value: "tenant" },
+            { label: "User", value: "user" },
+            { label: "Role", value: "role" },
+          ]}
+        />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={templates || []}
+          dataSource={templatesData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalTemplates,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           renderItem={(template) => (
             <Card
               size="small"
@@ -162,9 +210,18 @@ export function TemplateList() {
       ) : (
         <Table
           columns={columns}
-          dataSource={templates || []}
+          dataSource={templatesData}
           rowKey="id"
           loading={isLoading}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalTemplates,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange}
         />
       )}
 

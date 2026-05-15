@@ -74,15 +74,38 @@ async def list_audit_logs(
     db: AsyncSession,
     *,
     tenant_id: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[AuditLog]:
-    """Query audit logs, optionally filtered by tenant."""
-    stmt = select(AuditLog).order_by(AuditLog.created_at.desc())
+    search: str | None = None,
+    action: str | None = None,
+    actor_id: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[AuditLog], int]:
+    """Query audit logs with optional filtering, sorting, pagination."""
+    stmt = select(AuditLog)
 
     if tenant_id is not None:
         stmt = stmt.where(AuditLog.tenant_id == tenant_id)
+    if action is not None:
+        stmt = stmt.where(AuditLog.action == action)
+    if actor_id is not None:
+        stmt = stmt.where(AuditLog.actor_id == actor_id)
 
-    stmt = stmt.limit(limit).offset(offset)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(
+        stmt, search,
+        [AuditLog.action, AuditLog.actor_email, AuditLog.actor_full_name,
+         AuditLog.target_type, AuditLog.ip_address],
+    )
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "created_at": AuditLog.created_at,
+            "action": AuditLog.action,
+            "actor_email": AuditLog.actor_email,
+        },
+        default_sort=AuditLog.created_at.desc(),
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)

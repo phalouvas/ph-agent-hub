@@ -1,7 +1,7 @@
 // =============================================================================
 // PH Agent Hub — Admin TenantList
 // =============================================================================
-// Admin only; Ant Design Table/List.
+// Admin only; Ant Design Table/List with server-side search, sorting, pagination.
 // =============================================================================
 
 import { useState } from "react";
@@ -16,14 +16,17 @@ import {
   List,
   Card,
   Typography,
+  Input,
 } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { EditOutlined, DeleteOutlined, SearchOutlined } from "@ant-design/icons";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listTenants,
   deleteTenant,
   TenantData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 import { TenantForm } from "./TenantForm";
 import { formatCurrency } from "../../../../shared/utils/formatCurrency";
 
@@ -34,14 +37,17 @@ export function TenantList() {
   const [editingTenant, setEditingTenant] = useState<TenantData | null>(null);
   const [creating, setCreating] = useState(false);
   const [forceDelete, setForceDelete] = useState(false);
+  const [searchText, setSearchText] = useState("");
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
 
-  const { data: tenants, isLoading } = useQuery({
-    queryKey: ["admin-tenants"],
-    queryFn: listTenants,
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
+
+  const { data, isLoading, updateParams, handleTableChange } = useAdminTable(
+    ["admin-tenants"],
+    (p) => listTenants({ ...p, search: debouncedSearch || undefined }),
+  );
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteTenant(id, { force: forceDelete }),
@@ -56,17 +62,19 @@ export function TenantList() {
   });
 
   const columns = [
-    { title: "Name", dataIndex: "name", key: "name" },
+    { title: "Name", dataIndex: "name", key: "name", sorter: true },
     {
       title: "Cost",
       dataIndex: "total_cost",
       key: "total_cost",
+      sorter: true,
       render: (v: number) => formatCurrency(v),
     },
     {
       title: "Created",
       dataIndex: "created_at",
       key: "created_at",
+      sorter: true,
       render: (v: string) => new Date(v).toLocaleDateString(),
     },
     {
@@ -94,9 +102,12 @@ export function TenantList() {
     },
   ];
 
+  const tenantsData = data?.items || [];
+  const totalTenants = data?.total || 0;
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button type="primary" onClick={() => setCreating(true)}>
           Create Tenant
         </Button>
@@ -106,12 +117,30 @@ export function TenantList() {
         >
           Force delete (cascade all data)
         </Checkbox>
+        <Input
+          placeholder="Search by name…"
+          prefix={<SearchOutlined />}
+          allowClear
+          value={searchText}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
+        />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={tenants || []}
+          dataSource={tenantsData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalTenants,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           renderItem={(tenant) => (
             <Card
               size="small"
@@ -148,9 +177,18 @@ export function TenantList() {
       ) : (
         <Table
           columns={columns}
-          dataSource={tenants || []}
+          dataSource={tenantsData}
           rowKey="id"
           loading={isLoading}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalTenants,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange}
         />
       )}
 

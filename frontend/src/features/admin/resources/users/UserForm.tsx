@@ -42,13 +42,13 @@ export function UserForm({ open, user, duplicateFrom, onClose }: UserFormProps) 
 
   const { data: allGroups } = useQuery({
     queryKey: ["admin-groups"],
-    queryFn: () => listGroups(),
+    queryFn: () => listGroups().then(r => r.items),
     enabled: open,
   });
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: () => listTenants(),
+    queryFn: () => listTenants().then(r => r.items),
     enabled: open && isAdmin,
   });
 
@@ -89,7 +89,7 @@ export function UserForm({ open, user, duplicateFrom, onClose }: UserFormProps) 
           : `${duplicateFrom.email}-copy`;
         form.setFieldsValue({
           email: dupEmail,
-          display_name: `${duplicateFrom.display_name} (Copy)`,
+          display_name: duplicateFrom.display_name,
           role: duplicateFrom.role,
           is_active: duplicateFrom.is_active,
           tenant_id: duplicateFrom.tenant_id,

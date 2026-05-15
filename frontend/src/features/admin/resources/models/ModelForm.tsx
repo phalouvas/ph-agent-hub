@@ -50,13 +50,13 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: () => listTenants(),
+    queryFn: () => listTenants().then(r => r.items),
     enabled: open && isAdmin,
   });
 
   const { data: allGroups } = useQuery({
     queryKey: ["admin-groups"],
-    queryFn: () => listGroups(),
+    queryFn: () => listGroups().then(r => r.items),
     enabled: open,
   });
 
@@ -95,7 +95,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
       if (duplicateFrom) {
         form.setFieldsValue({
           tenant_id: duplicateFrom.tenant_id,
-          name: `${duplicateFrom.name} (Copy)`,
+          name: duplicateFrom.name,
           model_id: duplicateFrom.model_id,
           provider: duplicateFrom.provider,
           base_url: duplicateFrom.base_url,
@@ -353,7 +353,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
               <Select
                 mode="multiple"
                 placeholder="Select groups that can access this model..."
-                options={(allGroups || []).map((g: GroupData) => ({
+                options={(allGroups || [] as GroupData[]).map((g: GroupData) => ({
                   label: g.name,
                   value: g.id,
                 }))}

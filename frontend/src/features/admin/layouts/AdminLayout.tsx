@@ -51,7 +51,7 @@ export function AdminLayout() {
   // Fetch tenant list for the filter dropdown
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-selector"],
-    queryFn: listTenants,
+    queryFn: () => listTenants(),
     enabled: isAdmin,
   });
 
@@ -211,7 +211,7 @@ export function AdminLayout() {
                 style={{ width: "100%" }}
                 value={selectedTenantId}
                 onChange={handleTenantChange}
-                options={(tenants || []).map((t) => ({
+                options={(tenants?.items || []).map((t) => ({
                   value: t.id,
                   label: t.name,
                 }))}
@@ -254,7 +254,7 @@ export function AdminLayout() {
                   style={{ minWidth: 200 }}
                   value={selectedTenantId}
                   onChange={handleTenantChange}
-                  options={(tenants || []).map((t) => ({
+                  options={(tenants?.items || []).map((t) => ({
                     value: t.id,
                     label: t.name,
                   }))}

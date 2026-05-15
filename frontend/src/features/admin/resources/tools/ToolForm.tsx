@@ -53,7 +53,8 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: listTenants,
+    queryFn: () => listTenants().then(r => r.items),
+    select: (data: TenantData[]) => data,
     enabled: open && isAdmin,
   });
 
@@ -62,7 +63,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
       if (duplicateFrom) {
         const fields: Record<string, unknown> = {
           tenant_id: duplicateFrom.tenant_id,
-          name: `${duplicateFrom.name} (Copy)`,
+          name: duplicateFrom.name,
           type: duplicateFrom.type,
           enabled: duplicateFrom.enabled,
           is_public: duplicateFrom.is_public,

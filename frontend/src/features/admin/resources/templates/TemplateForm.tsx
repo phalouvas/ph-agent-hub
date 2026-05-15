@@ -41,13 +41,13 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: () => listTenants(),
+    queryFn: () => listTenants().then(r => r.items),
     enabled: open && isAdmin,
   });
 
   const { data: users } = useQuery({
     queryKey: ["admin-users"],
-    queryFn: () => listUsers(),
+    queryFn: () => listUsers().then(r => r.items),
     enabled: open,
   });
 
@@ -56,7 +56,7 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
       if (duplicateFrom) {
         form.setFieldsValue({
           tenant_id: duplicateFrom.tenant_id,
-          title: `${duplicateFrom.title} (Copy)`,
+          title: duplicateFrom.title,
           description: duplicateFrom.description,
           system_prompt: duplicateFrom.system_prompt,
           scope: duplicateFrom.scope,

@@ -18,8 +18,17 @@ async def list_models(
     db: AsyncSession,
     tenant_id: str | None = None,
     user_id: str | None = None,
-) -> list[Model]:
-    """Return all models, optionally filtered by tenant_id and user access.
+    *,
+    search: str | None = None,
+    provider: str | None = None,
+    enabled: bool | None = None,
+    is_public: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Model], int]:
+    """Return models with optional filtering, sorting, and pagination.
 
     When user_id is provided, only returns models where:
     - is_public=True, OR
@@ -43,9 +52,31 @@ async def list_models(
             )
         )
 
-    stmt = stmt.order_by(Model.created_at)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    if provider is not None:
+        stmt = stmt.where(Model.provider == provider)
+    if enabled is not None:
+        stmt = stmt.where(Model.enabled == enabled)
+    if is_public is not None:
+        stmt = stmt.where(Model.is_public == is_public)
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(
+        stmt, search,
+        [Model.name, Model.model_id, Model.provider],
+    )
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "name": Model.name,
+            "provider": Model.provider,
+            "enabled": Model.enabled,
+            "created_at": Model.created_at,
+            "max_tokens": Model.max_tokens,
+        },
+        default_sort=Model.created_at,
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
 
 
 async def get_model_by_id(db: AsyncSession, model_id: str) -> Model | None:

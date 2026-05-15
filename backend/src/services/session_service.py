@@ -97,6 +97,69 @@ async def list_sessions_for_user(
     return list(result.scalars().all())
 
 
+async def list_admin_sessions(
+    db: AsyncSession,
+    *,
+    tenant_id: str | None = None,
+    tag: str | None = None,
+    search: str | None = None,
+    is_pinned: bool | None = None,
+    is_temporary: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Session], int]:
+    """List sessions for admin views with filtering, sorting, pagination.
+
+    Includes eager-loaded tags for display.
+    """
+    from sqlalchemy.orm import selectinload
+    from ..db.orm.tags import Tag as TagORM, SessionTag as SessionTagORM
+
+    stmt = (
+        select(Session)
+        .options(selectinload(Session.tags))
+    )
+
+    if tenant_id is not None:
+        stmt = stmt.where(Session.tenant_id == tenant_id)
+    if is_pinned is not None:
+        stmt = stmt.where(Session.is_pinned == is_pinned)
+    if is_temporary is not None:
+        stmt = stmt.where(Session.is_temporary == is_temporary)
+
+    if tag:
+        stmt = (
+            stmt
+            .join(SessionTagORM, SessionTagORM.session_id == Session.id)
+            .join(TagORM, TagORM.id == SessionTagORM.tag_id)
+            .where(TagORM.name == tag.strip().lower())
+        )
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(stmt, search, [Session.title])
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "title": Session.title,
+            "updated_at": Session.updated_at,
+            "created_at": Session.created_at,
+        },
+        default_sort=Session.updated_at.desc(),
+    )
+
+    items, total = await paginate(db, stmt, page=page, page_size=page_size)
+    # Ensure unique results due to joins
+    seen = set()
+    unique_items = []
+    for s in items:
+        if s.id not in seen:
+            seen.add(s.id)
+            unique_items.append(s)
+    return unique_items, total
+
+
 async def update_session(
     db: AsyncSession,
     session_id: str,

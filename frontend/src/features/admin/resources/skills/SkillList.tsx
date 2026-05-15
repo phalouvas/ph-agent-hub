@@ -1,7 +1,8 @@
 // =============================================================================
 // PH Agent Hub — Admin SkillList
 // =============================================================================
-// Ant Design Table/List.
+// Ant Design Table/List with server-side search, execution_type/visibility/
+// enabled filters, sorting, pagination.
 // =============================================================================
 
 import { useState } from "react";
@@ -17,8 +18,10 @@ import {
   List,
   Card,
   Typography,
+  Select,
+  Input,
 } from "antd";
-import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined, SearchOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,6 +31,8 @@ import {
   listTenants,
   SkillData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 import { SkillForm } from "./SkillForm";
 
 const { useBreakpoint } = Grid;
@@ -37,23 +42,32 @@ export function SkillList() {
   const [editingSkill, setEditingSkill] = useState<SkillData | null>(null);
   const [duplicatingSkill, setDuplicatingSkill] = useState<SkillData | null>(null);
   const [creating, setCreating] = useState(false);
+  const [searchText, setSearchText] = useState("");
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || undefined;
 
-  const { data: skills, isLoading } = useQuery({
-    queryKey: ["admin-skills", tenantId],
-    queryFn: () => listSkills({ tenant_id: tenantId }),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
+
+  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+    ["admin-skills"],
+    (p) =>
+      listSkills({
+        ...p,
+        tenant_id: tenantId,
+        search: debouncedSearch || undefined,
+      }),
+    { tenant_id: tenantId },
+  );
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-skill-list"],
     queryFn: () => listTenants(),
   });
 
-  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+  const tenantNameById = new Map((tenants?.items || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteSkill,
@@ -72,11 +86,12 @@ export function SkillList() {
   });
 
   const columns = [
-    { title: "Title", dataIndex: "title", key: "title" },
+    { title: "Title", dataIndex: "title", key: "title", sorter: true },
     {
       title: "Type",
       dataIndex: "execution_type",
       key: "execution_type",
+      sorter: true,
       render: (v: string) => <Tag color="blue">{v}</Tag>,
     },
     {
@@ -88,6 +103,7 @@ export function SkillList() {
       title: "Visibility",
       dataIndex: "visibility",
       key: "visibility",
+      sorter: true,
       render: (v: string) => <Tag>{v}</Tag>,
     },
     {
@@ -146,18 +162,77 @@ export function SkillList() {
     },
   ];
 
+  const skillsData = data?.items || [];
+  const totalSkills = data?.total || 0;
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button type="primary" onClick={() => setCreating(true)}>
           Create Skill
         </Button>
+        <Input
+          placeholder="Search by title…"
+          prefix={<SearchOutlined />}
+          allowClear
+          value={searchText}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
+        />
+        <Select
+          placeholder="Type"
+          allowClear
+          style={{ width: 140 }}
+          value={params.execution_type as string | undefined}
+          onChange={(value) => updateParams({ execution_type: value, page: 1 })}
+          options={[
+            { label: "Agent", value: "agent" },
+            { label: "Workflow", value: "workflow" },
+          ]}
+        />
+        <Select
+          placeholder="Visibility"
+          allowClear
+          style={{ width: 130 }}
+          value={params.visibility as string | undefined}
+          onChange={(value) => updateParams({ visibility: value, page: 1 })}
+          options={[
+            { label: "Tenant", value: "tenant" },
+            { label: "User", value: "user" },
+          ]}
+        />
+        <Select
+          placeholder="Status"
+          allowClear
+          style={{ width: 120 }}
+          value={params.enabled !== undefined ? String(params.enabled) : undefined}
+          onChange={(value) =>
+            updateParams({
+              enabled: value !== undefined ? value === "true" : undefined,
+              page: 1,
+            })
+          }
+          options={[
+            { label: "Enabled", value: "true" },
+            { label: "Disabled", value: "false" },
+          ]}
+        />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={skills || []}
+          dataSource={skillsData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalSkills,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           renderItem={(skill) => (
             <Card
               size="small"
@@ -210,9 +285,18 @@ export function SkillList() {
       ) : (
         <Table
           columns={columns}
-          dataSource={skills || []}
+          dataSource={skillsData}
           rowKey="id"
           loading={isLoading}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalSkills,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange}
         />
       )}
 

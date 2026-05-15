@@ -49,7 +49,7 @@ export function AnalyticsPage() {
   // Fetch tenants for filter dropdown (admin only)
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: listTenants,
+    queryFn: () => listTenants(),
     enabled: isAdmin,
   });
 
@@ -79,14 +79,15 @@ export function AnalyticsPage() {
       }),
   });
 
+  const usageItems = usage?.items || [];
   const totalTokensIn =
-    usage?.reduce((sum, u) => sum + u.tokens_in, 0) || 0;
+    usageItems.reduce((sum, u) => sum + u.tokens_in, 0) || 0;
   const totalTokensOut =
-    usage?.reduce((sum, u) => sum + u.tokens_out, 0) || 0;
+    usageItems.reduce((sum, u) => sum + u.tokens_out, 0) || 0;
   const totalCost =
-    usage?.reduce((sum, u) => sum + (u.cost || 0), 0) || 0;
-  const uniqueUsers = new Set(usage?.map((u) => u.user_id) || []).size;
-  const uniqueModels = new Set(usage?.map((u) => u.model_id) || []).size;
+    usageItems.reduce((sum, u) => sum + (u.cost || 0), 0) || 0;
+  const uniqueUsers = new Set(usageItems.map((u) => u.user_id)).size;
+  const uniqueModels = new Set(usageItems.map((u) => u.model_id)).size;
 
   const columns = [
     {
@@ -155,7 +156,7 @@ export function AnalyticsPage() {
             style={{ width: 200 }}
             value={selectedTenantId}
             onChange={handleTenantChange}
-            options={tenants?.map((t) => ({
+            options={(tenants?.items || []).map((t) => ({
               value: t.id,
               label: t.name,
             }))}
@@ -168,7 +169,7 @@ export function AnalyticsPage() {
               value={selectedUserId}
               onChange={setSelectedUserId}
               loading={usersLoading}
-              options={users?.map((u) => ({
+              options={(users?.items || []).map((u) => ({
                 value: u.id,
                 label: `${u.display_name} (${u.email})`,
               }))}
@@ -231,14 +232,20 @@ export function AnalyticsPage() {
         <div style={{ textAlign: "center", padding: 48 }}>
           <Spin />
         </div>
-      ) : !usage || usage.length === 0 ? (
+      ) : !usageItems.length ? (
         <Empty description="No usage data yet" />
       ) : (
         <Table
           columns={columns}
-          dataSource={usage}
+          dataSource={usageItems}
           rowKey="id"
-          pagination={{ pageSize: 20 }}
+          pagination={{
+            current: usage?.page || 1,
+            pageSize: usage?.page_size || 25,
+            total: usage?.total || 0,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+          }}
           scroll={{ x: 900 }}
         />
       )}

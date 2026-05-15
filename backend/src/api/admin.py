@@ -25,6 +25,7 @@ from ..core.dependencies import (
     require_admin_or_manager,
 )
 from ..core.exceptions import ForbiddenError, NotFoundError, ValidationError
+from ..core.pagination import PaginatedResponse
 from ..db.orm.users import User as UserORM
 from ..services.audit_service import list_audit_logs, write_audit_log
 from ..services.tenant_service import (
@@ -372,18 +373,27 @@ class SettingsResponse(BaseModel):
 # =============================================================================
 
 
-@router.get("/tenants", response_model=list[TenantResponse])
+@router.get("/tenants", response_model=PaginatedResponse[TenantResponse])
 async def list_tenants(
+    search: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List tenants with aggregate usage stats.
+    """List tenants with aggregate usage stats, search, sorting, pagination.
     Admin sees all tenants; manager sees only their own tenant."""
     if current_user.role == "admin":
-        tenants = await _svc_list_tenants(db)
+        tenants, total = await _svc_list_tenants(
+            db, search=search, sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
     else:
         tenant = await _svc_get_tenant_by_id(db, current_user.tenant_id)
         tenants = [tenant] if tenant else []
+        total = len(tenants)
 
     aggregates = await get_tenant_aggregates(db)
 
@@ -395,7 +405,12 @@ async def list_tenants(
         resp.total_tokens_out = agg.get("total_tokens_out", 0)
         resp.total_cost = agg.get("total_cost", 0.0)
         results.append(resp)
-    return results
+
+    total_pages = max(1, -(-total // page_size)) if current_user.role == "admin" else 1
+    return PaginatedResponse(
+        items=results, total=total, page=page,
+        page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.post("/tenants", response_model=TenantResponse, status_code=201)
@@ -481,18 +496,36 @@ async def delete_tenant(
 # =============================================================================
 
 
-@router.get("/users", response_model=list[UserResponse])
+@router.get("/users", response_model=PaginatedResponse[UserResponse])
 async def list_users(
     tenant_id: str | None = None,
+    search: str | None = None,
+    role: str | None = None,
+    is_active: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
     """List users with aggregate usage stats: admin sees all (optionally
-    filtered by tenant), manager sees own tenant only."""
+    filtered by tenant), manager sees own tenant only.
+    Supports server-side search, role/active filtering, sorting, pagination."""
     if current_user.role == "manager":
-        users = await _svc_list_users(db, tenant_id=current_user.tenant_id)
+        users, total = await _svc_list_users(
+            db, tenant_id=current_user.tenant_id,
+            search=search, role=role, is_active=is_active,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
     else:
-        users = await _svc_list_users(db, tenant_id=tenant_id)
+        users, total = await _svc_list_users(
+            db, tenant_id=tenant_id,
+            search=search, role=role, is_active=is_active,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
 
     aggregates = await get_user_aggregates(db)
 
@@ -504,7 +537,12 @@ async def list_users(
         resp.total_tokens_out = agg.get("total_tokens_out", 0)
         resp.total_cost = agg.get("total_cost", 0.0)
         results.append(resp)
-    return results
+
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=results, total=total, page=page,
+        page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)
@@ -637,19 +675,42 @@ async def delete_user(
 # =============================================================================
 
 
-@router.get("/models", response_model=list[ModelResponse])
+@router.get("/models", response_model=PaginatedResponse[ModelResponse])
 async def list_models(
     tenant_id: str | None = None,
+    search: str | None = None,
+    provider: str | None = None,
+    enabled: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
     """List models. Admin sees all (optionally filtered by tenant),
-    manager sees own tenant only."""
+    manager sees own tenant only. Supports search, provider/enabled
+    filtering, sorting, pagination."""
     if current_user.role == "manager":
-        models = await _svc_list_models(db, tenant_id=current_user.tenant_id)
+        models, total = await _svc_list_models(
+            db, tenant_id=current_user.tenant_id,
+            search=search, provider=provider, enabled=enabled,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
     else:
-        models = await _svc_list_models(db, tenant_id=tenant_id)
-    return [ModelResponse.model_validate(m) for m in models]
+        models, total = await _svc_list_models(
+            db, tenant_id=tenant_id,
+            search=search, provider=provider, enabled=enabled,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
+
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=[ModelResponse.model_validate(m) for m in models],
+        total=total, page=page, page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.post("/models", response_model=ModelResponse, status_code=201)
@@ -762,7 +823,7 @@ async def update_model(
     await write_audit_log(
         db,
         actor=current_user,
-        action=action,
+        action="model.api_key_updated",
         target_type="model",
         target_id=model_id,
         tenant_id=target.tenant_id,
@@ -771,7 +832,48 @@ async def update_model(
     return ModelResponse.model_validate(model)
 
 
-@router.delete("/models/{model_id}", status_code=204)
+# =============================================================================
+# Tool Endpoints (admin or manager)
+# =============================================================================
+
+
+@router.get("/tools", response_model=PaginatedResponse[ToolResponse])
+async def list_tools(
+    tenant_id: str | None = None,
+    search: str | None = None,
+    type: str | None = None,
+    category: str | None = None,
+    enabled: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserORM = Depends(require_admin_or_manager),
+):
+    """List tools. Admin sees all (optionally filtered by tenant),
+    manager sees own tenant only. Supports search, type/category/enabled
+    filtering, sorting, pagination."""
+    if current_user.role == "manager":
+        tools, total = await _svc_list_tools(
+            db, tenant_id=current_user.tenant_id,
+            search=search, type=type, category=category, enabled=enabled,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
+    else:
+        tools, total = await _svc_list_tools(
+            db, tenant_id=tenant_id,
+            search=search, type=type, category=category, enabled=enabled,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
+
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=[ToolResponse.model_validate(t) for t in tools],
+        total=total, page=page, page_size=page_size, total_pages=total_pages,
+    )
 async def delete_model(
     model_id: str,
     request: Request,
@@ -803,21 +905,6 @@ async def delete_model(
 # =============================================================================
 # Tool Endpoints (admin or manager)
 # =============================================================================
-
-
-@router.get("/tools", response_model=list[ToolResponse])
-async def list_tools(
-    tenant_id: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(require_admin_or_manager),
-):
-    """List tools. Admin sees all (optionally filtered by tenant),
-    manager sees own tenant only."""
-    if current_user.role == "manager":
-        tools = await _svc_list_tools(db, tenant_id=current_user.tenant_id)
-    else:
-        tools = await _svc_list_tools(db, tenant_id=tenant_id)
-    return [ToolResponse.model_validate(t) for t in tools]
 
 
 @router.post("/tools", response_model=ToolResponse, status_code=201)
@@ -991,29 +1078,41 @@ class AdminTemplateResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/templates", response_model=list[AdminTemplateResponse])
+@router.get("/templates", response_model=PaginatedResponse[AdminTemplateResponse])
 async def admin_list_templates(
     tenant_id: str | None = None,
+    search: str | None = None,
+    scope: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
     """List templates. Admin sees all (optionally filtered by tenant).
-    Manager sees own tenant only."""
+    Manager sees own tenant only. Supports search, scope filtering,
+    sorting, pagination."""
     if current_user.role == "admin":
-        from sqlalchemy import select
-        from ..db.orm.templates import Template as TemplateORM
-        stmt = select(TemplateORM)
-        if tenant_id is not None:
-            stmt = stmt.where(TemplateORM.tenant_id == tenant_id)
-        stmt = stmt.order_by(TemplateORM.created_at)
-        result = await db.execute(stmt)
-        templates = list(result.scalars().all())
+        templates, total = await _svc_list_templates(
+            db, tenant_id=tenant_id, current_user=None,
+            search=search, scope=scope,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
     else:
-        templates = await _svc_list_templates(
-            db, tenant_id=current_user.tenant_id, current_user=current_user
+        templates, total = await _svc_list_templates(
+            db, tenant_id=current_user.tenant_id, current_user=current_user,
+            search=search, scope=scope,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
         )
 
-    return [AdminTemplateResponse.model_validate(t) for t in templates]
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=[AdminTemplateResponse.model_validate(t) for t in templates],
+        total=total, page=page, page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.post("/templates", response_model=AdminTemplateResponse, status_code=201)
@@ -1177,30 +1276,51 @@ class AdminSkillResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/skills", response_model=list[AdminSkillResponse])
+@router.get("/skills", response_model=PaginatedResponse[AdminSkillResponse])
 async def admin_list_skills(
+    search: str | None = None,
+    execution_type: str | None = None,
+    visibility: str | None = None,
+    enabled: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List skills. Admin sees all. Manager sees own tenant only."""
+    """List skills. Admin sees all. Manager sees own tenant only.
+    Supports search, execution_type/visibility/enabled filtering,
+    sorting, pagination."""
     if current_user.role == "admin":
-        from sqlalchemy import select
-        from ..db.orm.skills import Skill as SkillORM
-        result = await db.execute(select(SkillORM).order_by(SkillORM.created_at))
-        skills = list(result.scalars().all())
+        skills, total = await _svc_list_skills(
+            db, tenant_id=None,
+            search=search, execution_type=execution_type,
+            visibility=visibility, enabled=enabled,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
+        )
     else:
-        skills = await _svc_list_skills(
-            db, tenant_id=current_user.tenant_id
+        skills, total = await _svc_list_skills(
+            db, tenant_id=current_user.tenant_id,
+            search=search, execution_type=execution_type,
+            visibility=visibility, enabled=enabled,
+            sort_by=sort_by, sort_dir=sort_dir,
+            page=page, page_size=page_size,
         )
 
     resp_list: list[AdminSkillResponse] = []
     for s in skills:
-        tools = await _svc_list_skill_tools(db, s.id)
+        skill_tools = await _svc_list_skill_tools(db, s.id)
         resp = AdminSkillResponse.model_validate(s)
-        resp.tool_ids = [t.tool_id for t in tools]
+        resp.tool_ids = [t.tool_id for t in skill_tools]
         resp_list.append(resp)
 
-    return resp_list
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=resp_list, total=total, page=page,
+        page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.post("/skills", response_model=AdminSkillResponse, status_code=201)
@@ -1326,39 +1446,77 @@ async def admin_delete_skill(
 # =============================================================================
 
 
-@router.get("/usage", response_model=list[UsageLogResponse])
+@router.get("/usage", response_model=PaginatedResponse[UsageLogResponse])
 async def get_usage(
     tenant_id: str | None = None,
     user_id: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
+    search: str | None = None,
+    provider: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List usage logs. Admin sees all; manager sees own tenant only."""
+    """List usage logs. Admin sees all; manager sees own tenant only.
+    Supports search, provider/date filtering, sorting, pagination."""
     if current_user.role == "manager":
         tenant_id = current_user.tenant_id
 
-    logs = await list_usage_logs(
+    logs, total = await list_usage_logs(
         db,
         tenant_id=tenant_id,
         user_id=user_id,
-        limit=limit,
-        offset=offset,
+        search=search,
+        provider=provider,
+        date_from=date_from,
+        date_to=date_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
     )
-    return [UsageLogResponse.model_validate(log) for log in logs]
+
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=[UsageLogResponse.model_validate(log) for log in logs],
+        total=total, page=page, page_size=page_size, total_pages=total_pages,
+    )
 
 
-@router.get("/audit", response_model=list[AuditLogResponse])
+@router.get("/audit", response_model=PaginatedResponse[AuditLogResponse])
 async def get_audit(
-    limit: int = 100,
-    offset: int = 0,
+    search: str | None = None,
+    action: str | None = None,
+    actor_id: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     _admin: UserORM = Depends(require_admin),
 ):
-    """List audit logs (admin only)."""
-    logs = await list_audit_logs(db, limit=limit, offset=offset)
-    return [AuditLogResponse.model_validate(log) for log in logs]
+    """List audit logs (admin only). Supports search, action/actor filtering,
+    sorting, pagination."""
+    logs, total = await list_audit_logs(
+        db,
+        search=search,
+        action=action,
+        actor_id=actor_id,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
+
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=[AuditLogResponse.model_validate(log) for log in logs],
+        total=total, page=page, page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.get("/logs", response_model=list[dict])
@@ -1378,21 +1536,6 @@ async def get_logs(
 # =============================================================================
 # Group Endpoints (admin or manager)
 # =============================================================================
-
-
-@router.get("/groups", response_model=list[GroupResponse])
-async def list_groups(
-    tenant_id: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserORM = Depends(require_admin_or_manager),
-):
-    """List groups. Admin sees all (optionally filtered by tenant),
-    manager sees own tenant only."""
-    if current_user.role == "manager":
-        groups = await _svc_list_groups(db, tenant_id=current_user.tenant_id)
-    else:
-        groups = await _svc_list_groups(db, tenant_id=tenant_id)
-    return [GroupResponse.model_validate(g) for g in groups]
 
 
 @router.post("/groups", response_model=GroupResponse, status_code=201)
@@ -1785,25 +1928,37 @@ class AdminMemoryResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/memories", response_model=list[AdminMemoryResponse])
+@router.get("/memories", response_model=PaginatedResponse[AdminMemoryResponse])
 async def admin_list_memories(
     tenant_id: str | None = None,
     user_id: str | None = None,
+    search: str | None = None,
+    source: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List all memory entries.  Admin sees all (optionally filtered).
-    Manager sees own tenant only."""
+    """List all memory entries. Admin sees all (optionally filtered).
+    Manager sees own tenant only. Supports search, source filtering,
+    sorting, pagination."""
     if current_user.role == "manager":
         tenant_id = current_user.tenant_id
 
-    entries = await memory_service.list_all_memories(
-        db, tenant_id=tenant_id
+    entries, total = await memory_service.list_all_memories(
+        db, tenant_id=tenant_id, user_id=user_id,
+        search=search, source=source,
+        sort_by=sort_by, sort_dir=sort_dir,
+        page=page, page_size=page_size,
     )
-    # Optional user_id filter applied in Python for simplicity
-    if user_id:
-        entries = [e for e in entries if e.user_id == user_id]
-    return [AdminMemoryResponse.model_validate(e) for e in entries]
+
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=[AdminMemoryResponse.model_validate(e) for e in entries],
+        total=total, page=page, page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.delete("/memories/{memory_id}", status_code=204)
@@ -1855,64 +2010,67 @@ class AdminSessionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/sessions", response_model=list[AdminSessionResponse])
+@router.get("/sessions", response_model=PaginatedResponse[AdminSessionResponse])
 async def admin_list_sessions(
     tenant_id: str | None = None,
     tag: str | None = None,
+    search: str | None = None,
+    is_pinned: bool | None = None,
+    is_temporary: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
     db: AsyncSession = Depends(get_db),
     current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List sessions with optional tenant_id and tag filters.
+    """List sessions with filtering, sorting, pagination.
 
     Admin: can see all tenants. Manager: only own tenant.
+    Supports search, tag/pinned/temporary filtering, sorting, pagination.
     """
-    from ..db.orm.sessions import Session as SessionORM
-    from ..db.orm.tags import Tag as TagORM, SessionTag as SessionTagORM
-    from sqlalchemy.orm import selectinload
-
     # Manager scope check
     if current_user.role == "manager":
         if tenant_id and tenant_id != current_user.tenant_id:
             raise ForbiddenError("Managers can only view sessions in their own tenant")
         tenant_id = current_user.tenant_id
 
-    stmt = select(SessionORM).options(selectinload(SessionORM.tags))
+    from ..services.session_service import list_admin_sessions as _svc_list_admin_sessions
 
-    if tenant_id:
-        stmt = stmt.where(SessionORM.tenant_id == tenant_id)
-    elif current_user.role == "manager":
-        stmt = stmt.where(SessionORM.tenant_id == current_user.tenant_id)
+    sessions, total = await _svc_list_admin_sessions(
+        db,
+        tenant_id=tenant_id,
+        tag=tag,
+        search=search,
+        is_pinned=is_pinned,
+        is_temporary=is_temporary,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        page=page,
+        page_size=page_size,
+    )
 
-    if tag:
-        stmt = (
-            stmt
-            .join(SessionTagORM, SessionTagORM.session_id == SessionORM.id)
-            .join(TagORM, TagORM.id == SessionTagORM.tag_id)
-            .where(TagORM.name == tag.strip().lower())
-        )
-
-    stmt = stmt.order_by(SessionORM.updated_at.desc()).limit(200)
-
-    result = await db.execute(stmt)
-    sessions = list(result.unique().scalars().all())
-
-    return [
-        AdminSessionResponse(
-            id=s.id,
-            tenant_id=s.tenant_id,
-            user_id=s.user_id,
-            title=s.title,
-            is_pinned=s.is_pinned,
-            is_temporary=s.is_temporary,
-            tags=[
-                {"id": t.id, "name": t.name, "color": t.color}
-                for t in (s.tags or [])
-            ],
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-        )
-        for s in sessions
-    ]
+    total_pages = max(1, -(-total // page_size))
+    return PaginatedResponse(
+        items=[
+            AdminSessionResponse(
+                id=s.id,
+                tenant_id=s.tenant_id,
+                user_id=s.user_id,
+                title=s.title,
+                is_pinned=s.is_pinned,
+                is_temporary=s.is_temporary,
+                tags=[
+                    {"id": t.id, "name": t.name, "color": t.color}
+                    for t in (s.tags or [])
+                ],
+                created_at=s.created_at,
+                updated_at=s.updated_at,
+            )
+            for s in sessions
+        ],
+        total=total, page=page, page_size=page_size, total_pages=total_pages,
+    )
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
