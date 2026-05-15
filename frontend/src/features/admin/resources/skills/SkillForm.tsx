@@ -81,7 +81,7 @@ export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProp
         form.setFieldsValue({
           tenant_id: duplicateFrom.tenant_id,
           user_id: duplicateFrom.user_id,
-          title: `${duplicateFrom.title} (Copy)`,
+          title: duplicateFrom.title,
           description: duplicateFrom.description,
           execution_type: duplicateFrom.execution_type,
           maf_target_key: duplicateFrom.maf_target_key,

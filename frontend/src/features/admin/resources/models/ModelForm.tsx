@@ -95,7 +95,7 @@ export function ModelForm({ open, model, duplicateFrom, onClose }: ModelFormProp
       if (duplicateFrom) {
         form.setFieldsValue({
           tenant_id: duplicateFrom.tenant_id,
-          name: `${duplicateFrom.name} (Copy)`,
+          name: duplicateFrom.name,
           model_id: duplicateFrom.model_id,
           provider: duplicateFrom.provider,
           base_url: duplicateFrom.base_url,

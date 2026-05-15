@@ -56,7 +56,7 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
       if (duplicateFrom) {
         form.setFieldsValue({
           tenant_id: duplicateFrom.tenant_id,
-          title: `${duplicateFrom.title} (Copy)`,
+          title: duplicateFrom.title,
           description: duplicateFrom.description,
           system_prompt: duplicateFrom.system_prompt,
           scope: duplicateFrom.scope,

@@ -62,7 +62,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
       if (duplicateFrom) {
         const fields: Record<string, unknown> = {
           tenant_id: duplicateFrom.tenant_id,
-          name: `${duplicateFrom.name} (Copy)`,
+          name: duplicateFrom.name,
           type: duplicateFrom.type,
           enabled: duplicateFrom.enabled,
           is_public: duplicateFrom.is_public,
