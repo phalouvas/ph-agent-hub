@@ -266,7 +266,11 @@ export function SkillForm({ open, skill, duplicateFrom, onClose }: SkillFormProp
           <Select
             mode="multiple"
             allowClear
+            showSearch
             placeholder="Select tools"
+            filterOption={(input, option) =>
+              (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+            }
             options={(tools || []).map((t) => ({
               label: t.name,
               value: t.id,
