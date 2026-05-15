@@ -2,10 +2,11 @@
 # PH Agent Hub — User Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import ConflictError, NotFoundError
+from ..core.pagination import apply_search, apply_sorting, paginate
 from ..core.security import hash_password
 from ..db.orm.users import User
 
@@ -23,15 +24,42 @@ async def get_user_by_id(db: AsyncSession, user_id: str) -> User | None:
 
 
 async def list_users(
-    db: AsyncSession, tenant_id: str | None = None
-) -> list[User]:
-    """Return all users, optionally filtered by tenant_id."""
+    db: AsyncSession,
+    tenant_id: str | None = None,
+    *,
+    search: str | None = None,
+    role: str | None = None,
+    is_active: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[User], int]:
+    """Return users with optional filtering, sorting, and pagination."""
     stmt = select(User)
     if tenant_id is not None:
         stmt = stmt.where(User.tenant_id == tenant_id)
-    stmt = stmt.order_by(User.created_at)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    if role is not None:
+        stmt = stmt.where(User.role == role)
+    if is_active is not None:
+        stmt = stmt.where(User.is_active == is_active)
+
+    stmt = apply_search(
+        stmt, search,
+        [User.email, User.display_name],
+    )
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "email": User.email,
+            "display_name": User.display_name,
+            "role": User.role,
+            "created_at": User.created_at,
+        },
+        default_sort=User.created_at,
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
 
 
 async def create_user(

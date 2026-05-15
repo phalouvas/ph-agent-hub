@@ -1,7 +1,8 @@
 // =============================================================================
 // PH Agent Hub — Admin SessionList
 // =============================================================================
-// Ant Design Table; list + delete sessions (admin/manager scoped).
+// Ant Design Table with server-side search, pinned/temp/tag filters,
+// sorting, pagination.
 // =============================================================================
 
 import { useState } from "react";
@@ -18,6 +19,7 @@ import {
   List,
   Card,
   Typography,
+  Select,
 } from "antd";
 import {
   DeleteOutlined,
@@ -30,6 +32,8 @@ import {
   listTenants,
   AdminSessionData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 
 const { useBreakpoint } = Grid;
 const { Text } = Typography;
@@ -42,17 +46,25 @@ export function SessionList() {
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || undefined;
 
-  const { data: sessions, isLoading } = useQuery({
-    queryKey: ["admin-sessions", tenantId],
-    queryFn: () => listAdminSessions({ tenant_id: tenantId }),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
+
+  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+    ["admin-sessions"],
+    (p) =>
+      listAdminSessions({
+        ...p,
+        tenant_id: tenantId,
+        search: debouncedSearch || undefined,
+      }),
+    { tenant_id: tenantId },
+  );
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-session-list"],
     queryFn: () => listTenants(),
   });
 
-  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+  const tenantNameById = new Map((tenants?.items || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteAdminSession,
@@ -62,25 +74,15 @@ export function SessionList() {
     },
   });
 
-  const filteredData = (sessions || []).filter((s) => {
-    if (!searchText.trim()) return true;
-    const lower = searchText.toLowerCase();
-    const tagNames = (s.tags || []).map((t) => t.name.toLowerCase()).join(" ");
-    const tenantName = tenantNameById.get(s.tenant_id)?.toLowerCase() || "";
-    return (
-      s.title.toLowerCase().includes(lower) ||
-      s.user_id.toLowerCase().includes(lower) ||
-      s.tenant_id.toLowerCase().includes(lower) ||
-      tenantName.includes(lower) ||
-      tagNames.includes(lower)
-    );
-  });
+  const sessionsData = data?.items || [];
+  const totalSessions = data?.total || 0;
 
   const columns = [
     {
       title: "Title",
       dataIndex: "title",
       key: "title",
+      sorter: true,
       render: (v: string, record: AdminSessionData) => (
         <Space>
           <Text strong>{v}</Text>
@@ -152,77 +154,106 @@ export function SessionList() {
     },
   ];
 
-  const mobileRender = (item: AdminSessionData) => (
-    <Card
-      size="small"
-      style={{ marginBottom: 8 }}
-      actions={[
-        <Popconfirm
-          key="del"
-          title="Delete this session?"
-          onConfirm={() => deleteMutation.mutate(item.id)}
-        >
-          <Button icon={<DeleteOutlined />} size="small" danger />
-        </Popconfirm>,
-      ]}
-    >
-      <Card.Meta
-        title={
-          <Space>
-            <Text strong>{item.title}</Text>
-            {item.is_pinned && <Tag color="orange">Pinned</Tag>}
-          </Space>
-        }
-        description={
-          <>
-            <Space size={4} wrap style={{ marginBottom: 4 }}>
-              {(item.tags || []).map((t) => (
-                <Tag key={t.id} color={t.color || "default"} style={{ fontSize: 10 }}>
-                  {t.name}
-                </Tag>
-              ))}
-            </Space>
-            <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
-              User: {item.user_id.slice(0, 8)}… ·{" "}
-              {new Date(item.created_at).toLocaleDateString()}
-            </Text>
-          </>
-        }
-      />
-    </Card>
-  );
-
   return (
     <div>
-      <Space style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Input
-          placeholder="Search by title, tags, user, tenant…"
+          placeholder="Search by title…"
           prefix={<SearchOutlined />}
           allowClear
           value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          style={{ width: 320 }}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
         />
-        <Text type="secondary">
-          {filteredData.length} of {sessions?.length || 0} sessions
-        </Text>
+        <Select
+          placeholder="Pinned"
+          allowClear
+          style={{ width: 120 }}
+          value={params.is_pinned !== undefined ? String(params.is_pinned) : undefined}
+          onChange={(value) =>
+            updateParams({
+              is_pinned: value !== undefined ? value === "true" : undefined,
+              page: 1,
+            })
+          }
+          options={[
+            { label: "Pinned", value: "true" },
+            { label: "Not Pinned", value: "false" },
+          ]}
+        />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={filteredData}
+          dataSource={sessionsData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalSessions,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           locale={{ emptyText: "No sessions found" }}
-          renderItem={mobileRender}
+          renderItem={(item) => (
+            <Card
+              size="small"
+              style={{ marginBottom: 8 }}
+              actions={[
+                <Popconfirm
+                  key="del"
+                  title="Delete this session?"
+                  onConfirm={() => deleteMutation.mutate(item.id)}
+                >
+                  <Button icon={<DeleteOutlined />} size="small" danger />
+                </Popconfirm>,
+              ]}
+            >
+              <Card.Meta
+                title={
+                  <Space>
+                    <Text strong>{item.title}</Text>
+                    {item.is_pinned && <Tag color="orange">Pinned</Tag>}
+                  </Space>
+                }
+                description={
+                  <>
+                    <Space size={4} wrap style={{ marginBottom: 4 }}>
+                      {(item.tags || []).map((t) => (
+                        <Tag key={t.id} color={t.color || "default"} style={{ fontSize: 10 }}>
+                          {t.name}
+                        </Tag>
+                      ))}
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
+                      User: {item.user_id.slice(0, 8)}… ·{" "}
+                      {new Date(item.created_at).toLocaleDateString()}
+                    </Text>
+                  </>
+                }
+              />
+            </Card>
+          )}
         />
       ) : (
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={filteredData}
+          dataSource={sessionsData}
           loading={isLoading}
           locale={{ emptyText: "No sessions found" }}
-          pagination={{ pageSize: 50, showSizeChanger: true }}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalSessions,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange}
         />
       )}
     </div>

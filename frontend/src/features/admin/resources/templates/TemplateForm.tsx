@@ -41,13 +41,13 @@ export function TemplateForm({ open, template, duplicateFrom, onClose }: Templat
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: () => listTenants(),
+    queryFn: () => listTenants().then(r => r.items),
     enabled: open && isAdmin,
   });
 
   const { data: users } = useQuery({
     queryKey: ["admin-users"],
-    queryFn: () => listUsers(),
+    queryFn: () => listUsers().then(r => r.items),
     enabled: open,
   });
 

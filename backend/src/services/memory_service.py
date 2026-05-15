@@ -30,6 +30,43 @@ async def list_memory(
     return list(result.scalars().all())
 
 
+async def list_all_memories(
+    db: AsyncSession,
+    tenant_id: str | None = None,
+    *,
+    search: str | None = None,
+    source: str | None = None,
+    user_id: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Memory], int]:
+    """List all memory entries (admin) with filtering, sorting, pagination."""
+    stmt = select(Memory)
+
+    if tenant_id is not None:
+        stmt = stmt.where(Memory.tenant_id == tenant_id)
+    if user_id is not None:
+        stmt = stmt.where(Memory.user_id == user_id)
+    if source is not None:
+        stmt = stmt.where(Memory.source == source)
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(stmt, search, [Memory.key, Memory.value])
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "key": Memory.key,
+            "source": Memory.source,
+            "created_at": Memory.created_at,
+        },
+        default_sort=Memory.created_at.desc(),
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
+
+
 async def create_memory(
     db: AsyncSession,
     tenant_id: str,

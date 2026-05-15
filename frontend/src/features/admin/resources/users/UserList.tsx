@@ -2,7 +2,7 @@
 // PH Agent Hub — Admin UserList
 // =============================================================================
 // Ant Design Table on desktop, List/Card on mobile.
-// Actions: edit, delete, activate/deactivate, reset password.
+// Server-side pagination, sorting, role/active/search filters.
 // =============================================================================
 
 import { useState } from "react";
@@ -18,11 +18,14 @@ import {
   List,
   Card,
   Typography,
+  Select,
+  Input,
 } from "antd";
 import {
   EditOutlined,
   DeleteOutlined,
   CopyOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +36,8 @@ import {
   listTenants,
   UserData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 import { UserForm } from "./UserForm";
 import { formatCurrency } from "../../../../shared/utils/formatCurrency";
 
@@ -43,23 +48,32 @@ export function UserList() {
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [duplicatingUser, setDuplicatingUser] = useState<UserData | null>(null);
   const [creating, setCreating] = useState(false);
+  const [searchText, setSearchText] = useState("");
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || undefined;
 
-  const { data: users, isLoading } = useQuery({
-    queryKey: ["admin-users", tenantId],
-    queryFn: () => listUsers({ tenant_id: tenantId }),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
+
+  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+    ["admin-users"],
+    (p) =>
+      listUsers({
+        ...p,
+        tenant_id: tenantId,
+        search: debouncedSearch || undefined,
+      }),
+    { tenant_id: tenantId },
+  );
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-user-list"],
     queryFn: () => listTenants(),
   });
 
-  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+  const tenantNameById = new Map((tenants?.items || []).map((t) => [t.id, t.name]));
 
   const deleteMutation = useMutation({
     mutationFn: deleteUser,
@@ -78,18 +92,24 @@ export function UserList() {
   });
 
   const columns = [
-    { title: "Name", dataIndex: "display_name", key: "display_name" },
-    { title: "Email", dataIndex: "email", key: "email" },
+    {
+      title: "Name", dataIndex: "display_name", key: "display_name", sorter: true,
+    },
+    {
+      title: "Email", dataIndex: "email", key: "email", sorter: true,
+    },
     {
       title: "Cost",
       dataIndex: "total_cost",
       key: "total_cost",
+      sorter: true,
       render: (v: number) => formatCurrency(v),
     },
     {
       title: "Role",
       dataIndex: "role",
       key: "role",
+      sorter: true,
       render: (role: string) => (
         <Tag color={role === "admin" ? "red" : role === "manager" ? "blue" : "default"}>
           {role}
@@ -152,18 +172,67 @@ export function UserList() {
     },
   ];
 
+  const usersData = data?.items || [];
+  const totalUsers = data?.total || 0;
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button type="primary" onClick={() => setCreating(true)}>
           Create User
         </Button>
+        <Input
+          placeholder="Search by name or email…"
+          prefix={<SearchOutlined />}
+          allowClear
+          value={searchText}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
+        />
+        <Select
+          placeholder="Role"
+          allowClear
+          style={{ width: 120 }}
+          value={params.role as string | undefined}
+          onChange={(value) => updateParams({ role: value, page: 1 })}
+          options={[
+            { label: "Admin", value: "admin" },
+            { label: "Manager", value: "manager" },
+            { label: "User", value: "user" },
+          ]}
+        />
+        <Select
+          placeholder="Status"
+          allowClear
+          style={{ width: 120 }}
+          value={params.is_active !== undefined ? String(params.is_active) : undefined}
+          onChange={(value) =>
+            updateParams({
+              is_active: value !== undefined ? value === "true" : undefined,
+              page: 1,
+            })
+          }
+          options={[
+            { label: "Active", value: "true" },
+            { label: "Inactive", value: "false" },
+          ]}
+        />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={users || []}
+          dataSource={usersData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalUsers,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           renderItem={(user) => (
             <Card
               size="small"
@@ -225,9 +294,18 @@ export function UserList() {
       ) : (
         <Table
           columns={columns}
-          dataSource={users || []}
+          dataSource={usersData}
           rowKey="id"
           loading={isLoading}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalUsers,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange}
         />
       )}
 

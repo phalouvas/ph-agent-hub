@@ -1,15 +1,52 @@
 // =============================================================================
 // PH Agent Hub — Admin API Service
 // =============================================================================
-// All admin API calls: /admin/users, /admin/tenants, /admin/models,
-// /admin/tools, /admin/templates, /admin/skills, /admin/usage, /admin/logs,
-// /admin/audit. Calls api.ts.
+// All admin API calls with server-side pagination, filtering, sorting.
 // =============================================================================
 
 import api from "../../../services/api";
 
 // ---------------------------------------------------------------------------
-// Types
+// Shared pagination & list param types
+// ---------------------------------------------------------------------------
+
+export interface ListParams {
+  page?: number;
+  page_size?: number;
+  search?: string;
+  sort_by?: string;
+  sort_dir?: "asc" | "desc";
+  tenant_id?: string;
+  // Resource-specific filters
+  role?: string;
+  is_active?: boolean;
+  provider?: string;
+  enabled?: boolean;
+  type?: string;
+  category?: string;
+  scope?: string;
+  execution_type?: string;
+  visibility?: string;
+  source?: string;
+  is_pinned?: boolean;
+  action?: string;
+  actor_id?: string;
+  user_id?: string;
+  date_from?: string;
+  date_to?: string;
+  tag?: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+// ---------------------------------------------------------------------------
+// Data Types
 // ---------------------------------------------------------------------------
 
 export interface UserData {
@@ -140,193 +177,6 @@ export interface AuditData {
   created_at: string;
 }
 
-// ---------------------------------------------------------------------------
-// Users
-// ---------------------------------------------------------------------------
-
-export function listUsers(params?: {
-  tenant_id?: string;
-}): Promise<UserData[]> {
-  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
-  return api<UserData[]>(`/admin/users${qs}`);
-}
-
-export function getUser(id: string): Promise<UserData> {
-  return api<UserData>(`/admin/users/${id}`);
-}
-
-export function createUser(data: Partial<UserData> & { password?: string }): Promise<UserData> {
-  return api<UserData>("/admin/users", { method: "POST", body: data });
-}
-
-export function updateUser(id: string, data: Partial<UserData> & { password?: string }): Promise<UserData> {
-  return api<UserData>(`/admin/users/${id}`, { method: "PUT", body: data });
-}
-
-export function deleteUser(id: string): Promise<void> {
-  return api<void>(`/admin/users/${id}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Tenants (admin-only)
-// ---------------------------------------------------------------------------
-
-export function listTenants(): Promise<TenantData[]> {
-  return api<TenantData[]>("/admin/tenants");
-}
-
-export function createTenant(data: { name: string }): Promise<TenantData> {
-  return api<TenantData>("/admin/tenants", { method: "POST", body: data });
-}
-
-export function updateTenant(id: string, data: { name: string }): Promise<TenantData> {
-  return api<TenantData>(`/admin/tenants/${id}`, { method: "PUT", body: data });
-}
-
-export function deleteTenant(
-  id: string,
-  params?: { force?: boolean },
-): Promise<void> {
-  const qs = params?.force ? "?force=true" : "";
-  return api<void>(`/admin/tenants/${id}${qs}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Models
-// ---------------------------------------------------------------------------
-
-export function listModels(params?: {
-  tenant_id?: string;
-}): Promise<ModelData[]> {
-  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
-  return api<ModelData[]>(`/admin/models${qs}`);
-}
-
-export function getModel(id: string): Promise<ModelData> {
-  return api<ModelData>(`/admin/models/${id}`);
-}
-
-export function createModel(data: Partial<ModelData> & { api_key?: string }): Promise<ModelData> {
-  return api<ModelData>("/admin/models", { method: "POST", body: data });
-}
-
-export function updateModel(id: string, data: Partial<ModelData> & { api_key?: string }): Promise<ModelData> {
-  return api<ModelData>(`/admin/models/${id}`, { method: "PUT", body: data });
-}
-
-export function deleteModel(id: string): Promise<void> {
-  return api<void>(`/admin/models/${id}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Tools
-// ---------------------------------------------------------------------------
-
-export function listTools(params?: {
-  tenant_id?: string;
-}): Promise<ToolData[]> {
-  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
-  return api<ToolData[]>(`/admin/tools${qs}`);
-}
-
-export function getTool(id: string): Promise<ToolData> {
-  return api<ToolData>(`/admin/tools/${id}`);
-}
-
-export function createTool(data: Partial<ToolData>): Promise<ToolData> {
-  return api<ToolData>("/admin/tools", { method: "POST", body: data });
-}
-
-export function updateTool(id: string, data: Partial<ToolData>): Promise<ToolData> {
-  return api<ToolData>(`/admin/tools/${id}`, { method: "PUT", body: data });
-}
-
-export function deleteTool(id: string): Promise<void> {
-  return api<void>(`/admin/tools/${id}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Templates
-// ---------------------------------------------------------------------------
-
-export function listTemplates(params?: {
-  tenant_id?: string;
-}): Promise<TemplateData[]> {
-  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
-  return api<TemplateData[]>(`/admin/templates${qs}`);
-}
-
-export function getTemplate(id: string): Promise<TemplateData> {
-  return api<TemplateData>(`/admin/templates/${id}`);
-}
-
-export function createTemplate(data: Partial<TemplateData>): Promise<TemplateData> {
-  return api<TemplateData>("/admin/templates", { method: "POST", body: data });
-}
-
-export function updateTemplate(id: string, data: Partial<TemplateData>): Promise<TemplateData> {
-  return api<TemplateData>(`/admin/templates/${id}`, { method: "PUT", body: data });
-}
-
-export function deleteTemplate(id: string): Promise<void> {
-  return api<void>(`/admin/templates/${id}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Skills
-// ---------------------------------------------------------------------------
-
-export function listSkills(params?: {
-  tenant_id?: string;
-}): Promise<SkillData[]> {
-  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
-  return api<SkillData[]>(`/admin/skills${qs}`);
-}
-
-export function getSkill(id: string): Promise<SkillData> {
-  return api<SkillData>(`/admin/skills/${id}`);
-}
-
-export function createSkill(data: Partial<SkillData>): Promise<SkillData> {
-  return api<SkillData>("/admin/skills", { method: "POST", body: data });
-}
-
-export function updateSkill(id: string, data: Partial<SkillData>): Promise<SkillData> {
-  return api<SkillData>(`/admin/skills/${id}`, { method: "PUT", body: data });
-}
-
-export function deleteSkill(id: string): Promise<void> {
-  return api<void>(`/admin/skills/${id}`, { method: "DELETE" });
-}
-
-// ---------------------------------------------------------------------------
-// Usage & Audit
-// ---------------------------------------------------------------------------
-
-export function listUsage(params?: { tenant_id?: string; user_id?: string }): Promise<UsageData[]> {
-  const qs: string[] = [];
-  if (params?.tenant_id) qs.push(`tenant_id=${params.tenant_id}`);
-  if (params?.user_id) qs.push(`user_id=${params.user_id}`);
-  const query = qs.length ? `?${qs.join("&")}` : "";
-  return api<UsageData[]>(`/admin/usage${query}`);
-}
-
-export function getSettings(): Promise<SettingsData> {
-  return api<SettingsData>("/admin/settings");
-}
-
-export function updateSettings(settings: Record<string, string>): Promise<SettingsData> {
-  return api<SettingsData>("/admin/settings", { method: "PUT", body: settings });
-}
-
-export function listAuditLogs(): Promise<AuditData[]> {
-  return api<AuditData[]>("/admin/audit");
-}
-
-// ---------------------------------------------------------------------------
-// Groups
-// ---------------------------------------------------------------------------
-
 export interface GroupData {
   id: string;
   tenant_id: string;
@@ -349,11 +199,247 @@ export interface GroupModelData {
   enabled: boolean;
 }
 
-export function listGroups(params?: {
-  tenant_id?: string;
-}): Promise<GroupData[]> {
-  const qs = params?.tenant_id ? `?tenant_id=${params.tenant_id}` : "";
-  return api<GroupData[]>(`/admin/groups${qs}`);
+export interface GroupToolData {
+  id: string;
+  name: string;
+  type: string;
+  enabled: boolean;
+}
+
+export interface MemoryData {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  session_id: string | null;
+  key: string;
+  value: string;
+  source: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface AdminSessionData {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  title: string;
+  is_pinned: boolean;
+  is_temporary: boolean;
+  tags: { id: string; name: string; color: string | null }[];
+  created_at: string;
+  updated_at: string;
+}
+
+// =============================================================================
+// Helper: build query string from params
+// =============================================================================
+
+function buildQueryString(
+  params: Record<string, string | number | boolean | undefined | null>,
+): string {
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+    }
+  }
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
+// =============================================================================
+// Users
+// =============================================================================
+
+export function listUsers(
+  params?: ListParams & { role?: string; is_active?: boolean },
+): Promise<PaginatedResponse<UserData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<UserData>>(`/admin/users${qs}`);
+}
+
+export function getUser(id: string): Promise<UserData> {
+  return api<UserData>(`/admin/users/${id}`);
+}
+
+export function createUser(data: Partial<UserData> & { password?: string }): Promise<UserData> {
+  return api<UserData>("/admin/users", { method: "POST", body: data });
+}
+
+export function updateUser(id: string, data: Partial<UserData> & { password?: string }): Promise<UserData> {
+  return api<UserData>(`/admin/users/${id}`, { method: "PUT", body: data });
+}
+
+export function deleteUser(id: string): Promise<void> {
+  return api<void>(`/admin/users/${id}`, { method: "DELETE" });
+}
+
+// =============================================================================
+// Tenants
+// =============================================================================
+
+export function listTenants(
+  params?: ListParams,
+): Promise<PaginatedResponse<TenantData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<TenantData>>(`/admin/tenants${qs}`);
+}
+
+export function createTenant(data: { name: string }): Promise<TenantData> {
+  return api<TenantData>("/admin/tenants", { method: "POST", body: data });
+}
+
+export function updateTenant(id: string, data: { name: string }): Promise<TenantData> {
+  return api<TenantData>(`/admin/tenants/${id}`, { method: "PUT", body: data });
+}
+
+export function deleteTenant(id: string, params?: { force?: boolean }): Promise<void> {
+  const qs = params?.force ? "?force=true" : "";
+  return api<void>(`/admin/tenants/${id}${qs}`, { method: "DELETE" });
+}
+
+// =============================================================================
+// Models
+// =============================================================================
+
+export function listModels(
+  params?: ListParams & { provider?: string; enabled?: boolean },
+): Promise<PaginatedResponse<ModelData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<ModelData>>(`/admin/models${qs}`);
+}
+
+export function getModel(id: string): Promise<ModelData> {
+  return api<ModelData>(`/admin/models/${id}`);
+}
+
+export function createModel(data: Partial<ModelData> & { api_key?: string }): Promise<ModelData> {
+  return api<ModelData>("/admin/models", { method: "POST", body: data });
+}
+
+export function updateModel(id: string, data: Partial<ModelData> & { api_key?: string }): Promise<ModelData> {
+  return api<ModelData>(`/admin/models/${id}`, { method: "PUT", body: data });
+}
+
+export function deleteModel(id: string): Promise<void> {
+  return api<void>(`/admin/models/${id}`, { method: "DELETE" });
+}
+
+// =============================================================================
+// Tools
+// =============================================================================
+
+export function listTools(
+  params?: ListParams & { type?: string; category?: string; enabled?: boolean },
+): Promise<PaginatedResponse<ToolData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<ToolData>>(`/admin/tools${qs}`);
+}
+
+export function getTool(id: string): Promise<ToolData> {
+  return api<ToolData>(`/admin/tools/${id}`);
+}
+
+export function createTool(data: Partial<ToolData>): Promise<ToolData> {
+  return api<ToolData>("/admin/tools", { method: "POST", body: data });
+}
+
+export function updateTool(id: string, data: Partial<ToolData>): Promise<ToolData> {
+  return api<ToolData>(`/admin/tools/${id}`, { method: "PUT", body: data });
+}
+
+export function deleteTool(id: string): Promise<void> {
+  return api<void>(`/admin/tools/${id}`, { method: "DELETE" });
+}
+
+// =============================================================================
+// Templates
+// =============================================================================
+
+export function listTemplates(
+  params?: ListParams & { scope?: string },
+): Promise<PaginatedResponse<TemplateData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<TemplateData>>(`/admin/templates${qs}`);
+}
+
+export function getTemplate(id: string): Promise<TemplateData> {
+  return api<TemplateData>(`/admin/templates/${id}`);
+}
+
+export function createTemplate(data: Partial<TemplateData>): Promise<TemplateData> {
+  return api<TemplateData>("/admin/templates", { method: "POST", body: data });
+}
+
+export function updateTemplate(id: string, data: Partial<TemplateData>): Promise<TemplateData> {
+  return api<TemplateData>(`/admin/templates/${id}`, { method: "PUT", body: data });
+}
+
+export function deleteTemplate(id: string): Promise<void> {
+  return api<void>(`/admin/templates/${id}`, { method: "DELETE" });
+}
+
+// =============================================================================
+// Skills
+// =============================================================================
+
+export function listSkills(
+  params?: ListParams & { execution_type?: string; visibility?: string; enabled?: boolean },
+): Promise<PaginatedResponse<SkillData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<SkillData>>(`/admin/skills${qs}`);
+}
+
+export function getSkill(id: string): Promise<SkillData> {
+  return api<SkillData>(`/admin/skills/${id}`);
+}
+
+export function createSkill(data: Partial<SkillData>): Promise<SkillData> {
+  return api<SkillData>("/admin/skills", { method: "POST", body: data });
+}
+
+export function updateSkill(id: string, data: Partial<SkillData>): Promise<SkillData> {
+  return api<SkillData>(`/admin/skills/${id}`, { method: "PUT", body: data });
+}
+
+export function deleteSkill(id: string): Promise<void> {
+  return api<void>(`/admin/skills/${id}`, { method: "DELETE" });
+}
+
+// =============================================================================
+// Usage & Audit
+// =============================================================================
+
+export function listUsage(
+  params?: ListParams & { user_id?: string; provider?: string; date_from?: string; date_to?: string },
+): Promise<PaginatedResponse<UsageData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<UsageData>>(`/admin/usage${qs}`);
+}
+
+export function getSettings(): Promise<SettingsData> {
+  return api<SettingsData>("/admin/settings");
+}
+
+export function updateSettings(settings: Record<string, string>): Promise<SettingsData> {
+  return api<SettingsData>("/admin/settings", { method: "PUT", body: settings });
+}
+
+export function listAuditLogs(
+  params?: ListParams & { action?: string; actor_id?: string },
+): Promise<PaginatedResponse<AuditData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<AuditData>>(`/admin/audit${qs}`);
+}
+
+// =============================================================================
+// Groups
+// =============================================================================
+
+export function listGroups(
+  params?: ListParams,
+): Promise<PaginatedResponse<GroupData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<GroupData>>(`/admin/groups${qs}`);
 }
 
 export function getGroup(id: string): Promise<GroupData> {
@@ -377,16 +463,11 @@ export function listGroupMembers(groupId: string): Promise<GroupMemberData[]> {
 }
 
 export function addGroupMember(groupId: string, userId: string): Promise<void> {
-  return api<void>(`/admin/groups/${groupId}/members`, {
-    method: "POST",
-    body: { user_id: userId },
-  });
+  return api<void>(`/admin/groups/${groupId}/members`, { method: "POST", body: { user_id: userId } });
 }
 
 export function removeGroupMember(groupId: string, userId: string): Promise<void> {
-  return api<void>(`/admin/groups/${groupId}/members/${userId}`, {
-    method: "DELETE",
-  });
+  return api<void>(`/admin/groups/${groupId}/members/${userId}`, { method: "DELETE" });
 }
 
 export function listGroupModels(groupId: string): Promise<GroupModelData[]> {
@@ -394,23 +475,11 @@ export function listGroupModels(groupId: string): Promise<GroupModelData[]> {
 }
 
 export function assignModelToGroup(groupId: string, modelId: string): Promise<void> {
-  return api<void>(`/admin/groups/${groupId}/models`, {
-    method: "POST",
-    body: { model_id: modelId },
-  });
+  return api<void>(`/admin/groups/${groupId}/models`, { method: "POST", body: { model_id: modelId } });
 }
 
 export function removeModelFromGroup(groupId: string, modelId: string): Promise<void> {
-  return api<void>(`/admin/groups/${groupId}/models/${modelId}`, {
-    method: "DELETE",
-  });
-}
-
-export interface GroupToolData {
-  id: string;
-  name: string;
-  type: string;
-  enabled: boolean;
+  return api<void>(`/admin/groups/${groupId}/models/${modelId}`, { method: "DELETE" });
 }
 
 export function listGroupTools(groupId: string): Promise<GroupToolData[]> {
@@ -418,16 +487,11 @@ export function listGroupTools(groupId: string): Promise<GroupToolData[]> {
 }
 
 export function assignToolToGroup(groupId: string, toolId: string): Promise<void> {
-  return api<void>(`/admin/groups/${groupId}/tools`, {
-    method: "POST",
-    body: { tool_id: toolId },
-  });
+  return api<void>(`/admin/groups/${groupId}/tools`, { method: "POST", body: { tool_id: toolId } });
 }
 
 export function removeToolFromGroup(groupId: string, toolId: string): Promise<void> {
-  return api<void>(`/admin/groups/${groupId}/tools/${toolId}`, {
-    method: "DELETE",
-  });
+  return api<void>(`/admin/groups/${groupId}/tools/${toolId}`, { method: "DELETE" });
 }
 
 export function listToolGroups(toolId: string): Promise<GroupData[]> {
@@ -442,62 +506,30 @@ export function listModelGroups(modelId: string): Promise<GroupData[]> {
   return api<GroupData[]>(`/admin/models/${modelId}/groups`);
 }
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // Memory (admin)
-// ---------------------------------------------------------------------------
+// =============================================================================
 
-export interface MemoryData {
-  id: string;
-  tenant_id: string;
-  user_id: string;
-  session_id: string | null;
-  key: string;
-  value: string;
-  source: string;
-  created_at: string;
-  updated_at: string | null;
-}
-
-export function listAdminMemories(params?: {
-  tenant_id?: string;
-  user_id?: string;
-}): Promise<MemoryData[]> {
-  const searchParams = new URLSearchParams();
-  if (params?.tenant_id) searchParams.set("tenant_id", params.tenant_id);
-  if (params?.user_id) searchParams.set("user_id", params.user_id);
-  const qs = searchParams.toString();
-  return api<MemoryData[]>(`/admin/memories${qs ? `?${qs}` : ""}`);
+export function listAdminMemories(
+  params?: ListParams & { user_id?: string; source?: string },
+): Promise<PaginatedResponse<MemoryData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<MemoryData>>(`/admin/memories${qs}`);
 }
 
 export function deleteAdminMemory(id: string): Promise<void> {
   return api<void>(`/admin/memories/${id}`, { method: "DELETE" });
 }
 
-// ---------------------------------------------------------------------------
+// =============================================================================
 // Sessions (admin)
-// ---------------------------------------------------------------------------
+// =============================================================================
 
-export interface AdminSessionData {
-  id: string;
-  tenant_id: string;
-  user_id: string;
-  title: string;
-  is_pinned: boolean;
-  is_temporary: boolean;
-  tags: { id: string; name: string; color: string | null }[];
-  created_at: string;
-  updated_at: string;
-}
-
-export function listAdminSessions(params?: {
-  tenant_id?: string;
-  tag?: string;
-}): Promise<AdminSessionData[]> {
-  const searchParams = new URLSearchParams();
-  if (params?.tenant_id) searchParams.set("tenant_id", params.tenant_id);
-  if (params?.tag) searchParams.set("tag", params.tag);
-  const qs = searchParams.toString();
-  return api<AdminSessionData[]>(`/admin/sessions${qs ? `?${qs}` : ""}`);
+export function listAdminSessions(
+  params?: ListParams & { tag?: string; is_pinned?: boolean; is_temporary?: boolean },
+): Promise<PaginatedResponse<AdminSessionData>> {
+  const qs = buildQueryString({ ...params });
+  return api<PaginatedResponse<AdminSessionData>>(`/admin/sessions${qs}`);
 }
 
 export function deleteAdminSession(id: string): Promise<void> {

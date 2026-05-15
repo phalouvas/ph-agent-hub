@@ -4,6 +4,7 @@
 # DB helpers for writing and querying usage log rows.
 # =============================================================================
 
+from datetime import datetime
 from decimal import Decimal
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -88,16 +89,47 @@ async def list_usage_logs(
     *,
     tenant_id: str | None = None,
     user_id: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
-) -> list[UsageLog]:
-    """Query usage logs, optionally filtered by tenant and/or user."""
-    stmt = select(UsageLog).order_by(UsageLog.created_at.desc())
+    search: str | None = None,
+    provider: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[UsageLog], int]:
+    """Query usage logs with optional filtering, sorting, pagination."""
+    from datetime import datetime as dt_type
+    stmt = select(UsageLog)
 
     if tenant_id is not None:
         stmt = stmt.where(UsageLog.tenant_id == tenant_id)
     if user_id is not None:
         stmt = stmt.where(UsageLog.user_id == user_id)
+    if provider is not None:
+        stmt = stmt.where(UsageLog.provider == provider)
+    if date_from is not None:
+        stmt = stmt.where(UsageLog.created_at >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(UsageLog.created_at <= date_to)
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(
+        stmt, search,
+        [UsageLog.user_email, UsageLog.model_name],
+    )
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "created_at": UsageLog.created_at,
+            "tokens_in": UsageLog.tokens_in,
+            "tokens_out": UsageLog.tokens_out,
+            "cost": UsageLog.cost,
+        },
+        default_sort=UsageLog.created_at.desc(),
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
 
     stmt = stmt.limit(limit).offset(offset)
     result = await db.execute(stmt)

@@ -9,10 +9,30 @@ from ..core.exceptions import ConflictError, NotFoundError
 from ..db.orm.tenants import Tenant
 
 
-async def list_tenants(db: AsyncSession) -> list[Tenant]:
-    """Return all tenants."""
-    result = await db.execute(select(Tenant).order_by(Tenant.created_at))
-    return list(result.scalars().all())
+async def list_tenants(
+    db: AsyncSession,
+    *,
+    search: str | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Tenant], int]:
+    """Return all tenants with optional search, sorting, pagination."""
+    stmt = select(Tenant)
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(stmt, search, [Tenant.name])
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "name": Tenant.name,
+            "created_at": Tenant.created_at,
+        },
+        default_sort=Tenant.created_at,
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
 
 
 async def get_tenant_by_id(db: AsyncSession, tenant_id: str) -> Tenant | None:

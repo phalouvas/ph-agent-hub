@@ -42,13 +42,13 @@ export function UserForm({ open, user, duplicateFrom, onClose }: UserFormProps) 
 
   const { data: allGroups } = useQuery({
     queryKey: ["admin-groups"],
-    queryFn: () => listGroups(),
+    queryFn: () => listGroups().then(r => r.items),
     enabled: open,
   });
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants"],
-    queryFn: () => listTenants(),
+    queryFn: () => listTenants().then(r => r.items),
     enabled: open && isAdmin,
   });
 

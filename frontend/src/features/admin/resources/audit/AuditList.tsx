@@ -1,7 +1,8 @@
 // =============================================================================
 // PH Agent Hub — Admin AuditList
 // =============================================================================
-// Ant Design Table; lists audit log entries (admin only, read-only).
+// Ant Design Table with server-side search, action filter, sorting,
+// pagination (admin only, read-only).
 // =============================================================================
 
 import { useState } from "react";
@@ -15,10 +16,13 @@ import {
   List,
   Card,
   Tooltip,
+  Select,
 } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery as _useQuery } from "@tanstack/react-query";
 import { listAuditLogs, AuditData } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 
 const { useBreakpoint } = Grid;
 const { Text, Paragraph } = Typography;
@@ -50,35 +54,38 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   "session.deleted": { label: "Session Deleted", color: "red" },
 };
 
+const ACTION_OPTIONS = Object.entries(ACTION_LABELS).map(([value, info]) => ({
+  value,
+  label: info.label,
+}));
+
 export function AuditList() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const [searchText, setSearchText] = useState("");
 
-  const { data: audits, isLoading } = useQuery({
-    queryKey: ["admin-audit"],
-    queryFn: () => listAuditLogs(),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
 
-  const filteredData = (audits || []).filter((a) => {
-    if (!searchText.trim()) return true;
-    const lower = searchText.toLowerCase();
-    return (
-      a.action.toLowerCase().includes(lower) ||
-      (a.actor_email || "").toLowerCase().includes(lower) ||
-      (a.actor_full_name || "").toLowerCase().includes(lower) ||
-      (a.target_type || "").toLowerCase().includes(lower) ||
-      (a.ip_address || "").toLowerCase().includes(lower)
-    );
-  });
+  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+    ["admin-audit"],
+    (p) =>
+      listAuditLogs({
+        ...p,
+        search: debouncedSearch || undefined,
+      }),
+  );
+
+  const auditsData = data?.items || [];
+  const totalAudits = data?.total || 0;
 
   const columns = [
     {
       title: "Actor",
       dataIndex: "actor_email",
-      key: "actor",
+      key: "actor_email",
       width: 200,
       ellipsis: true,
+      sorter: true,
       render: (_: string, record: AuditData) => (
         <Space direction="vertical" size={0}>
           <Text strong>{record.actor_full_name || record.actor_email || record.actor_id.slice(0, 8) + "…"}</Text>
@@ -93,6 +100,7 @@ export function AuditList() {
       dataIndex: "action",
       key: "action",
       width: 160,
+      sorter: true,
       render: (v: string) => {
         const info = ACTION_LABELS[v];
         return info ? (
@@ -165,8 +173,7 @@ export function AuditList() {
       dataIndex: "created_at",
       key: "created_at",
       width: 170,
-      sorter: (a: AuditData, b: AuditData) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      sorter: true,
       defaultSortOrder: "descend" as const,
       render: (v: string) => (
         <Text style={{ fontSize: 12 }}>
@@ -176,79 +183,97 @@ export function AuditList() {
     },
   ];
 
-  const mobileRender = (item: AuditData) => {
-    const actionInfo = ACTION_LABELS[item.action];
-    return (
-      <Card
-        size="small"
-        style={{ marginBottom: 8 }}
-      >
-        <Card.Meta
-          title={
-            <Space>
-              {actionInfo ? (
-                <Tag color={actionInfo.color}>{actionInfo.label}</Tag>
-              ) : (
-                <Text code style={{ fontSize: 11 }}>{item.action}</Text>
-              )}
-            </Space>
-          }
-          description={
-            <>
-              <Paragraph style={{ margin: 0 }}>
-                <Text strong>
-                  {item.actor_full_name || item.actor_email || item.actor_id.slice(0, 8) + "…"}
-                </Text>
-                <Text type="secondary"> ({item.actor_role})</Text>
-              </Paragraph>
-              {item.target_type && (
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  {item.target_type}: {item.target_id?.slice(0, 8)}…
-                </Text>
-              )}
-              <br />
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                {new Date(item.created_at).toLocaleString()}
-                {item.ip_address && ` · ${item.ip_address}`}
-              </Text>
-            </>
-          }
-        />
-      </Card>
-    );
-  };
-
   return (
     <div>
-      <Space style={{ marginBottom: 16, width: "100%", justifyContent: "space-between" }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Input
           placeholder="Search by action, actor, target, IP…"
           prefix={<SearchOutlined />}
           allowClear
           value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          style={{ width: 320 }}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
         />
-        <Text type="secondary">
-          {filteredData.length} of {audits?.length || 0} entries
-        </Text>
+        <Select
+          placeholder="Action"
+          allowClear
+          style={{ width: 180 }}
+          value={(params as Record<string, string | undefined>).action}
+          onChange={(value) => updateParams({ action: value, page: 1 } as any)}
+          options={ACTION_OPTIONS}
+        />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={filteredData}
+          dataSource={auditsData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalAudits,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           locale={{ emptyText: "No audit log entries found" }}
-          renderItem={mobileRender}
+          renderItem={(item) => {
+            const actionInfo = ACTION_LABELS[item.action];
+            return (
+              <Card size="small" style={{ marginBottom: 8 }}>
+                <Card.Meta
+                  title={
+                    <Space>
+                      {actionInfo ? (
+                        <Tag color={actionInfo.color}>{actionInfo.label}</Tag>
+                      ) : (
+                        <Text code style={{ fontSize: 11 }}>{item.action}</Text>
+                      )}
+                    </Space>
+                  }
+                  description={
+                    <>
+                      <Paragraph style={{ margin: 0 }}>
+                        <Text strong>
+                          {item.actor_full_name || item.actor_email || item.actor_id.slice(0, 8) + "…"}
+                        </Text>
+                        <Text type="secondary"> ({item.actor_role})</Text>
+                      </Paragraph>
+                      {item.target_type && (
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {item.target_type}: {item.target_id?.slice(0, 8)}…
+                        </Text>
+                      )}
+                      <br />
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {new Date(item.created_at).toLocaleString()}
+                        {item.ip_address && ` · ${item.ip_address}`}
+                      </Text>
+                    </>
+                  }
+                />
+              </Card>
+            );
+          }}
         />
       ) : (
         <Table<AuditData>
           columns={columns}
-          dataSource={filteredData}
+          dataSource={auditsData}
           rowKey="id"
           loading={isLoading}
           size="small"
-          pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (t) => `${t} entries` }}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalAudits,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange as any}
           locale={{ emptyText: "No audit log entries found" }}
         />
       )}

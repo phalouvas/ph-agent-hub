@@ -1,8 +1,8 @@
 // =============================================================================
 // PH Agent Hub — Admin GroupList
 // =============================================================================
-// TanStack Query + Ant Design Table; inline expandable panels for member
-// and model management; mobile Card fallback.
+// TanStack Query + Ant Design Table with server-side search, sorting,
+// pagination; inline expandable panels for member/model/tool management.
 // =============================================================================
 
 import { useState } from "react";
@@ -21,10 +21,12 @@ import {
   Col,
   List,
   Empty,
+  Input,
 } from "antd";
 import {
   PlusOutlined,
   DeleteOutlined,
+  SearchOutlined,
   UsergroupAddOutlined,
   ApiOutlined,
   ToolOutlined,
@@ -51,6 +53,8 @@ import {
   GroupModelData,
   GroupToolData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 import { GroupForm } from "./GroupForm";
 
 const { Text } = Typography;
@@ -64,28 +68,41 @@ export function GroupList() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState<GroupData | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState("");
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || undefined;
 
-  const { data: groups, isLoading } = useQuery({
-    queryKey: ["admin-groups", tenantId],
-    queryFn: () => listGroups({ tenant_id: tenantId }),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
 
-  const { data: users } = useQuery({
+  const { data, isLoading, updateParams, handleTableChange } = useAdminTable(
+    ["admin-groups"],
+    (p) =>
+      listGroups({
+        ...p,
+        tenant_id: tenantId,
+        search: debouncedSearch || undefined,
+      }),
+    { tenant_id: tenantId },
+  );
+
+  const { data: usersData } = useQuery({
     queryKey: ["admin-users", tenantId],
-    queryFn: () => listUsers({ tenant_id: tenantId }),
+    queryFn: () => listUsers({ tenant_id: tenantId, page_size: 500 }),
   });
 
-  const { data: models } = useQuery({
+  const { data: modelsData } = useQuery({
     queryKey: ["admin-models", tenantId],
-    queryFn: () => listModels({ tenant_id: tenantId }),
+    queryFn: () => listModels({ tenant_id: tenantId, page_size: 500 }),
   });
 
-  const { data: tools } = useQuery({
+  const { data: toolsData } = useQuery({
     queryKey: ["admin-tools", tenantId],
-    queryFn: () => listTools({ tenant_id: tenantId }),
+    queryFn: () => listTools({ tenant_id: tenantId, page_size: 500 }),
   });
+
+  const users = usersData?.items || [];
+  const models = modelsData?.items || [];
+  const tools = toolsData?.items || [];
 
   const deleteMutation = useMutation({
     mutationFn: deleteGroup,
@@ -170,6 +187,9 @@ export function GroupList() {
     <ExpandablePanels groupId={record.id} users={users || []} models={models || []} tools={tools || []} />
   );
 
+  const groupsData = data?.items || [];
+  const totalGroups = data?.total || 0;
+
   return (
     <div style={{ padding: isMobile ? 8 : 24 }}>
       <Space
@@ -178,10 +198,24 @@ export function GroupList() {
           width: "100%",
           justifyContent: "space-between",
         }}
+        wrap
       >
-        <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>
-          Groups
-        </Typography.Title>
+        <Space wrap>
+          <Typography.Title level={isMobile ? 5 : 4} style={{ margin: 0 }}>
+            Groups
+          </Typography.Title>
+          <Input
+            placeholder="Search by name…"
+            prefix={<SearchOutlined />}
+            allowClear
+            value={searchText}
+            onChange={(e) => {
+              setSearchText(e.target.value);
+              updateParams({ page: 1 });
+            }}
+            style={{ width: 220 }}
+          />
+        </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
           Create Group
         </Button>
@@ -189,7 +223,7 @@ export function GroupList() {
 
       {isMobile ? (
         <div>
-          {groups?.map((group) => (
+          {groupsData.map((group) => (
             <Card
               key={group.id}
               size="small"
@@ -243,10 +277,19 @@ export function GroupList() {
         </div>
       ) : (
         <Table
-          dataSource={groups}
+          dataSource={groupsData}
           columns={columns}
           rowKey="id"
           loading={isLoading}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalGroups,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange as any}
           expandable={{
             expandedRowRender,
             expandedRowKeys: expandedKey ? [expandedKey] : [],

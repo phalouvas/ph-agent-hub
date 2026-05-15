@@ -23,16 +23,27 @@ def _slugify(title: str) -> str:
 
 async def list_skills(
     db: AsyncSession,
-    tenant_id: str,
+    tenant_id: str | None = None,
     user_id: str | None = None,
     visibility: str | None = None,
-) -> list[Skill]:
-    """Return skills filtered by tenant and optional user/visibility.
+    *,
+    search: str | None = None,
+    execution_type: str | None = None,
+    enabled: bool | None = None,
+    sort_by: str | None = None,
+    sort_dir: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Skill], int]:
+    """Return skills with optional filtering, sorting, and pagination.
 
     For user-facing listing: tenant-shared + own personal skills.
-    For admin listing: all skills in the tenant.
+    For admin listing: all skills (when tenant_id is None).
     """
-    stmt = select(Skill).where(Skill.tenant_id == tenant_id)
+    stmt = select(Skill)
+
+    if tenant_id is not None:
+        stmt = stmt.where(Skill.tenant_id == tenant_id)
 
     if visibility is not None:
         stmt = stmt.where(Skill.visibility == visibility)
@@ -43,9 +54,29 @@ async def list_skills(
             (Skill.visibility == "tenant") | (Skill.user_id == user_id)
         )
 
-    stmt = stmt.order_by(Skill.created_at)
-    result = await db.execute(stmt)
-    return list(result.scalars().all())
+    if execution_type is not None:
+        stmt = stmt.where(Skill.execution_type == execution_type)
+    if enabled is not None:
+        stmt = stmt.where(Skill.enabled == enabled)
+
+    from ..core.pagination import apply_search, apply_sorting, paginate
+    stmt = apply_search(
+        stmt, search,
+        [Skill.title, Skill.description],
+    )
+    stmt = apply_sorting(
+        stmt, sort_by, sort_dir,
+        column_map={
+            "title": Skill.title,
+            "execution_type": Skill.execution_type,
+            "visibility": Skill.visibility,
+            "enabled": Skill.enabled,
+            "created_at": Skill.created_at,
+        },
+        default_sort=Skill.created_at,
+    )
+
+    return await paginate(db, stmt, page=page, page_size=page_size)
 
 
 async def get_skill_by_id(db: AsyncSession, skill_id: str) -> Skill | None:

@@ -1,10 +1,11 @@
 // =============================================================================
 // PH Agent Hub — Admin ToolList
 // =============================================================================
-// Ant Design Table/List; type column (erpnext/membrane/custom).
+// Ant Design Table/List with server-side search, type/category/enabled
+// filters, sorting, pagination.
 // =============================================================================
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import {
   Table,
   Button,
@@ -18,8 +19,9 @@ import {
   Card,
   Typography,
   Select,
+  Input,
 } from "antd";
-import { EditOutlined, DeleteOutlined, CopyOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, CopyOutlined, SearchOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -29,6 +31,8 @@ import {
   listTenants,
   ToolData,
 } from "../../services/admin";
+import { useAdminTable } from "../../hooks/useAdminTable";
+import { useDebounce } from "../../hooks/useDebounce";
 import { ToolForm } from "./ToolForm";
 
 const { useBreakpoint } = Grid;
@@ -37,24 +41,32 @@ export function ToolList() {
   const [editingTool, setEditingTool] = useState<ToolData | null>(null);
   const [duplicatingTool, setDuplicatingTool] = useState<ToolData | null>(null);
   const [creating, setCreating] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined);
+  const [searchText, setSearchText] = useState("");
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const tenantId = searchParams.get("tenant_id") || undefined;
 
-  const { data: tools, isLoading } = useQuery({
-    queryKey: ["admin-tools", tenantId],
-    queryFn: () => listTools({ tenant_id: tenantId }),
-  });
+  const debouncedSearch = useDebounce(searchText, 300);
+
+  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+    ["admin-tools"],
+    (p) =>
+      listTools({
+        ...p,
+        tenant_id: tenantId,
+        search: debouncedSearch || undefined,
+      }),
+    { tenant_id: tenantId },
+  );
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-tool-list"],
     queryFn: () => listTenants(),
   });
 
-  const tenantNameById = new Map((tenants || []).map((t) => [t.id, t.name]));
+  const tenantNameById = new Map((tenants?.items || []).map((t) => [t.id, t.name]));
 
   const CATEGORY_LABELS: Record<string, string> = {
     financial: "Financial",
@@ -76,11 +88,10 @@ export function ToolList() {
     general: "default",
   };
 
-  const filteredTools = useMemo(() => {
-    if (!tools) return [];
-    if (!categoryFilter) return tools;
-    return tools.filter((t) => t.category === categoryFilter);
-  }, [tools, categoryFilter]);
+  const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
+    value,
+    label,
+  }));
 
   const deleteMutation = useMutation({
     mutationFn: deleteTool,
@@ -102,11 +113,12 @@ export function ToolList() {
   });
 
   const columns = [
-    { title: "Name", dataIndex: "name", key: "name" },
+    { title: "Name", dataIndex: "name", key: "name", sorter: true },
     {
       title: "Category",
       dataIndex: "category",
       key: "category",
+      sorter: true,
       render: (v: string) => (
         <Tag color={CATEGORY_COLORS[v] || "default"}>
           {CATEGORY_LABELS[v] || v}
@@ -117,6 +129,7 @@ export function ToolList() {
       title: "Type",
       dataIndex: "type",
       key: "type",
+      sorter: true,
       render: (v: string, record: ToolData) => (
         <Space size={4}>
           <Tag color="purple">{v}</Tag>
@@ -182,32 +195,63 @@ export function ToolList() {
     },
   ];
 
+  const toolsData = data?.items || [];
+  const totalTools = data?.total || 0;
+
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Button type="primary" onClick={() => setCreating(true)}>
           Create Tool
         </Button>
-      </Space>
-
-      <Space style={{ marginBottom: 16, marginLeft: 8 }}>
+        <Input
+          placeholder="Search by name, type…"
+          prefix={<SearchOutlined />}
+          allowClear
+          value={searchText}
+          onChange={(e) => {
+            setSearchText(e.target.value);
+            updateParams({ page: 1 });
+          }}
+          style={{ width: 220 }}
+        />
         <Select
           allowClear
           placeholder="Filter by category"
-          style={{ width: 180 }}
-          value={categoryFilter}
-          onChange={(val) => setCategoryFilter(val)}
-          options={Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
-            label,
-            value,
-          }))}
+          style={{ width: 160 }}
+          value={params.category as string | undefined}
+          onChange={(value) => updateParams({ category: value, page: 1 })}
+          options={CATEGORY_OPTIONS}
+        />
+        <Select
+          allowClear
+          placeholder="Status"
+          style={{ width: 120 }}
+          value={params.enabled !== undefined ? String(params.enabled) : undefined}
+          onChange={(value) =>
+            updateParams({
+              enabled: value !== undefined ? value === "true" : undefined,
+              page: 1,
+            })
+          }
+          options={[
+            { label: "Enabled", value: "true" },
+            { label: "Disabled", value: "false" },
+          ]}
         />
       </Space>
 
       {isMobile ? (
         <List
           loading={isLoading}
-          dataSource={filteredTools}
+          dataSource={toolsData}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalTools,
+            onChange: (p) => updateParams({ page: p }),
+            showSizeChanger: false,
+          }}
           renderItem={(tool) => (
             <Card
               size="small"
@@ -264,9 +308,18 @@ export function ToolList() {
       ) : (
         <Table
           columns={columns}
-          dataSource={filteredTools}
+          dataSource={toolsData}
           rowKey="id"
           loading={isLoading}
+          pagination={{
+            current: data?.page || 1,
+            pageSize: data?.page_size || 25,
+            total: totalTools,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "25", "50", "100"],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+          }}
+          onChange={handleTableChange}
         />
       )}
 
