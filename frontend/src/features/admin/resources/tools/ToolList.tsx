@@ -88,6 +88,9 @@ export function ToolList() {
       queryClient.invalidateQueries({ queryKey: ["admin-tools"] });
       message.success("Tool deleted");
     },
+    onError: (error: Error) => {
+      message.error(error.message || "Failed to delete tool");
+    },
   });
 
   const toggleEnabled = useMutation({

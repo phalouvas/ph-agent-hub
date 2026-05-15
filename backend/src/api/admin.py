@@ -774,6 +774,9 @@ async def delete_model(
     """Delete a model. Manager scoped to own tenant."""
     target = await get_model_by_id(db, model_id)
 
+    if target is None:
+        raise NotFoundError("Model not found")
+
     if current_user.role == "manager":
         if target.tenant_id != current_user.tenant_id:
             raise ForbiddenError("Managers can only delete models in their own tenant")
@@ -924,6 +927,9 @@ async def delete_tool(
 ):
     """Delete a tool. Manager scoped to own tenant."""
     target = await get_tool_by_id(db, tool_id)
+
+    if target is None:
+        raise NotFoundError("Tool not found")
 
     if current_user.role == "manager":
         if target.tenant_id != current_user.tenant_id:
