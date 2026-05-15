@@ -61,6 +61,9 @@ export function ModelList() {
       queryClient.invalidateQueries({ queryKey: ["admin-models"] });
       message.success("Model deleted");
     },
+    onError: (error: Error) => {
+      message.error(error.message || "Failed to delete model");
+    },
   });
 
   const toggleEnabled = useMutation({

@@ -290,6 +290,7 @@ export function ToolForm({ open, tool, duplicateFrom, onClose }: ToolFormProps) 
               { label: "Image Generation", value: "image_generation" },
               { label: "Market Overview", value: "market_overview" },
               { label: "Membrane", value: "membrane" },
+              { label: "PDF Extractor", value: "pdf_extractor" },
               { label: "Portfolio", value: "portfolio" },
               { label: "RAG Search", value: "rag_search" },
               { label: "RSS Feed", value: "rss_feed" },

@@ -502,21 +502,66 @@ def build_sec_filings_tools(tool_config: dict | None = None) -> list:
 
             filing = filing_list[0]
 
-            # Get full text and split by SEC Part/Item headings
-            full_text = await asyncio.to_thread(filing.text)
-            sections = _split_filing_sections(full_text)
+            # Use edgartools' built-in section extraction (handles
+            # TOC vs real content deduplication, filing agent
+            # detection, and multi-strategy parsing).  Try a direct
+            # lookup via __getitem__ first — edgartools resolves
+            # Part-qualified names correctly (e.g. "Item 2" on a
+            # 10-Q returns Part I MD&A, not Part II Item 2).
+            report = await asyncio.to_thread(filing.obj)
 
-            available = list(sections.keys())
+            section_text = ""
+            available: list[str] = []
 
-            # Case-insensitive partial match
-            target = section.strip().lower()
-            matched = None
-            for key in available:
-                if target in key.lower():
-                    matched = key
-                    break
+            if report is not None:
+                available = await asyncio.to_thread(lambda: report.items)
 
-            if matched is None:
+                # Try edgartools' built-in lookup with the raw user
+                # section string — it handles Part qualification
+                try:
+                    direct = await asyncio.to_thread(report.__getitem__, section.strip())
+                    if direct:
+                        matched = section.strip()
+                        section_text = direct
+                except Exception:
+                    direct = None
+
+                # If direct lookup failed, try case-insensitive match
+                # across the available items list, preferring Part I
+                # matches on 10-Q filings
+                if not section_text:
+                    target = section.strip().lower()
+                    # Separate Part I and Part II items
+                    part_i_items = [k for k in available if k.lower().startswith("part i")]
+                    part_ii_items = [k for k in available if k.lower().startswith("part ii")]
+                    other_items = [k for k in available if k not in part_i_items and k not in part_ii_items]
+
+                    # Search order: Part I items first (for 10-Q MD&A),
+                    # then other items, then Part II
+                    matched = None
+                    for key in part_i_items + other_items + part_ii_items:
+                        if target in key.lower():
+                            matched = key
+                            break
+
+                    if matched:
+                        extracted = await asyncio.to_thread(report.__getitem__, matched)
+                        section_text = extracted or ""
+            else:
+                # Fallback: regex-based splitter for unrecognised filing types
+                full_text = await asyncio.to_thread(filing.text)
+                sections = _split_filing_sections(full_text)
+                available = list(sections.keys())
+                target = section.strip().lower()
+                matched = None
+                for key in available:
+                    if target in key.lower():
+                        matched = key
+                        break
+                if matched:
+                    section_text = sections.get(matched, "")
+
+            if not section_text:
                 return {
                     "url": url,
                     "section": section,
@@ -531,8 +576,8 @@ def build_sec_filings_tools(tool_config: dict | None = None) -> list:
             return {
                 "url": url,
                 "section": matched,
-                "text": sections[matched],
-                "text_length": len(sections[matched]),
+                "text": section_text,
+                "text_length": len(section_text),
                 "available_sections": available,
                 "source": "SEC EDGAR (edgartools)",
             }
@@ -565,9 +610,14 @@ def _split_filing_sections(text: str) -> dict[str, str]:
         name = m.group(1).strip().rstrip(".-")
         body = text[start:end].strip()
         key = name
-        counter = 2
-        while key in sections:
-            key = f"{name} ({counter})"
-            counter += 1
-        sections[key] = body
+        # SEC filings often have a Table of Contents that lists every
+        # heading followed by the next heading name (tiny body), then
+        # the actual content later.  When a duplicate heading appears,
+        # keep the version with the larger body (the real section).
+        if key in sections:
+            if len(body) > len(sections[key]):
+                sections[key] = body
+            # Otherwise discard this shorter-body duplicate
+        else:
+            sections[key] = body
     return sections

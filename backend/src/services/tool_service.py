@@ -2,18 +2,21 @@
 # PH Agent Hub — Tool Service (CRUD)
 # =============================================================================
 
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..core.exceptions import NotFoundError, ValidationError
 from ..db.orm.groups import ToolGroup, UserGroupMember
 from ..db.orm.tools import Tool
+from ..db.orm.skills import SkillAllowedTool
+from ..db.orm.sessions import SessionActiveTool
+from ..db.orm.user_tool_preferences import UserToolPreference
 
 VALID_TOOL_TYPES = {
     "erpnext", "membrane", "custom", "datetime", "web_search",
     "fetch_url", "weather", "calculator", "wikipedia", "rss_feed",
     "currency_exchange", "market_overview", "etf_data", "stock_data",
-    "portfolio", "sec_filings",
+    "portfolio", "sec_filings", "pdf_extractor",
     "code_interpreter", "sql_query", "document_generation", "browser",
     "rag_search", "github", "calendar", "image_generation",
     "slack", "email",
@@ -26,6 +29,7 @@ TOOL_TYPE_TO_CATEGORY = {
     "stock_data": "financial",
     "portfolio": "financial",
     "sec_filings": "financial",
+    "pdf_extractor": "web",
     "web_search": "web",
     "fetch_url": "web",
     "rss_feed": "web",
@@ -157,10 +161,31 @@ async def update_tool(db: AsyncSession, tool_id: str, **fields) -> Tool:
 
 
 async def delete_tool(db: AsyncSession, tool_id: str) -> None:
-    """Delete a tool by ID. Raises NotFoundError if missing."""
+    """Delete a tool by ID. Raises NotFoundError if missing.
+    Removes all references (groups, skills, sessions, user preferences) first."""
     tool = await get_tool_by_id(db, tool_id)
     if tool is None:
         raise NotFoundError("Tool not found")
+
+    # Remove tool from any assigned groups
+    await db.execute(
+        delete(ToolGroup).where(ToolGroup.tool_id == tool_id)
+    )
+
+    # Remove tool from skill allowed tools
+    await db.execute(
+        delete(SkillAllowedTool).where(SkillAllowedTool.tool_id == tool_id)
+    )
+
+    # Remove tool from session active tools
+    await db.execute(
+        delete(SessionActiveTool).where(SessionActiveTool.tool_id == tool_id)
+    )
+
+    # Remove tool from user preferences
+    await db.execute(
+        delete(UserToolPreference).where(UserToolPreference.tool_id == tool_id)
+    )
 
     await db.delete(tool)
     await db.commit()

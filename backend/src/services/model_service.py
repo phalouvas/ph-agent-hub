@@ -9,6 +9,9 @@ from ..core.exceptions import NotFoundError
 from ..db.orm.models import Model
 from ..db.orm.groups import ModelGroup, UserGroupMember
 from ..db.orm.sessions import Session
+from ..db.orm.users import User
+from ..db.orm.skills import Skill
+from ..db.orm.messages import Message
 
 
 async def list_models(
@@ -114,7 +117,7 @@ async def update_model(db: AsyncSession, model_id: str, **fields) -> Model:
 
 async def delete_model(db: AsyncSession, model_id: str) -> None:
     """Delete a model by ID. Raises NotFoundError if missing.
-    Clears references from sessions that use this model first."""
+    Clears all references (sessions, users, skills, messages, groups) first."""
     model = await get_model_by_id(db, model_id)
     if model is None:
         raise NotFoundError("Model not found")
@@ -124,6 +127,32 @@ async def delete_model(db: AsyncSession, model_id: str) -> None:
         update(Session)
         .where(Session.selected_model_id == model_id)
         .values(selected_model_id=None)
+    )
+
+    # Clear default_model_id in users that reference this model
+    await db.execute(
+        update(User)
+        .where(User.default_model_id == model_id)
+        .values(default_model_id=None)
+    )
+
+    # Clear default_model_id in skills that reference this model
+    await db.execute(
+        update(Skill)
+        .where(Skill.default_model_id == model_id)
+        .values(default_model_id=None)
+    )
+
+    # Clear model_id in messages that reference this model
+    await db.execute(
+        update(Message)
+        .where(Message.model_id == model_id)
+        .values(model_id=None)
+    )
+
+    # Remove model from any assigned groups
+    await db.execute(
+        ModelGroup.__table__.delete().where(ModelGroup.model_id == model_id)
     )
 
     await db.delete(model)

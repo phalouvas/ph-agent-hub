@@ -1154,6 +1154,9 @@ async def _build_tool_callables(
         return build_browser_tools(
             tool.config or {}, tenant_id=tenant_id
         )
+    elif tool.type == "pdf_extractor":
+        from ..tools.pdf_extractor import build_pdf_extractor_tools
+        return build_pdf_extractor_tools(tool.config or {})
     elif tool.type == "rag_search":
         from ..tools.rag_search import build_rag_search_tools
         return build_rag_search_tools(tool.config or {})

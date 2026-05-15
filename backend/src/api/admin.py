@@ -31,6 +31,7 @@ from ..services.tenant_service import (
     create_tenant as _svc_create_tenant,
     delete_tenant as _svc_delete_tenant,
     force_delete_tenant as _svc_force_delete_tenant,
+    get_tenant_by_id as _svc_get_tenant_by_id,
     list_tenants as _svc_list_tenants,
     update_tenant as _svc_update_tenant,
 )
@@ -367,17 +368,23 @@ class SettingsResponse(BaseModel):
 
 
 # =============================================================================
-# Tenant Endpoints (admin only)
+# Tenant Endpoints (admin or manager)
 # =============================================================================
 
 
 @router.get("/tenants", response_model=list[TenantResponse])
 async def list_tenants(
     db: AsyncSession = Depends(get_db),
-    _admin: UserORM = Depends(require_admin),
+    current_user: UserORM = Depends(require_admin_or_manager),
 ):
-    """List all tenants with aggregate usage stats (admin only)."""
-    tenants = await _svc_list_tenants(db)
+    """List tenants with aggregate usage stats.
+    Admin sees all tenants; manager sees only their own tenant."""
+    if current_user.role == "admin":
+        tenants = await _svc_list_tenants(db)
+    else:
+        tenant = await _svc_get_tenant_by_id(db, current_user.tenant_id)
+        tenants = [tenant] if tenant else []
+
     aggregates = await get_tenant_aggregates(db)
 
     results: list[TenantResponse] = []
@@ -774,6 +781,9 @@ async def delete_model(
     """Delete a model. Manager scoped to own tenant."""
     target = await get_model_by_id(db, model_id)
 
+    if target is None:
+        raise NotFoundError("Model not found")
+
     if current_user.role == "manager":
         if target.tenant_id != current_user.tenant_id:
             raise ForbiddenError("Managers can only delete models in their own tenant")
@@ -924,6 +934,9 @@ async def delete_tool(
 ):
     """Delete a tool. Manager scoped to own tenant."""
     target = await get_tool_by_id(db, tool_id)
+
+    if target is None:
+        raise NotFoundError("Tool not found")
 
     if current_user.role == "manager":
         if target.tenant_id != current_user.tenant_id:
