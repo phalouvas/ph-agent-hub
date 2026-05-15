@@ -483,8 +483,22 @@ def build_stock_data_tools(tool_config: dict | None = None) -> list:
                                     "revenue_estimate": _safe_float(row.get("Revenue Average", row.get("revenueEstimate"))),
                                 })
                     elif isinstance(cal, dict):
+                        raw_date = cal.get("Earnings Date", "")
+                        # Normalise: yfinance returns [datetime.date, ...] list
+                        if isinstance(raw_date, (list, tuple)):
+                            formatted_dates = []
+                            for d in raw_date:
+                                if hasattr(d, "isoformat"):
+                                    formatted_dates.append(d.isoformat())
+                                else:
+                                    formatted_dates.append(str(d))
+                            date_str = ", ".join(formatted_dates) if formatted_dates else ""
+                        elif hasattr(raw_date, "isoformat"):
+                            date_str = raw_date.isoformat()
+                        else:
+                            date_str = str(raw_date)
                         upcoming.append({
-                            "date": str(cal.get("Earnings Date", "")),
+                            "date": date_str,
                             "eps_estimate": _safe_float(cal.get("Earnings Average")),
                             "revenue_estimate": _safe_float(cal.get("Revenue Average")),
                         })
