@@ -72,7 +72,7 @@ async def list_tools(
     is_public: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
-    page: int = 1,
+    page: int | None = None,
     page_size: int = 25,
 ) -> tuple[list[Tool], int]:
     """Return tools with optional filtering, sorting, and pagination.

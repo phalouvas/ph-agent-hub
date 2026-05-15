@@ -44,7 +44,7 @@ async def create_session(
             selected_model_id = user.default_model_id
         else:
             # First accessible enabled model
-            models = await _svc_list_models(
+            models, _ = await _svc_list_models(
                 db, tenant_id=tenant_id, user_id=user_id
             )
             enabled = [m for m in models if m.enabled]
@@ -107,7 +107,7 @@ async def list_admin_sessions(
     is_temporary: bool | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
-    page: int = 1,
+    page: int | None = None,
     page_size: int = 25,
 ) -> tuple[list[Session], int]:
     """List sessions for admin views with filtering, sorting, pagination.

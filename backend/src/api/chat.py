@@ -1593,7 +1593,7 @@ async def list_available_tools(
     """
     from ..services.tool_service import list_tools
 
-    tools = await list_tools(
+    tools, _ = await list_tools(
         db,
         tenant_id=current_user.tenant_id,
         user_id=current_user.id,

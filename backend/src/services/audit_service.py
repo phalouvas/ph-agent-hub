@@ -79,7 +79,7 @@ async def list_audit_logs(
     actor_id: str | None = None,
     sort_by: str | None = None,
     sort_dir: str | None = None,
-    page: int = 1,
+    page: int | None = None,
     page_size: int = 25,
 ) -> tuple[list[AuditLog], int]:
     """Query audit logs with optional filtering, sorting, pagination."""

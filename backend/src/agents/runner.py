@@ -861,7 +861,7 @@ async def _resolve_model(
 
     # 4. first accessible enabled model
     from ..services.model_service import list_models as _svc_list_models
-    models = await _svc_list_models(
+    models, _ = await _svc_list_models(
         db, tenant_id=tenant_id, user_id=user_id
     )
     enabled = [m for m in models if m.enabled]

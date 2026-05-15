@@ -61,7 +61,7 @@ async def set_default_model(
             raise NotFoundError("Model not found")
 
         # Validate the model is accessible to this user
-        accessible_models = await _svc_list_models(
+        accessible_models, _ = await _svc_list_models(
             db, tenant_id=current_user.tenant_id, user_id=current_user.id
         )
         accessible_ids = {m.id for m in accessible_models}

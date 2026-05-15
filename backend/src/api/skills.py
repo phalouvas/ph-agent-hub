@@ -73,7 +73,7 @@ async def list_skills(
     current_user: UserORM = Depends(get_current_user),
 ):
     """Return tenant-shared skills + user's own personal skills."""
-    skills = await _svc_list_skills(
+    skills, _ = await _svc_list_skills(
         db,
         tenant_id=current_user.tenant_id,
         user_id=current_user.id,

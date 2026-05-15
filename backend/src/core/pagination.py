@@ -30,15 +30,22 @@ class PaginatedResponse(BaseModel, Generic[T]):
 async def paginate(
     db: AsyncSession,
     base_stmt,
-    page: int = 1,
+    page: int | None = None,
     page_size: int = 25,
 ) -> tuple[list, int]:
     """Execute a paginated query and return (items, total).
 
     The base_stmt should be a fully-formed select() with WHERE clauses and
-    ORDER BY already applied.  This function wraps it with LIMIT/OFFSET and
-    runs a parallel COUNT(*).
+    ORDER BY already applied.  When ``page`` is None, returns ALL matching
+    rows without pagination.  When ``page`` is an integer, applies
+    LIMIT/OFFSET and runs a parallel COUNT(*).
     """
+    if page is None:
+        # Return all items without pagination
+        result = await db.execute(base_stmt)
+        items = list(result.scalars().all())
+        return items, len(items)
+
     # Count total matching rows
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
     total = (await db.execute(count_stmt)).scalar() or 0
