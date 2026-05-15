@@ -33,6 +33,14 @@ export function useAdminTable<T>(
     setParams((prev) => ({ ...prev, ...patch }));
   }, []);
 
+  /**
+   * Update search text and reset page to 1.  Callers should feed their
+   * debounced search value here so it becomes part of the queryKey.
+   */
+  const setSearch = useCallback((search: string | undefined) => {
+    setParams((prev) => ({ ...prev, search, page: 1 }));
+  }, []);
+
   const handleTableChange = useCallback(
     (
       pagination: TablePaginationConfig,
@@ -67,5 +75,6 @@ export function useAdminTable<T>(
     updateParams,
     handleTableChange,
     resetFilters,
+    setSearch,
   };
 }

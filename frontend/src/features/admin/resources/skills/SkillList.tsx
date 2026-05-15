@@ -5,7 +5,7 @@
 // enabled filters, sorting, pagination.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Table,
   Button,
@@ -51,16 +51,15 @@ export function SkillList() {
 
   const debouncedSearch = useDebounce(searchText, 300);
 
-  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+  const { data, isLoading, params, updateParams, handleTableChange, setSearch } = useAdminTable(
     ["admin-skills"],
-    (p) =>
-      listSkills({
-        ...p,
-        tenant_id: tenantId,
-        search: debouncedSearch || undefined,
-      }),
+    (p) => listSkills({ ...p, tenant_id: tenantId }),
     { tenant_id: tenantId },
   );
+
+  useEffect(() => {
+    setSearch(debouncedSearch || undefined);
+  }, [debouncedSearch, setSearch]);
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-skill-list"],

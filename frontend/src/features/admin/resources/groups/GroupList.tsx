@@ -5,7 +5,7 @@
 // pagination; inline expandable panels for member/model/tool management.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Table,
   Button,
@@ -74,16 +74,15 @@ export function GroupList() {
 
   const debouncedSearch = useDebounce(searchText, 300);
 
-  const { data, isLoading, updateParams, handleTableChange } = useAdminTable(
+  const { data, isLoading, updateParams, handleTableChange, setSearch } = useAdminTable(
     ["admin-groups"],
-    (p) =>
-      listGroups({
-        ...p,
-        tenant_id: tenantId,
-        search: debouncedSearch || undefined,
-      }),
+    (p) => listGroups({ ...p, tenant_id: tenantId }),
     { tenant_id: tenantId },
   );
+
+  useEffect(() => {
+    setSearch(debouncedSearch || undefined);
+  }, [debouncedSearch, setSearch]);
 
   const { data: usersData } = useQuery({
     queryKey: ["admin-users", tenantId],

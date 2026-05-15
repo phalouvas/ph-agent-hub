@@ -5,7 +5,7 @@
 // pagination (admin only, read-only).
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Table,
   Input,
@@ -66,14 +66,14 @@ export function AuditList() {
 
   const debouncedSearch = useDebounce(searchText, 300);
 
-  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+  const { data, isLoading, params, updateParams, handleTableChange, setSearch } = useAdminTable(
     ["admin-audit"],
-    (p) =>
-      listAuditLogs({
-        ...p,
-        search: debouncedSearch || undefined,
-      }),
+    (p) => listAuditLogs({ ...p }),
   );
+
+  useEffect(() => {
+    setSearch(debouncedSearch || undefined);
+  }, [debouncedSearch, setSearch]);
 
   const auditsData = data?.items || [];
   const totalAudits = data?.total || 0;

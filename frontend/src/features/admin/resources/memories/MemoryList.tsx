@@ -5,7 +5,7 @@
 // pagination.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Table,
@@ -48,16 +48,15 @@ export function MemoryList() {
 
   const debouncedSearch = useDebounce(searchText, 300);
 
-  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+  const { data, isLoading, params, updateParams, handleTableChange, setSearch } = useAdminTable(
     ["admin-memories"],
-    (p) =>
-      listAdminMemories({
-        ...p,
-        tenant_id: tenantId,
-        search: debouncedSearch || undefined,
-      }),
+    (p) => listAdminMemories({ ...p, tenant_id: tenantId }),
     { tenant_id: tenantId },
   );
+
+  useEffect(() => {
+    setSearch(debouncedSearch || undefined);
+  }, [debouncedSearch, setSearch]);
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-memory-list"],

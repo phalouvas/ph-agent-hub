@@ -5,7 +5,7 @@
 // Server-side pagination, sorting, role/active/search filters.
 // =============================================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Table,
   Button,
@@ -57,16 +57,15 @@ export function UserList() {
 
   const debouncedSearch = useDebounce(searchText, 300);
 
-  const { data, isLoading, params, updateParams, handleTableChange } = useAdminTable(
+  const { data, isLoading, params, updateParams, handleTableChange, setSearch } = useAdminTable(
     ["admin-users"],
-    (p) =>
-      listUsers({
-        ...p,
-        tenant_id: tenantId,
-        search: debouncedSearch || undefined,
-      }),
+    (p) => listUsers({ ...p, tenant_id: tenantId }),
     { tenant_id: tenantId },
   );
+
+  useEffect(() => {
+    setSearch(debouncedSearch || undefined);
+  }, [debouncedSearch, setSearch]);
 
   const { data: tenants } = useQuery({
     queryKey: ["admin-tenants-user-list"],
