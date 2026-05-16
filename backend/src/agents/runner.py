@@ -27,6 +27,12 @@ from typing import Any, AsyncIterator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent_framework import (
+    CharacterEstimatorTokenizer,
+    TokenBudgetComposedStrategy,
+    ToolResultCompactionStrategy,
+)
+
 from ..core.config import settings
 from ..core.exceptions import ValidationError, NotFoundError
 from ..core.redis import (
@@ -1258,6 +1264,72 @@ async def _build_erpnext_callables(
 
 
 # ---------------------------------------------------------------------------
+# Mid-run compaction (Issue #199 — prevents context overflow on tool-heavy runs)
+# ---------------------------------------------------------------------------
+
+
+def _build_compaction_strategy(
+    model: Model,
+    model_client: Any,
+    tools: list,
+) -> tuple[Any, Any] | tuple[None, None]:
+    """Build a compaction strategy and tokenizer for tool-heavy agent runs.
+
+    Only applies when tools are active (tool-less runs don't need compaction).
+    Uses a two-layer defence:
+
+    1. **ToolResultCompactionStrategy** — collapses older tool-call groups
+       into compact summary messages, keeping the 3 most recent tool groups
+       intact.  Signal is preserved (tool names + results), structural
+       overhead is reclaimed.
+
+    2. **TokenBudgetComposedStrategy** — enforces a hard token budget at
+       70 % of the model's context length.  If the budget is exceeded after
+       step 1, the built-in fallback excludes the oldest message groups.
+
+    Returns:
+        A tuple of ``(compaction_strategy, tokenizer)``, or ``(None, None)``
+        when no tools are active.
+    """
+    if not tools:
+        return None, None
+
+    try:
+        tokenizer = CharacterEstimatorTokenizer()
+
+        # Budget: 70 % of model context length, floor 32K, cap 128K
+        context_length = getattr(model, "context_length", None) or 128_000
+        token_budget = max(32_000, min(int(context_length * 0.7), 128_000))
+
+        strategies = [
+            # Step 1: collapse old tool results into compact summaries
+            ToolResultCompactionStrategy(keep_last_tool_call_groups=3),
+        ]
+
+        compaction = TokenBudgetComposedStrategy(
+            token_budget=token_budget,
+            tokenizer=tokenizer,
+            strategies=strategies,
+            early_stop=True,
+        )
+
+        logger.debug(
+            "Compaction enabled: budget=%d tokens, context=%d, tools=%d",
+            token_budget,
+            context_length,
+            len(tools),
+        )
+        return compaction, tokenizer
+
+    except Exception:
+        logger.warning(
+            "Failed to build compaction strategy — running without compaction",
+            exc_info=True,
+        )
+        return None, None
+
+
+# ---------------------------------------------------------------------------
 # Agent / Workflow execution
 # ---------------------------------------------------------------------------
 
@@ -1283,12 +1355,18 @@ async def _run_agent(
     if reasoning_effort:
         default_options["reasoning_effort"] = reasoning_effort
 
+    compaction_strategy, tokenizer = _build_compaction_strategy(
+        model, model_client, tools,
+    )
+
     agent = Agent(
         client=model_client,
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
         default_options=default_options,
+        compaction_strategy=compaction_strategy,
+        tokenizer=tokenizer,
     )
 
     result = await agent.run(user_message)
@@ -1925,12 +2003,18 @@ async def _run_agent_stream(
     if reasoning_effort:
         default_options["reasoning_effort"] = reasoning_effort
 
+    compaction_strategy, tokenizer = _build_compaction_strategy(
+        model, model_client, tools,
+    )
+
     agent = Agent(
         client=model_client,
         name=agent_name,
         instructions=system_prompt,
         tools=tools,
         default_options=default_options,
+        compaction_strategy=compaction_strategy,
+        tokenizer=tokenizer,
     )
 
     response_stream = agent.run(user_message, stream=True)
