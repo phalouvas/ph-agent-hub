@@ -50,6 +50,7 @@ _ALLOWED_FUNCTIONS: dict[str, callable] = {
     "max": max,
     "sum": sum,
     "pow": pow,
+    "xor": operator.xor,
     "sqrt": math.sqrt,
     "sin": math.sin,
     "cos": math.cos,
@@ -148,6 +149,10 @@ def evaluate_expression(expression: str) -> float | int:
             or cannot be parsed.
     """
     try:
+        # Replace ^ with ** for exponentiation before parsing.
+        # This ensures correct operator precedence (^ is BitXor with
+        # lower precedence than *, but ** has the highest precedence).
+        expression = expression.replace("^", "**")
         tree = ast.parse(expression.strip(), mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"Invalid expression syntax: {exc}") from exc
@@ -175,9 +180,10 @@ def build_calculator_tools(tool_config: dict | None = None) -> list:
     async def calculate(expression: str) -> dict:
         """Safely evaluate a mathematical expression.
 
-        Supports basic arithmetic (+, -, *, /, //, %, **), bitwise ops,
-        and common math functions: sqrt, sin, cos, tan, log, log10, log2,
-        exp, abs, round, ceil, floor, min, max, sum, pow, factorial, gcd,
+        Supports basic arithmetic (+, -, *, /, //, %, **, ^ for
+        exponentiation), bitwise ops (via ``xor()`` function), and common
+        math functions: sqrt, sin, cos, tan, log, log10, log2,
+        exp, abs, round, ceil, floor, min, max, sum, pow, xor, factorial, gcd,
         degrees, radians, and constants pi, e, tau, inf, nan.
 
         Args:
